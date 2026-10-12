@@ -289,11 +289,32 @@ for g, p in L("water"):
             for run in densify_runs(coords, 4.0):
                 wl.append(dict(c=p.get("class"), p=[[r1(x), r1(y), r1(gelev(x, y))] for x, y, _ in run]))
 
+# ---- landmarks built by hand: the houses behind get one height and one roofline -----------------
+import landmarks as LM
+
+lms = []
+for kind, street in getattr(A, "landmarks", []):
+    runs, fronts = LM.find(kind, street, blds, roads)
+    spec = LM.SPECS[kind]
+    base = float(np.median([gelev(x, y) for r in runs for x, y in r["p"]]))
+    for bi, edges in fronts.items():
+        b = blds[bi]
+        b.update(h=round(base + spec["eaves"] - b["g"], 1), pp=spec["parapet"], st=spec["storeys"], m="s", rc="s", w=1,
+                 fe=sorted(edges))   # the game draws the landmark's facade in place of these walls
+        if "rp" in b: b["rp"] = min(b["rp"], 2.5)
+    lm = dict(k=kind, z=r1(base), e=spec["eaves"], pp=spec["parapet"],
+              f=[dict(s=r["s"], p=[[r1(x), r1(y), r1(gelev(x, y))] for x, y in r["p"]]) for r in runs])
+    if kind == "circus":
+        lm["c"] = [r1(v) for v in LM.circle(roads, street)]
+    lms.append(lm)
+    print(f"{kind}: {len(fronts)} houses, fronts {[round(sum(math.dist(p, q) for p, q in zip(r['p'], r['p'][1:]))) for r in runs]} m")
+
 # ---- barriers: walls, fences, hedges --------------------------------------------
 br = []
 for g, p in L("infrastructure"):
     c = p.get("class")
     if p.get("subtype") != "barrier" or c not in ("wall", "fence", "hedge", "retaining_wall"): continue
+    if ["wall", "ha-ha"] in (p.get("source_tags") or []): c = "haha"
     lines = [list(r.coords) for r in getattr(g, "geoms", [g]) for r in ([r.exterior] if r.geom_type == "Polygon" else [r])]
     for coords in lines:
         for run in densify_runs(coords, 3.0):
@@ -376,6 +397,16 @@ else:
 from streets import street_furniture
 fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd)
 
+# the Circus lawn holds a few giant plane trees, and nothing else
+for lm in lms:
+    if lm["k"] != "circus": continue
+    cx, cy, cr = lm["c"]
+    trees = [t for t in trees if math.hypot(t[0] - cx, t[1] - cy) > cr - 4]
+    for k in range(5):
+        a = math.radians(90 + 72 * k)
+        x, y = cx + 11 * math.cos(a), cy + 11 * math.sin(a)
+        trees.append([r1(x), r1(y), r1(gelev(x, y)), 2.6, 2])   # 2: always broadleaf
+
 # ---- shop signs and landmarks ----------------------------------------------------
 from shops import shop_signs, landmarks
 signs, pubs = shop_signs(L("place"), [c[0] for c in cand], info, roads, RW, gelev, proj, A.field)
@@ -403,6 +434,24 @@ for b in br + garden_br:
         n = max(1, int(math.ceil(piece.length / 2.5)))
         pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
         barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+
+# A ha-ha is a sunk fence: a wall whose top is level with the higher ground, facing a ditch on the
+# lower side, so it keeps animals (and players) out without breaking the view.
+HAHA_DEPTH, HAHA_BANK = 1.8, 6.0
+for b in barriers:
+    if b["c"] != "haha": continue
+    line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
+    m = line.interpolate(0.5, normalized=True)
+    t = line.interpolate(min(line.length, line.project(m) + 1)), line.interpolate(max(0, line.project(m) - 1))
+    tx, ty = t[0].x - t[1].x, t[0].y - t[1].y
+    tl = math.hypot(tx, ty) or 1
+    lx, ly = -ty / tl, tx / tl                       # left of the line
+    low = 1 if gelev(m.x + lx * 4, m.y + ly * 4) < gelev(m.x - lx * 4, m.y - ly * 4) else -1
+    b["p"] = [[x, y, r1(gelev(x - lx * low * 1.5, y - ly * low * 1.5))] for x, y, _ in b["p"]]   # top: the high side
+    bank = line.buffer(HAHA_BANK, single_sided=True) if low == 1 else line.buffer(-HAHA_BANK, single_sided=True)
+    hit = shapely.contains_xy(bank, GX, GY)
+    d = shapely.distance(line, shapely.points(GX[hit], GY[hit]))
+    grid[hit] -= HAHA_DEPTH * np.clip(1 - d / HAHA_BANK, 0, 1)
 
 # ---- hedges: garden boundaries with a low band of growth along them in the canopy map ----
 if canopy is not None:
@@ -446,7 +495,7 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fc=lms, fp=paths, dv=drive_strips, by=bays, wr=twires,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "

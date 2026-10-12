@@ -73,20 +73,49 @@ export function wall(kind: "stone" | "brick" | "render", withWindow: boolean): T
   const [c, g] = canvas(256, 256);
   const r = rng(kind === "stone" ? 7 : kind === "brick" ? 17 : 27);
   if (kind === "stone") stone(g, 256, 256, r); else if (kind === "brick") brick(g, 256, 256, r); else render(g, 256, 256, r);
-  if (withWindow) {
-    const wx = 82, wy = 58, ww = 92, wh = 128;
-    g.fillStyle = kind === "brick" ? "#b9b2a6" : "#d9cdb0"; g.fillRect(wx - 8, wy - 12, ww + 16, 12);   // lintel
-    g.fillStyle = "#e6e0d2"; g.fillRect(wx - 4, wy - 2, ww + 8, wh + 4);
-    const glass = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
-    glass.addColorStop(0, "#3d4c5a"); glass.addColorStop(0.55, "#22303c"); glass.addColorStop(1, "#4d6070");
-    g.fillStyle = glass; g.fillRect(wx, wy, ww, wh);
-    g.fillStyle = "#ece8de";
-    g.fillRect(wx, wy + wh / 2 - 3, ww, 6);
-    g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
-    if (kind === "stone") for (const f of [0.25, 0.75]) g.fillRect(wx, wy + wh * f - 1.5, ww, 3);   // Georgian glazing bars
-    g.fillStyle = kind === "brick" ? "#c4bdb1" : "#d4c7a8"; g.fillRect(wx - 10, wy + wh + 2, ww + 20, 9);   // sill
-  }
+  if (withWindow) sash(g, kind);
   return tex(c);
+}
+
+/** A rusticated ground floor: ashlar cut with deep horizontal channels, with a sash window. */
+export function rusticated(): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  stone(g, 256, 256, rng(11));
+  for (let y = 0; y < 256; y += 32) {
+    g.fillStyle = "rgba(70,55,35,0.55)"; g.fillRect(0, y, 256, 4);
+    g.fillStyle = "rgba(255,248,230,0.35)"; g.fillRect(0, y + 4, 256, 2);
+  }
+  sash(g, "stone");
+  return tex(c);
+}
+
+/** A Doric frieze: triglyphs (grooved blocks) between plain metopes. u covers one bay. */
+export function frieze(): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 64);
+  stone(g, 256, 64, rng(13));
+  for (const x of [0, 128]) {
+    g.fillStyle = "rgba(90,70,45,0.18)"; g.fillRect(x - 18, 0, 36, 64);
+    g.fillStyle = "rgba(70,55,35,0.5)";
+    for (const dx of [-10, 6]) g.fillRect(x + dx, 4, 4, 56);
+  }
+  g.fillStyle = "rgba(255,248,230,0.4)";
+  g.beginPath(); g.arc(64, 32, 14, 0, Math.PI * 2); g.arc(192, 32, 14, 0, Math.PI * 2); g.fill();   // emblems in the metopes
+  return tex(c);
+}
+
+/** A Georgian sash window with lintel and sill, in the middle of a bay texture. */
+function sash(g: CanvasRenderingContext2D, kind: "stone" | "brick" | "render") {
+  const wx = 82, wy = 58, ww = 92, wh = 128;
+  g.fillStyle = kind === "brick" ? "#b9b2a6" : "#d9cdb0"; g.fillRect(wx - 8, wy - 12, ww + 16, 12);   // lintel
+  g.fillStyle = "#e6e0d2"; g.fillRect(wx - 4, wy - 2, ww + 8, wh + 4);
+  const glass = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
+  glass.addColorStop(0, "#3d4c5a"); glass.addColorStop(0.55, "#22303c"); glass.addColorStop(1, "#4d6070");
+  g.fillStyle = glass; g.fillRect(wx, wy, ww, wh);
+  g.fillStyle = "#ece8de";
+  g.fillRect(wx, wy + wh / 2 - 3, ww, 6);
+  g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
+  if (kind === "stone") for (const f of [0.25, 0.75]) g.fillRect(wx, wy + wh * f - 1.5, ww, 3);   // Georgian glazing bars
+  g.fillStyle = kind === "brick" ? "#c4bdb1" : "#d4c7a8"; g.fillRect(wx - 10, wy + wh + 2, ww + 20, 9);   // sill
 }
 
 /** Roof tiles in rows, near white for tinting. u covers 2 m, v covers 2 m. */

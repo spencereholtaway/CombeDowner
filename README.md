@@ -44,7 +44,7 @@ Every push to `main` builds the game and publishes it to GitHub Pages
 pip3 install overturemaps
 MAP=combe-down
 mkdir -p data/raw/$MAP && cd data/raw/$MAP
-for t in building segment water land_use land land_cover infrastructure; do
+for t in building segment water land_use land land_cover infrastructure place; do
   python3 -I ../../../tools/download.py $MAP $t $t.geojson
 done
 cd ../../..
@@ -67,11 +67,13 @@ Environment Agency data © Crown copyright (Open Government Licence); terrain ti
 ### Tree canopy (optional)
 
 Trees are placed from Meta / WRI's global canopy height map when a tile is present in
-`data/raw/canopy/`. For this map that is the zoom-9 quadkey tile `031313120`:
+`data/raw/<map>/canopy/`. Both maps sit in the zoom-9 quadkey tile `031313120` (300 MB, so link
+it into the second map's folder rather than copying it):
 
 ```sh
-mkdir -p data/raw/canopy
-curl -o data/raw/canopy/031313120.tif \
+mkdir -p data/raw/combe-down/canopy data/raw/victoria-park/canopy
+curl -o data/raw/combe-down/canopy/031313120.tif \
   https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/031313120.tif
+ln -s ../../combe-down/canopy/031313120.tif data/raw/victoria-park/canopy/
 pip3 install rasterio
 ```

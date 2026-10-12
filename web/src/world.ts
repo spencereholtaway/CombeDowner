@@ -1,60 +1,13 @@
 // Builds the three.js scene from the map: terrain, roads, buildings, walls, trees, water and sky.
 import * as THREE from "three";
 import { BARRIER_HEIGHT, GameMap, Line, PATHS } from "./map";
+import { cross, dot, facing, facingTri, Geo, hash, norm, sub } from "./geo";
+import { buildLandmarks } from "./landmarks";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
 import { Culler } from "./cull";
 
 const CHUNK = 320;
-
-/** Accumulates non-indexed triangles with normals, UVs and colours. */
-class Geo {
-  pos: number[] = []; nor: number[] = []; uv: number[] = []; col: number[] = [];
-  tri(a: number[], b: number[], c: number[], n: number[], ua: number[], ub: number[], uc: number[], col: number[]) {
-    this.pos.push(...a, ...b, ...c);
-    this.nor.push(...n, ...n, ...n);
-    this.uv.push(...ua, ...ub, ...uc);
-    this.col.push(...col, ...col, ...col);
-  }
-  /** Quad a-b-c-d (counter-clockwise seen from the front). */
-  quad(a: number[], b: number[], c: number[], d: number[], n: number[], ua: number[], ub: number[], uc: number[], ud: number[], col: number[]) {
-    this.tri(a, b, c, n, ua, ub, uc, col);
-    this.tri(a, c, d, n, ua, uc, ud, col);
-  }
-  build(): THREE.BufferGeometry | null {
-    if (!this.pos.length) return null;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nor, 3));
-    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
-    g.computeBoundingSphere();
-    return g;
-  }
-}
-
-function hash(n: number) {
-  let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
-  x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
-  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
-}
-
-const sub = (a: number[], b: number[]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const norm = (a: number[]) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
-const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-
-/** Add a quad whose front faces along `out` (so winding never needs thinking about). */
-function facing(g: Geo, a: number[], b: number[], c: number[], d: number[], out: number[], ua: number[], ub: number[], uc: number[], ud: number[], col: number[]) {
-  const n = norm(cross(sub(b, a), sub(c, a)));
-  if (dot(n, out) >= 0) g.quad(a, b, c, d, norm(out), ua, ub, uc, ud, col);
-  else g.quad(a, d, c, b, norm(out), ua, ud, uc, ub, col);
-}
-function facingTri(g: Geo, a: number[], b: number[], c: number[], out: number[], ua: number[], ub: number[], uc: number[], col: number[]) {
-  const n = norm(cross(sub(b, a), sub(c, a)));
-  if (dot(n, out) >= 0) g.tri(a, b, c, norm(out), ua, ub, uc, col);
-  else g.tri(a, c, b, norm(out), ua, uc, ub, col);
-}
 
 export interface World {
   scene: THREE.Scene;
@@ -419,6 +372,7 @@ export function buildWorld(map: GameMap): World {
         const a = ring[i], q = ring[(i + 1) % ring.length];
         const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
         if (len < 0.05) continue;
+        if (ri === 0 && b.fe?.includes(i)) { along += len; continue; }   // a landmark's facade stands here
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
         const u0 = along / 3.4, u1 = (along + len) / 3.4;
         // windows sit at the same height on every storey: storeys are eaves / round(eaves / 3)
@@ -516,17 +470,20 @@ export function buildWorld(map: GameMap): World {
       scene.add(m);
     }
   }
+  buildLandmarks(map, scene);
 
   // ---- walls, fences and hedges -------------------------------------------------------------
   // material, thickness and colour of each kind of wall, fence and hedge
   type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron";
-  const BAR: Record<string, { mat: BarMat; t: number; col: number[] }> = {
+  // foot: how far below the line's ground the face goes (a ha-ha's drops into its ditch)
+  const BAR: Record<string, { mat: BarMat; t: number; col: number[]; foot?: number }> = {
     wall: { mat: "stone", t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { mat: "stone", t: 0.5, col: [0.8, 0.73, 0.57] },
     stone_wall: { mat: "stone", t: 0.45, col: [0.84, 0.76, 0.58] }, garden_wall: { mat: "stone", t: 0.35, col: [0.9, 0.82, 0.64] },
     brick_wall: { mat: "brick", t: 0.3, col: [0.7, 0.42, 0.32] }, brick_wall_low: { mat: "brick", t: 0.3, col: [0.72, 0.45, 0.34] },
     fence: { mat: "wood", t: 0.08, col: [0.55, 0.42, 0.3] },
     hedge: { mat: "leaf", t: 0.9, col: [0.42, 0.58, 0.3] }, hedge_low: { mat: "leaf", t: 0.7, col: [0.46, 0.62, 0.32] },
     railing: { mat: "iron", t: 0.05, col: [0.16, 0.17, 0.18] },
+    haha: { mat: "stone", t: 0.5, col: [0.84, 0.76, 0.58], foot: 2.3 },
   };
   const barGeos = new Map<string, Geo>();
   const barGeo = (x: number, y: number, mat: BarMat) => {
@@ -548,8 +505,8 @@ export function buildWorld(map: GameMap): World {
       const nx = ey / len * t, ny = -ex / len * t;
       const ga = a[2] - Z0, gq = q[2] - Z0;
       const c4 = [[a[0] + nx, a[1] + ny, ga], [q[0] + nx, q[1] + ny, gq], [q[0] - nx, q[1] - ny, gq], [a[0] - nx, a[1] - ny, ga]];
-      const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : c4[k][2] - 0.4, -c4[k][1]];
-      const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
+      const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : c4[k][2] - (spec.foot ?? 0.4), -c4[k][1]];
+      const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + (spec.foot ?? 0.4)) / 2;
       facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       if (spec.mat !== "iron") {
@@ -611,9 +568,10 @@ export function buildWorld(map: GameMap): World {
   const LEAF = ["#4d6b2c", "#58772f", "#3f5f2a", "#647f35", "#4a6630", "#6b7b2f"].map((h) => new THREE.Color(h));
   let ti = 0;
   for (const list of treeChunks.values()) {
-    // trees inside woods are trunks only: the wood canopy is drawn as one surface
-    const cones = list.filter((t, i) => t.length < 5 && hash(ti + i * 31) < 0.08);
-    const rounds = list.filter((t, i) => t.length < 5 && !(hash(ti + i * 31) < 0.08));
+    // a fifth value marks a tree inside a wood (1: trunk only, the wood canopy is drawn as one
+    // surface) or one that's always broadleaf (2: the Circus planes)
+    const cones = list.filter((t, i) => t[4] === undefined && hash(ti + i * 31) < 0.08);
+    const rounds = list.filter((t, i) => t[4] !== 1 && !(t[4] === undefined && hash(ti + i * 31) < 0.08));
     ti += list.length;
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, list.length);
     const crowns = new THREE.InstancedMesh(crownGeo, leafMat, rounds.length);

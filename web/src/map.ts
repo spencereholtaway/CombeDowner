@@ -12,11 +12,18 @@ export interface Building {
   ch?: number[][];                                // chimney stacks
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
+  fe?: number[];                                  // outer-ring edges a landmark facade stands in for
 }
 export interface Road { c: string; n: string; p: number[][] }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
+/** A landmark built from its real facade (see landmarks.ts): fronts are runs of [x, y, ground]. */
+export interface Facade {
+  k: "crescent" | "circus"; z: number; e: number; pp: number;
+  f: { s: number; p: number[][] }[];
+  c?: number[];                                   // the Circus: centre x, y and radius of its street
+}
 export interface MapData {
   id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   v?: [number, number];                           // what the menu backdrop circles around
@@ -35,6 +42,7 @@ export interface MapData {
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
+  fc?: Facade[];                                  // landmarks built from their real facades
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
@@ -44,6 +52,7 @@ export const BARRIER_HEIGHT: Record<string, number> = {
   wall: 0.9, retaining_wall: 0.9, fence: 1.2, hedge: 1.3,
   garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
+  haha: 0.05,   // a ha-ha's top is level with the ground on its high side; its face drops into a ditch
 };
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 

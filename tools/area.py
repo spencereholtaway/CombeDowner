@@ -47,6 +47,8 @@ MAPS = {
         ],
         default_zone="bath",
         view=(170, 50),                # the Royal Crescent, seen across its lawn
+        # built by hand (see landmarks.py): which terrace, facing which street
+        landmarks=[("crescent", "Royal Crescent"), ("circus", "The Circus")],
     ),
 }
 
