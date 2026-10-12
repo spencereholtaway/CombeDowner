@@ -396,6 +396,68 @@ at the same moment settles itself. What's below is what would still make voice u
 
 ---
 
+## COMBE DOWN WITH ME (the deli kitchen)
+
+New this afternoon, so expect rough edges. Host choice and handover, the grab races, the door both ways,
+touch, 1-4 cooks and the camera maths were all traced and are fine (see the end of this file).
+
+### [ ] D-01 No voice chat in the deli kitchen
+- Severity: medium
+- Confidence: confirmed
+- Where: web/src/deli/game.ts (never imports `../voice`), web/src/deli/main.ts:88; compare web/src/mines/game.ts:19, 190, 210, 217, 1334
+- Player sees: Friends chatting on the street walk through the deli door together and voice goes dead for the whole shift; it comes back when they step out. There's no mute on the pause card either. The deli room is a real Trystero room with `media: true`, so the links are there; nothing listens.
+- Cause: `DeliGame` never creates a `Voice`, so `net.onStream` is never set and incoming mic streams are dropped; no `voice.join`/`drop` on join/leave; no `voice.update` per frame; `st` carries no talk state.
+- Fix: As the mines do: `readonly voice = new Voice(net, (t, s) => this.toast(t, s))`; `this.voice.join(id)` in `net.onJoin`, `this.voice.drop(id)` in `net.onLeave`; in `update()` call `this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => { const r = this.remotes.get(id); return r ? { x: r.x - W / 2, y: 0.8, z: r.y - H / 2 } : null; })` (the kitchen is 12 tiles across, inside `NEAR_REF`, so everyone is at full volume, which is right for a kitchen); `this.voice.dispose()` in `dispose()`; send `voice.mode` in `st` and call `voice.heard(from, mode)` on receipt; a Mute button on the pause card wired to `voice.mute()`; hold V for the radio like the other pages. Skip when `net.kind === "local"` (`voice.available`).
+
+### [ ] D-02 A slow frame while pushing against a counter puts the cook inside it, for good
+- Severity: medium
+- Confidence: confirmed
+- Where: web/src/deli/game.ts:257-271 (`slide`), 240-241, 246-251 (cook-vs-cook push), web/src/deli/main.ts:180 (`dt` capped at 0.1)
+- Player sees: On a stuttering phone (any frame of 90 ms or more) a cook walking into a counter ends up standing in the middle of it and can never walk out; the only way back is to reload. The bump-apart between two overlapping cooks can shove you into a counter the same way.
+- Cause: `slide` resolves a blocked move from the tile the *centre* landed in, not the tile the leading corner hit: `const i = Math.floor(x); return x > this.x ? i + 1 - RADIUS - 0.001 : …`. With `SPEED = 3.4` and `dt` up to 0.1 the centre moves 0.34 tiles in a frame, more than the `RADIUS = 0.3` gap to the corner, so `Math.floor(x)` can be the counter tile itself and the "resolved" position is inside it. Every later `slide` is then blocked and returns another inside position. The push at 246-251 can shove by up to 0.6 in one go.
+- Fix: Resolve against the leading edge: `const edge = x > this.x ? Math.floor(x + RADIUS) : Math.floor(x - RADIUS)` and return `x > this.x ? edge - RADIUS - 0.001 : edge + 1 + RADIUS + 0.001` (same for Y), never returning a value past the wall from `this.x`. Also sub-step `move` while `Math.hypot(vx, vy) * dt > 0.25`, and clamp the bump push to `Math.min(push, 0.2)`.
+
+### [ ] D-03 Food goes on burning (with the alarm) after the kitchen has closed
+- Severity: low
+- Confidence: confirmed
+- Where: web/src/deli/kitchen.ts:156-176 (`tick`), 102 (`use` refuses grabs in `ph === 3`)
+- Player sees: On the "Kitchen closed" results card the burning alarm goes off and "Something's burning!" pops over the stars, sometimes more than once, and nobody can bin it.
+- Cause: `tick` returns early only for `ph === 1`; the chopping and cooking loops run in every other phase, including 3, and only `if (S.ph !== 2) return;` at line 176 stops the clock and orders.
+- Fix: After the `ph === 1` block at the top of `tick`, add `if (S.ph === 3) return;` (`begin()` wipes the counters anyway). Optionally skip the oven glow and smoke in the view when `ph === 3`.
+
+### [ ] D-04 Every ticket re-pins itself whenever one order changes
+- Severity: low
+- Confidence: confirmed
+- Where: web/src/deli/game.ts:326-333 (`hud()` rebuilds `$("tickets").innerHTML`), web/src/deli/deli.css:136-138 (`.ticket { animation: pin … }`)
+- Player sees: When an order is served, times out or arrives, every ticket along the top drops in again with the swing animation and its wait bar snaps to full for a moment, as if all the orders were replaced.
+- Fix: Diff instead of rebuild: remove `.ticket[data-id]` elements whose id is gone, `insertAdjacentHTML("beforeend", …)` only for new ids (keep `ticketKey` as the cheap change check), and set the `<i>` width inline from `o.t / o.T` so a new ticket starts at the right length.
+
+### [ ] D-05 The tile highlight z-fights with the hob's black base
+- Severity: low
+- Confidence: confirmed
+- Where: web/src/deli/view.ts:276 (hob base `cyl(0.34, 0.34, 0.02, 20)` at `TOP + 0.01`), 333, 430 (`face()` puts the highlight `box(1.02, 0.02, 1.02)` at `TOP + 0.01` too)
+- Player sees: Facing a hob, the white highlight square flickers and speckles over the hob's dark base.
+- Cause: Two coplanar top faces at `TOP + 0.02`; the highlight is transparent with `depthWrite: false` and drawn after.
+- Fix: In `face()`: `this.facing.position.y = t === "X" ? 0.86 : t === "H" ? TOP + 0.1 : TOP + 0.011` (the pan rim tops out at `TOP + 0.09`), or give the highlight `polygonOffset: true, polygonOffsetFactor: -2`.
+
+### [ ] D-06 Order tickets wrap to a second row and cover the far end of the kitchen on a phone held upright
+- Severity: low
+- Confidence: unconfirmed
+- Where: web/src/deli/deli.css:132, 203-206; web/src/deli/main.ts:28-29 (`band = innerHeight <= 500 ? 70 : 118`)
+- Player sees: In portrait with three or four orders up, the tickets wrap and sit over the boards and hob along the far wall.
+- Cause: The camera is fitted below a fixed band that allows one row; on a 390 px screen the rail is 282 px wide, two 96 px tickets fit per row, so `MAX_ORDERS = 4` makes two rows (~135 px) against a 118 px band.
+- Fix: Measure instead of guessing: after rebuilding the rail (and in `resize()`) read `$("tickets").getBoundingClientRect().bottom` and refit when it changed; or make `.ticket` 72 px (icons only) in portrait so four fit in one row.
+
+### [ ] D-07 Typing the party name on the front page never finds friends who are in the deli
+- Severity: low
+- Confidence: confirmed
+- Where: web/src/main.ts:357-362 and 370-391 (the lookup listens in `code` and `MINES-${code}` only), web/src/deli/main.ts:14 (the deli room is `DELI-${code}`)
+- Player sees: Three friends go into the deli; the fourth types the party name and gets "You've started CODE" in an empty street with no hint the others are cooking. Had they gone down the mines the lookup would have offered to take them there.
+- Fix: In `play()` open a third probe `const kitchen = UP ? null : connect(\`DELI-${code}\`, LOCAL)` with `kitchen?.on("hello", (d, from) => { if (d?.deli) cooks.set(from, name) })`, leave it with `below`, and when `!found && cooks.size` offer "X and Y are in the deli kitchen" with a button to `deli.html?go=1&room=CODE&map=…`, mirroring the mines branch at main.ts:383-391. (Note V-04: probes make the players inside renegotiate; the deli has no voice yet, so it's cheap there.)
+
+
+---
+
 ## Checked and found fine
 
 So nobody re-checks them. These looked suspicious and were traced to the end.
@@ -439,3 +501,11 @@ So nobody re-checks them. These looked suspicious and were traced to the end.
 
 **Tools**
 - Angle conventions for shop signs, doors, bins, furniture, porticos and the oak all match world.ts/furniture.ts. Roof rectangle and hip conventions agree between lidar.py, buildings.py, world.ts and `roofAt`. All barrier/wall/roof codes the tools emit exist in the game's tables. `z0` is computed before lake beds are dug (harmless). Parked-car layout uses Python's salted `hash()`, so every rebuild reshuffles parked cars (noisy diffs, not player-visible); `zlib.crc32` would fix it. `tools/landmarks/combe_down_bath.py` and docs refer to a `prep_tiles.py` that doesn't exist.
+
+**COMBE DOWN WITH ME**
+- Host choice only counts cooks whose `st` says they have the kitchen, so a newcomer with a lower id waits for the first `dk` and takes over from that copy; when the host leaves the next one takes over with `S.h` tidied. `dk`/`dg` are in `MESSAGE_TYPES` and the deli room is `DELI-<code>`, so its messages never reach the streets' or mines' handlers.
+- Grab races are settled by the host in arrival order (the item object moves), so two cooks can't hold the same thing. Chop and cook progress rides on the item. Two cooks chopping one board chop twice as fast (reads as a feature).
+- The door both ways carries `room`, `map`, `net=local`, `go=1`/`up=1&from=deli` exactly like the mine tour, and `Game` places you at `deliDoor.outside()`.
+- Touch, 1-4 cooks (a fifth shares a start tile), `[hidden]`, overlay stacking, camera `fit()` vs `screenToFloor()` in both orientations, and item heights on counters/boards/hobs/tray were all checked.
+- Small leaks (name-label textures per hello, smoke and bar materials) and cosmetic bits (tags drawn before the web font loads, cooks spawning facing away) aren't worth tickets.
+
