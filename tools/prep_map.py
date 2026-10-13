@@ -155,6 +155,57 @@ if TILE is not None:
         return (q[0, 0] * (1 - fu) + q[0, 1] * fu) * (1 - fv) + (q[1, 0] * (1 - fu) + q[1, 1] * fu) * fv
 
 
+# ---- the ground from the lidar --------------------------------------------------------------
+# The terrain tiles above are a mix of surveys at about 3 m, often half a metre out and up to 4 m
+# out on steep ground and by water. The Environment Agency's 1 m lidar ground (lidar/dtm) is the
+# ground wherever it covers: each vertex of the map's 4 m grid is the mean of the 16 lidar metres
+# round it, worked out on the grid's own lattice so every square gets the same heights at the same
+# place. The terrain tiles fill in only where the lidar has no cover, eased into it over 20 m.
+if TILE is not None and os.path.isdir(os.path.join(src_dir, "lidar", "dtm")) and not os.environ.get("NO_LIDAR_GROUND"):
+    import glob
+    from lidar import Lidar, _to_bng
+    from scipy.ndimage import distance_transform_edt
+    _L = Lidar.__new__(Lidar); _L.grids = {}
+    import rasterio
+    _L.grids["dtm"] = []
+    for f in sorted(glob.glob(os.path.join(src_dir, "lidar", "dtm", "*.tif"))):
+        try:
+            with rasterio.open(f) as src: _L.grids["dtm"].append([f, src.transform, src.shape, None])
+        except Exception as e: print(f"ground: {os.path.basename(f)} unreadable, left to the terrain tiles ({e.__class__.__name__})")
+    pad = int(math.ceil(1250 / D))
+    li0, lj0 = gi0 - pad, gj0 - pad
+    lnx = lny = CELLS + 2 * MARGIN + 2 * pad + 1
+    LX = lat_x(li0) + np.arange(lnx) * D; LY = lat_y(lj0) + np.arange(lny) * D
+    # (model metres to the national grid: as good as straight across a few km, so fitted once)
+    fx, fy = np.meshgrid(np.linspace(LX[0], LX[-1], 5), np.linspace(LY[0], LY[-1], 5))
+    fe, fn = _to_bng((fx.ravel() / kx + lon0, fy.ravel() / ky + lat0))
+    M = np.c_[fx.ravel(), fy.ravel(), np.ones(fx.size)]
+    ce, cn = np.linalg.lstsq(M, fe, rcond=None)[0], np.linalg.lstsq(M, fn, rcond=None)[0]
+    gx_, gy_ = np.meshgrid(LX, LY)
+    acc, cnt = np.zeros(gx_.shape), np.zeros(gx_.shape)
+    for ox in (-1.5, -0.5, 0.5, 1.5):
+        for oy in (-1.5, -0.5, 0.5, 1.5):
+            px, py = (gx_ + ox).ravel(), (gy_ + oy).ravel()
+            v = _L._sample("dtm", ce[0] * px + ce[1] * py + ce[2], cn[0] * px + cn[1] * py + cn[2]).reshape(gx_.shape)
+            ok = ~np.isnan(v); acc[ok] += v[ok]; cnt[ok] += 1
+    lid = np.where(cnt >= 8, acc / np.maximum(cnt, 1), np.nan)
+    have = ~np.isnan(lid)
+    if have.any():
+        tiles_ = np.array([[elev(x, y) for x in LX] for y in LY]) if not have.all() else None
+        w = np.clip(distance_transform_edt(have) * D / 20.0, 0, 1) if tiles_ is not None else np.ones(lid.shape)
+        LG = np.where(have, w * np.nan_to_num(lid) + (1 - w) * (tiles_ if tiles_ is not None else 0), tiles_ if tiles_ is not None else 0)
+        _terrain_elev = elev
+        def elev(x, y):
+            """Height of the ground (the lidar's, else the terrain tiles') at model metres, from the
+            lattice above, two triangles a cell as the game draws it."""
+            fi, fj = (x - LX[0]) / D, (y - LY[0]) / D
+            if not (0 <= fi < lnx - 1 and 0 <= fj < lny - 1): return _terrain_elev(x, y)
+            i, j = int(fi), int(fj); u, v = fi - i, fj - j
+            if u + v <= 1: return LG[j, i] + (LG[j, i + 1] - LG[j, i]) * u + (LG[j + 1, i] - LG[j, i]) * v
+            return LG[j + 1, i + 1] + (LG[j + 1, i] - LG[j + 1, i + 1]) * (1 - u) + (LG[j, i + 1] - LG[j + 1, i + 1]) * (1 - v)
+        print(f"ground: from the lidar at {have.mean() * 100:.0f}% of points, the terrain tiles elsewhere")
+
+
 def low(x, y, r):
     """Lowest ground within r metres: used for water surfaces, which sit below their banks."""
     return min([elev(x, y)] + [elev(x + r * math.cos(a), y + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 8, endpoint=False)])
