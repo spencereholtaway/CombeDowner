@@ -38,7 +38,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [x] "COMBE DOWN WITH ME": an Overcooked-style co-op cooking game in the deli (first version in; follow-ups below)
 - [ ] Bike time trial through the Two Tunnels, with ghosts of your friends' best runs
 - [ ] Village fete on the rec: coconut shy, tug of war and a cat show where the cats judge back
-- [ ] Day and night cycle: at night the lamps go out and the cats get braver
+- [x] Day and night cycle: at night the lamps go out and the cats get braver (a day every 24 minutes, the same for everyone; street lamps and windows light up and the cats get braver after dark)
 - [ ] BMX track at Odd Down like Motocross Maniacs (side-on, jumps and loops, tilt to land), raced live together as see-through riders, with best-run ghosts
 - [x] Cable car from Fox Hill to the town centre: Curo's 2017 Mulberry Park to Bath Spa line, with two cabins you can ride
 

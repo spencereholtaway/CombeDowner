@@ -3,12 +3,14 @@
 // real place as latitude and longitude and an OS grid reference, and which square of Bath you're
 // in), how fast the game is drawing, and how your links to the other players are doing: whether
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
-// Shift+F3, or the Copy button, puts your position on the clipboard.
+// Shift+F3, or the Copy button, puts your position on the clipboard. "+3 hours" moves your own
+// clock on (daylight.ts), to see the streets at another time of day.
 //
 // Nothing here goes over the network: every player sees their own view of their own links.
 import * as THREE from "three";
 import type { Game } from "./game";
 import type { LinkStats } from "./net";
+import { clockKind, clockText, skipHours } from "./daylight";
 
 declare const __BUILD__: number;
 
@@ -101,12 +103,13 @@ export class DebugPanel {
     this.el = document.createElement("div");
     this.el.id = "debug";
     this.el.hidden = true;
-    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position</button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
+    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position</button><button type="button" data-k="time">+3 hours</button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
     document.body.append(this.el);
     this.body = this.el.querySelector("pre")!;
     this.copyBtn = this.el.querySelector('[data-k="copy"]')!;
     this.copyBtn.onclick = () => this.copy();
     (this.el.querySelector('[data-k="close"]') as HTMLButtonElement).onclick = () => this.toggle(false);
+    (this.el.querySelector('[data-k="time"]') as HTMLButtonElement).onclick = () => { skipHours(3); this.drawT = 0; };
     // keep taps on the panel from reaching the game's touch controls underneath
     this.el.addEventListener("pointerdown", (e) => e.stopPropagation());
     addEventListener("keydown", (e) => {
@@ -233,6 +236,7 @@ export class DebugPanel {
       rows.push(`OS    ${os.ref}  (${os.e}, ${os.n})`);
       rows.push(`facing ${bearing.toFixed(0)}° ${COMPASS[Math.round(bearing / 45) % 8]}  square ${square}`);
       rows.push(`map ${esc(d.mapId)} (${esc(m.d.release)})`);
+      rows.push(`time ${clockText()}  clock ${clockKind()}`);
 
       const net = g.net, v = g.voice;
       rows.push("");

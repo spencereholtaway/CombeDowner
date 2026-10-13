@@ -22,14 +22,19 @@ export function model(parts: Part[]): THREE.BufferGeometry {
   });
   return mergeGeometries(geos)!;
 }
+/** The street lamps' glass, shared by every lamp in Bath: world.ts lights it up after dark. */
+export const LAMP_GLASS = new THREE.MeshBasicMaterial({ color: "#d8d4c2" });
+
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r: number, h: number, seg = 8) => new THREE.CylinderGeometry(r, r, h, seg);
 
 const MODELS: Record<string, () => THREE.BufferGeometry> = {
   lamp: () => model([
     [cyl(0.075, 6.4), "#3c4043", 0, 3.2, 0], [box(0.07, 0.07, 1.3), "#3c4043", 0, 6.35, 0.6],
-    [box(0.32, 0.1, 0.55), "#3c4043", 0, 6.3, 1.2], [box(0.26, 0.03, 0.46), "#f3efd8", 0, 6.24, 1.2],
+    [box(0.32, 0.1, 0.55), "#3c4043", 0, 6.3, 1.2],
   ]),
+  // the glass under the lamp's head, drawn apart so it can light up after dark (LAMP_GLASS)
+  lampGlass: () => model([[box(0.26, 0.03, 0.46), "#ffffff", 0, 6.24, 1.2]]),
   pole: () => model([
     [new THREE.CylinderGeometry(0.11, 0.15, 8.2, 7), "#5b4634", 0, 4.1, 0], [box(1.2, 0.1, 0.1), "#4a3a2c", 0, 7.6, 0],
     [cyl(0.05, 0.12), "#d9d9d4", -0.45, 7.7, 0], [cyl(0.05, 0.12), "#d9d9d4", 0.45, 7.7, 0],
@@ -176,6 +181,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     }
   };
   for (const kind of ["lamp", "bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
+  instanced(MODELS.lampGlass(), byKind.get("lamp") ?? [], LAMP_GLASS);
   // a parked car someone gets in becomes a vehicle (vehicles.ts): squash its furniture away
   const cars = new Map<(string | number)[], [THREE.InstancedMesh, number]>();
   instanced(carGeometry(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length], (f, m, i) => cars.set(f, [m, i]));

@@ -9,11 +9,15 @@
 // so many of them, so a cool head and a full magazine will just about see them off. Or get in a
 // car and drive away, or over them.
 //
+// After dark (daylight.ts) they get braver: more of them are out, the calm ones come and sit
+// round your feet, and a swarm brings half as many again.
+//
 // Like the chavs, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
 import * as THREE from "three";
 import { clearSpot, streetSpot } from "./haunts";
 import { GameMap } from "./map";
+import { nightNow } from "./daylight";
 
 const MAX = 32;
 const HP = 40;                              // a rifle round does 22, 55 to the head
@@ -279,11 +283,12 @@ export class Cats {
         for (let n = 0; n < WAVE_BATCH && f.wave > 0; n++) if (this.spawn(t, targets, 25, 60, id)) f.wave--;
       }
     }
+    const night = nightNow();
     this.spawnT -= dt;
     if (this.spawnT <= 0 && alive.length) {
-      this.spawnT = 2.5;
+      this.spawnT = 2.5 - night;
       const calm = this.list.filter((c) => c.state === ALIVE && !c.target).length;
-      if (calm < Math.min(14, 5 + 3 * alive.length)) this.spawn(alive[Math.floor(Math.random() * alive.length)], targets, 30, 100, "");
+      if (calm < Math.min(14 + 8 * night, (5 + 3 * alive.length) * (1 + 0.6 * night))) this.spawn(alive[Math.floor(Math.random() * alive.length)], targets, 30 - 10 * night, 100, "");
     }
     for (let i = 0; i < this.list.length; i++) {
       const c = this.list[i];
@@ -292,7 +297,13 @@ export class Cats {
       const t = c.target ? alive.find((p) => p.id === c.target) : undefined;
       if (c.target && (!t || Math.hypot(t.x - c.x, t.z - c.z) > GIVE_UP)) c.target = "";
       if (!c.target && alive.length && !alive.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < 160)) { c.state = GONE; continue; }
-      this.move(c, i, dt, t, claw);
+      // after dark a calm cat may come and sit by whoever's nearest
+      let by: CatTarget | undefined;
+      if (!t && night > 0.5) for (const p of alive) {
+        const d = Math.hypot(p.x - c.x, p.z - c.z);
+        if (d < 30 && (!by || d < Math.hypot(by.x - c.x, by.z - c.z))) by = p;
+      }
+      this.move(c, i, dt, t, claw, by);
     }
   }
 
@@ -302,7 +313,7 @@ export class Cats {
     for (const c of this.list) if (c.target === id) { c.target = ""; c.wanderT = 0; }
   }
 
-  private move(c: Cat, i: number, dt: number, t: CatTarget | undefined, claw: (i: number, id: string, damage: number) => void) {
+  private move(c: Cat, i: number, dt: number, t: CatTarget | undefined, claw: (i: number, id: string, damage: number) => void, by?: CatTarget) {
     c.clawCD -= dt; c.pounceCD -= dt;
     let dirX = 0, dirZ = 0, spd = 0, face: number | null = null;
     const onGround = c.hop === 0;
@@ -337,6 +348,13 @@ export class Cats {
         const r = Math.random();
         c.wanderSpd = r < 0.55 ? 0 : r < 0.9 ? STROLL : TROT;
         c.wanderYaw = Math.random() * Math.PI * 2;
+        // a bold one (at night) heads for the nearest player instead, and sits once it's close
+        if (by && c.i % 3 !== 0) {
+          const dx = by.x - c.x, dz = by.z - c.z, d = Math.hypot(dx, dz);
+          c.wanderYaw = Math.atan2(-dx, -dz);
+          c.wanderSpd = d < 2.5 ? 0 : d < 8 ? STROLL : TROT;
+          c.wanderT = d < 2.5 ? 3 : 1;
+        }
       }
       if (c.wanderSpd) { dirX = -Math.sin(c.wanderYaw); dirZ = -Math.cos(c.wanderYaw); spd = c.wanderSpd; }
     }
@@ -432,7 +450,7 @@ export class Cats {
     }
     const f = this.fury.get(id);
     if (f) { f.t = FURY_SECS; return false; }
-    this.fury.set(id, { t: FURY_SECS, wave: WAVE, next: 0.6 });
+    this.fury.set(id, { t: FURY_SECS, wave: Math.round(WAVE * (1 + 0.5 * nightNow())), next: 0.6 });
     return true;
   }
 

@@ -23,6 +23,14 @@ the Food Standards Agency where there is one, and click it to be on the pavement
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 
+Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
+in the west with a warm glow round it, then the stars and the moon come out, the street lamps
+light the pavements round them and windows light up across Bath. Everyone sees the same time of
+day, since it comes from the clock rather than the host. After dark the cats get braver: more of
+them are out, the calm ones come and sit round your feet, and shoot one and half as many again
+come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
+?daylen=4 for a four-minute day; the debug panel's "+3 hours" moves your own clock on.
+
 F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
 game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
 you're facing and which square of Bath you're in; the frame rate and draw calls; and how your link

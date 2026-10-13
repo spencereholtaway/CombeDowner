@@ -4,6 +4,7 @@
 // see fly; with blood on they're the real rifles, with muzzle flashes and tracers.
 import * as THREE from "three";
 import { gore, look, watch } from "./gore";
+import { nightNow } from "./daylight";
 
 export type GunKind = "fists" | "rifle" | "sniper";
 export const SLOTS: GunKind[] = ["fists", "rifle", "sniper"];   // keys 1, 2, 3
@@ -188,6 +189,11 @@ export class Weapon {
   private flash: THREE.Mesh;
   private flashLight: THREE.PointLight;
   private flashT = 0;
+  /** The gun's own light, dimmer and bluer after dark (daylight.ts). */
+  private hemi = new THREE.HemisphereLight("#dfe8f0", "#5a5540", 2.2);
+  private sun = new THREE.DirectionalLight("#fff0d8", 1.6);
+  private static DAY = new THREE.Color("#dfe8f0");
+  private static NIGHT = new THREE.Color("#8090b8");
   private sway = new THREE.Vector2();
   private t = 0;
   /** The left hand with the radio: 0 down out of sight .. 1 held up, eased. */
@@ -195,10 +201,9 @@ export class Weapon {
   readonly radioHand = radioModel();
 
   constructor() {
-    this.scene.add(new THREE.HemisphereLight("#dfe8f0", "#5a5540", 2.2));
-    const sun = new THREE.DirectionalLight("#fff0d8", 1.6);
-    sun.position.set(-1, 2, 1);
-    this.scene.add(sun);
+    this.scene.add(this.hemi);
+    this.sun.position.set(-1, 2, 1);
+    this.scene.add(this.sun);
     const fists = new THREE.Group();
     this.fists = [fist(-0.2), fist(0.06)];
     fists.add(...this.fists);
@@ -297,6 +302,9 @@ export class Weapon {
   }
 
   update(dt: number, camera: THREE.PerspectiveCamera, wantAim: boolean, bob: number, speed: number, sprinting: boolean, crouch: number, lookDx: number, lookDy: number, onRadio: boolean) {
+    const night = nightNow();
+    this.hemi.intensity = 2.2 * (1 - 0.6 * night); this.sun.intensity = 1.6 * (1 - 0.8 * night);
+    this.hemi.color.lerpColors(Weapon.DAY, Weapon.NIGHT, night);
     this.t += dt;
     this.cooldown -= dt;
     this.sniperCool -= dt;

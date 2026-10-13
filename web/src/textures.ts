@@ -119,6 +119,22 @@ export function wall(kind: "stone" | "brick" | "render", withWindow: boolean): T
   return pixelTex(c, 128, 128, 24, 71);
 }
 
+/** The light from wall()'s window after dark: the glass glowing warm, the frame and glazing bars
+ *  black. Used as the walls' glow map (world.ts lights some windows and not others). */
+export function windowGlow(kind: "stone" | "brick" | "render"): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = "#000"; g.fillRect(0, 0, 256, 256);
+  const wx = 82, wy = 58, ww = 92, wh = 128;
+  const glass = g.createRadialGradient(wx + ww / 2, wy + wh * 0.65, 10, wx + ww / 2, wy + wh / 2, wh * 0.75);
+  glass.addColorStop(0, "#ffe2a8"); glass.addColorStop(1, "#b8743a");
+  g.fillStyle = glass; g.fillRect(wx, wy, ww, wh);
+  g.fillStyle = "#000";
+  g.fillRect(wx, wy + wh / 2 - 3, ww, 6);
+  g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
+  if (kind === "stone") for (const f of [0.25, 0.75]) g.fillRect(wx, wy + wh * f - 1.5, ww, 3);
+  return pixelTex(c, 128, 128, 64, 71);
+}
+
 /** Roof tiles in rows, near white for tinting. u covers 2 m, v covers 2 m. */
 export function roofTiles(): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);

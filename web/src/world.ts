@@ -4,7 +4,8 @@
 import * as THREE from "three";
 import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
-import { buildFurniture, buildShops } from "./furniture";
+import { LAMP_GLASS, buildFurniture, buildShops } from "./furniture";
+import { sky as skyNow } from "./daylight";
 import { buildLandmarks } from "./landmarks";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
@@ -167,6 +168,23 @@ function run<T>(g: Generator<void, T>): T {
   return r.value;
 }
 
+/** Walls whose windows light up after dark (world.update turns the glow up at night): some windows and not
+ *  others, picked by which window it is on the wall, which storey, and the building's colour. */
+const GLOWING: THREE.MeshLambertMaterial[] = [];
+function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "render") {
+  mat.emissiveMap = TX.windowGlow(kind);
+  mat.emissive.set("#ffffff");
+  mat.emissiveIntensity = 0;
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+      vec3 wk = vec3(floor(vMapUv), dot(vColor.rgb, vec3(91.7, 47.3, 13.1)));
+      totalEmissiveRadiance *= step(0.58, fract(sin(dot(wk, vec3(12.9898, 78.233, 37.719))) * 43758.5453));`);
+  };
+  mat.customProgramCacheKey = () => "litWindows";
+  GLOWING.push(mat);
+  return mat;
+}
+
 /** The sky, light and fog. */
 function makeShell(scene: THREE.Scene) {
   const fogCol = new THREE.Color("#c9d6df");
@@ -184,17 +202,20 @@ function makeShell(scene: THREE.Scene) {
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.04;
   scene.add(sun, sun.target);
-  const SUN_DIR = new THREE.Vector3(-0.55, 0.62, 0.56).normalize(); // afternoon sun from the south-west
 
   // ---- sky dome -----------------------------------------------------------------
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(500, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { top: { value: new THREE.Color("#6f9fd0") }, bottom: { value: fogCol } },
+      uniforms: {
+        top: { value: new THREE.Color("#6f9fd0") }, bottom: { value: fogCol.clone() },
+        sunDir: { value: new THREE.Vector3(0, 1, 0) }, moonDir: { value: new THREE.Vector3(0, 1, 0) }, night: { value: 0 },
+      },
       vertexShader: "varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
       // sky gradient with soft fair-weather clouds (value-noise fbm projected onto a cloud layer)
-      fragmentShader: `uniform vec3 top; uniform vec3 bottom; varying vec3 vP;
+      // and, by night, stars and the moon; round the sun when it's low, a warm glow
+      fragmentShader: `uniform vec3 top; uniform vec3 bottom; uniform vec3 sunDir; uniform vec3 moonDir; uniform float night; varying vec3 vP;
         float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
           return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y); }
@@ -208,15 +229,30 @@ function makeShell(scene: THREE.Scene) {
             vec2 uv = vP.xz / (vP.y + 0.12) * 1.6;
             float c = smoothstep(0.52, 0.78, fbm(uv + vec2(3.1, 7.7)));
             float fade = smoothstep(0.02, 0.25, vP.y);
-            col = mix(col, vec3(1.5, 1.5, 1.52), c * 0.85 * fade);
+            // clouds: white by day, lit warm near a low sun, dark grey-blue at night
+            float glow = pow(max(dot(vP, sunDir), 0.0), 6.0) * (1.0 - smoothstep(0.1, 0.4, sunDir.y));
+            vec3 cloud = mix(vec3(1.5, 1.5, 1.52), vec3(0.16, 0.19, 0.27), night) + vec3(1.2, 0.55, 0.25) * glow;
+            col = mix(col, cloud, c * 0.85 * fade * (1.0 - 0.35 * night));
+            // the stars, in the gaps between clouds
+            vec3 sp = vP * 220.0, cell = floor(sp);
+            float star = hash(cell.xy + cell.z * 17.31);
+            float bright = smoothstep(0.9965, 1.0, star) * (1.0 - smoothstep(0.35, 0.6, length(fract(sp) - 0.5)));
+            col += vec3(0.9, 0.92, 1.0) * bright * night * (1.0 - c) * smoothstep(0.05, 0.3, vP.y) * 1.6;
           }
+          // the sun low down warms the sky round it
+          float halo = pow(max(dot(vP, sunDir), 0.0), 12.0) * (1.0 - smoothstep(0.05, 0.35, sunDir.y)) * smoothstep(-0.15, 0.0, sunDir.y);
+          col += vec3(1.0, 0.45, 0.15) * halo * 0.9;
+          // the moon, with a faint ring of light round it
+          float m = dot(vP, moonDir);
+          col += vec3(0.95, 0.95, 0.85) * smoothstep(0.99965, 0.9998, m) * night * 1.4;
+          col += vec3(0.25, 0.3, 0.42) * pow(max(m, 0.0), 60.0) * night * 0.5;
           gl_FragColor = vec4(col, 1.0);
         }`,
     }),
   );
   sky.renderOrder = -1;
   scene.add(sky);
-  return { fogCol, tunnelDark, hemi, sun, SUN_DIR, sky };
+  return { tunnelDark, hemi, sun, sky };
 }
 
 /**
@@ -887,7 +923,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
     const kind = sfc === "s" ? "stone" : sfc === "r" ? "render" : "brick";
-    wallMats[sfc + "w"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true });
+    wallMats[sfc + "w"] = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
     wallMats[sfc + "p"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, false), vertexColors: true });
   }
   wallMats.roof ??= new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
@@ -1187,7 +1223,54 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     } satisfies TileWorld;
   }
 
-  const { fogCol, tunnelDark, hemi, sun, SUN_DIR, sky } = shell!;
+  const { tunnelDark, hemi, sun, sky } = shell!;
+  const skyU = (sky.material as THREE.ShaderMaterial).uniforms;
+
+  // ---- after dark: the street lamps nearest you light the street round them -----------------
+  // A few lights, moved to whichever lamps are nearest every so often; always there (dark by
+  // day) so the number of lights never changes and nothing has to be rebuilt at dusk
+  const LAMP_LIGHTS = 4;
+  const lampLights = Array.from({ length: LAMP_LIGHTS }, () => {
+    const l = new THREE.PointLight("#ffc77a", 0, 22, 1.4);
+    scene.add(l);
+    return l;
+  });
+  const lampHeads = new WeakMap<GameMap, Float32Array>();
+  /** Where the glass of every lamp on a map (village or square) is, in scene coordinates. */
+  const headsOf = (m: GameMap) => {
+    let h = lampHeads.get(m);
+    if (!h) {
+      const lamps = (m.d.fx ?? []).filter((f) => f[0] === "lamp");
+      h = new Float32Array(lamps.length * 3);
+      lamps.forEach((f, i) => {
+        const a = f[4] as number;
+        h![i * 3] = (f[1] as number) + 1.2 * Math.sin(a);
+        h![i * 3 + 1] = (f[3] as number) - m.z0 + 6.0;
+        h![i * 3 + 2] = -(f[2] as number) + 1.2 * Math.cos(a);
+      });
+      lampHeads.set(m, h);
+    }
+    return h;
+  };
+  let lampT = 0;
+  const near: [number, number, number, number][] = [];
+  const lampDay = new THREE.Color("#d8d4c2"), lampNight = new THREE.Color("#fff3c8").multiplyScalar(1.6);
+  const placeLamps = (px: number, pz: number) => {
+    near.length = 0;
+    for (const m of [map, ...map.tilesNear(px, pz, 80)]) {
+      const h = headsOf(m);
+      for (let i = 0; i < h.length; i += 3) {
+        const d = (h[i] - px) ** 2 + (h[i + 2] - pz) ** 2;
+        if (d < 80 * 80) near.push([d, h[i], h[i + 1], h[i + 2]]);
+      }
+    }
+    near.sort((a, b) => a[0] - b[0]);
+    lampLights.forEach((l, i) => {
+      const n = near[i];
+      if (n) l.position.set(n[1], n[2], n[3]);
+      l.userData.on = !!n;
+    });
+  };
   const world = scene as THREE.Scene;
 
   // ---- the force field: a shimmering wall around the play area ------------------------------
@@ -1227,14 +1310,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       const inside = (map.tileAt(px, pz) ?? map).inTunnel(px, pz, py) !== null ? 1 : 0;
-      if (inside !== dark) {
-        dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
-        const fog = world.fog as THREE.Fog;
-        fog.color.lerpColors(fogCol, tunnelDark, dark);
-        (world.background as THREE.Color).copy(fog.color);
-        fog.near = 60 - 50 * dark; fog.far = 480 - 300 * dark;
-        sun.intensity = 2.6 * (1 - 0.9 * dark); hemi.intensity = 1.4 * (1 - 0.8 * dark);
-      }
+      if (inside !== dark) dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
+      // the time of day (daylight.ts), and inside a tunnel the daylight goes and the fog turns dark
+      const sk = skyNow(), night = sk.night;
+      const fog = world.fog as THREE.Fog;
+      fog.color.lerpColors(sk.fog, tunnelDark, dark);
+      (world.background as THREE.Color).copy(fog.color);
+      const far = 480 - 150 * night;
+      fog.near = (60 - 20 * night) * (1 - dark) + 10 * dark; fog.far = far + (180 - far) * dark;
+      sun.color.copy(sk.lightCol); sun.intensity = sk.lightI * (1 - 0.9 * dark);
+      hemi.color.copy(sk.hemiSky); hemi.groundColor.copy(sk.hemiGround); hemi.intensity = sk.hemiI * (1 - 0.8 * dark);
+      skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
+      skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
+      for (const m of GLOWING) m.emissiveIntensity = night * 1.1;
+      LAMP_GLASS.color.lerpColors(lampDay, lampNight, night);
+      if ((lampT -= dt) <= 0) { lampT = 0.4; placeLamps(px, pz); }
+      for (const l of lampLights) l.intensity = l.userData.on ? night * 70 * (1 - dark) : 0;
       vegetation.update(px, pz, dt);
       outskirts?.update(px, pz, dt);
       tiles?.update(px, pz, dt, others);
@@ -1246,7 +1337,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const snap = 140 / 2048;
       const cx = Math.round(px / snap) * snap, cz = Math.round(pz / snap) * snap;
       sun.target.position.set(cx, py, cz);
-      sun.position.set(cx + SUN_DIR.x * 200, py + SUN_DIR.y * 200, cz + SUN_DIR.z * 200);
+      sun.position.set(cx + sk.light.x * 200, py + sk.light.y * 200, cz + sk.light.z * 200);
     },
     dispose() {
       tiles?.dispose();
