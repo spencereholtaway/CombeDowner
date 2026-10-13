@@ -3,8 +3,8 @@
 // real place as latitude and longitude and an OS grid reference, and which square of Bath you're
 // in), how fast the game is drawing, and how your links to the other players are doing: whether
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
-// Shift+F3, or the Copy button, puts your position on the clipboard. "+3 hours" moves your own
-// clock on (daylight.ts), to see the streets at another time of day.
+// Shift+F3, or the Copy button, puts your position on the clipboard. T, or "+3 hours", moves your
+// own clock on (daylight.ts), to see the streets at another time of day.
 //
 // Nothing here goes over the network: every player sees their own view of their own links.
 import * as THREE from "three";
@@ -103,7 +103,7 @@ export class DebugPanel {
     this.el = document.createElement("div");
     this.el.id = "debug";
     this.el.hidden = true;
-    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position</button><button type="button" data-k="time">+3 hours</button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
+    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
     document.body.append(this.el);
     this.body = this.el.querySelector("pre")!;
     this.copyBtn = this.el.querySelector('[data-k="copy"]')!;
@@ -113,6 +113,8 @@ export class DebugPanel {
     // keep taps on the panel from reaching the game's touch controls underneath
     this.el.addEventListener("pointerdown", (e) => e.stopPropagation());
     addEventListener("keydown", (e) => {
+      // the buttons can't be clicked while the mouse is steering, so each has a key too
+      if (e.code === "KeyT" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { skipHours(3); this.drawT = 0; return; }
       if (e.code !== "F3") return;
       e.preventDefault();
       if (e.shiftKey) { if (!this.open) this.toggle(true); this.copy(); }
@@ -180,7 +182,7 @@ export class DebugPanel {
     }
     this.copyBtn.textContent = ok ? "Copied" : "Couldn't copy";
     this.game()?.toast(ok ? `Copied: ${text}` : text, 3);
-    setTimeout(() => (this.copyBtn.textContent = "Copy position"), 1500);
+    setTimeout(() => (this.copyBtn.textContent = "Copy position (Shift+F3)"), 1500);
   }
 
   private async askLinks() {
