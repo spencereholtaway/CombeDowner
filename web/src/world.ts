@@ -231,7 +231,8 @@ function makeShell(scene: THREE.Scene) {
             float fade = smoothstep(0.02, 0.25, vP.y);
             // clouds: white by day, lit warm near a low sun, dark grey-blue at night
             float glow = pow(max(dot(vP, sunDir), 0.0), 6.0) * (1.0 - smoothstep(0.1, 0.4, sunDir.y));
-            vec3 cloud = mix(vec3(1.5, 1.5, 1.52), vec3(0.16, 0.19, 0.27), night) + vec3(1.2, 0.55, 0.25) * glow;
+            float low = (1.0 - smoothstep(0.04, 0.3, sunDir.y)) * smoothstep(-0.12, 0.0, sunDir.y);
+            vec3 cloud = mix(vec3(1.5, 1.5, 1.52), vec3(0.16, 0.19, 0.27), night) * mix(vec3(1.0), vec3(1.05, 0.72, 0.55), low) + vec3(1.2, 0.55, 0.25) * glow;
             col = mix(col, cloud, c * 0.85 * fade * (1.0 - 0.35 * night));
             // the stars, in the gaps between clouds
             vec3 sp = vP * 220.0, cell = floor(sp);

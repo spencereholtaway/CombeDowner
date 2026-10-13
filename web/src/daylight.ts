@@ -24,7 +24,7 @@ let skip = 0;
  *  the top of each 24 minutes. */
 const PHASE = 10 / 24;
 
-/** The time of day, as a fraction: 0 midnight, 0.25 six in the morning, 0.5 noon. */
+/** The time of day, as a fraction: 0 midnight, 0.25 six in the morning (sunrise), 0.5 noon. */
 export function timeOfDay(): number {
   const t = FIXED ?? (Date.now() / 1000 / DAY + PHASE);
   return (((t + skip / 24) % 1) + 1) % 1;
@@ -77,10 +77,12 @@ const out: Sky = {
 
 /** The sky now (the same object each time, refilled). */
 export function sky(): Sky {
-  // the sun's hour angle: 0 at noon, due south; it rises in the east (+x) and sets in the west
-  const h = (timeOfDay() - 0.5) * Math.PI * 2;
-  // a long summer-ish day: it's up from about half five till half six
-  const up = 0.82 * Math.cos(h) + 0.2;
+  // the sun's hour angle: 0 when it's due south, at one o'clock (British Summer Time); it rises in
+  // the east (+x) and sets in the west
+  const h = (timeOfDay() - 13 / 24) * Math.PI * 2;
+  // a long summer-ish day: it's up from six in the morning till eight at night, so six is sunrise
+  // and half seven a low golden sun going down
+  const up = 0.82 * Math.cos(h) + 0.22;
   out.sun.set(-Math.sin(h) * 0.9, up, 0.35 + 0.45 * Math.cos(h)).normalize();
   // by night the moon, opposite the sun and high in the south
   if (out.sun.y >= 0) out.light.copy(out.sun);
