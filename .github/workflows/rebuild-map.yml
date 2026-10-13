@@ -6,6 +6,8 @@
 name: Rebuild the map
 
 on:
+  push:
+    branches: [claude/rebuild-map-test]
   workflow_dispatch:
     inputs:
       push:
