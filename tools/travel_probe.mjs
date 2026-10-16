@@ -117,11 +117,15 @@ const onPlat = await page.evaluate(() => {
   const rail = g.world.railway;
   const pl = rail?.platform("Bradford-on-Avon");
   const p = g.player.pos;
+  // a linked train should be dwelling at the platform we've stepped off onto, doors open, just
+  // behind us (railway.ts's linkPhase puts its dwell on the same grid as the one at Bath Spa)
+  const here = rail ? rail.trainsNow().filter((t) => t.stop === "Bradford-on-Avon" && t.open > 0.9 && Math.hypot(t.x - p.x, t.z - p.z) < 60) : [];
   return { hasRail: !!rail, plats: rail ? [...(rail.platforms?.keys?.() ?? [])] : null,
            pl: pl ? pl.centre : null, pos: [Math.round(p.x), Math.round(p.z)],
            railwayIsBoa: rail ? rail.d.platforms.every((q) => q.n === "Bradford-on-Avon") : null,
            sameGameObject: g === window.__before,
            railLink: rail ? (rail.d.links ?? []).map((l) => l.to) : null,
+           trainHere: here.length ? { stop: here[0].stop, open: here[0].open, dist: Math.round(Math.hypot(here[0].x - p.x, here[0].z - p.z)) } : null,
            stage: window.__travelStage ?? "never" };
 });
 
@@ -133,8 +137,10 @@ for (let i = 0; i < 60 && promptAfter; i++) {
   if (promptAfter) await new Promise((r) => setTimeout(r, 100));
 }
 const stalePrompt = promptAfter !== "";
+const noTrain = !onPlat.trainHere;
 console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, promptBefore, promptAfter, errors: errs.slice(0, 3) }));
 console.log(`${stalePrompt ? "FAIL" : "PASS"} the prompt went with the map (was "${promptBefore}", now "${promptAfter}")`);
+console.log(`${noTrain ? "FAIL" : "PASS"} a train is at the platform we stepped off onto (${onPlat.trainHere ? `${onPlat.trainHere.stop}, doors open, ${onPlat.trainHere.dist} m behind` : "none dwelling"})`);
 await browser.close();
 server.close();
-process.exit(stalePrompt ? 1 : 0);
+process.exit(stalePrompt || noTrain ? 1 : 0);
