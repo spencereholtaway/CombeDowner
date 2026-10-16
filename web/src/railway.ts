@@ -9,8 +9,10 @@
 // on to another map (tools/railway.py's LINKS) offers the town at the far end: taking it hands you
 // to main.ts's travel, which rebuilds the game on that map's station platform (see game.ts). The
 // screen is black across the journey, and you step off at the far platform beside the train that's
-// stood there. Both maps keep their own timetable on the clock, so everyone everywhere still sees
-// the same trains, and a friend who misses yours simply catches a later one.
+// stood there: a line's linked route dwells at each end of the link on the same wall-clock grid, so
+// a train is at Bath Spa whenever one is at Bradford-on-Avon. Both maps keep their own timetable on
+// the clock, so everyone everywhere still sees the same trains, and a friend who misses yours
+// simply catches a later one.
 //
 // Who decides what: nobody. The trains run to a timetable worked out from the clock, so every
 // player sees every train in the same place without anything going over the network. You decide
@@ -177,6 +179,8 @@ export class Railway {
       this.routes.push(route);
     });
     this.routes.forEach((r, i) => {
+      const grid = this.linkPhase(r);
+      if (grid !== null) { r.phase = grid; return; }
       for (let q = 0; q < i; q++) {
         const o = this.routes[q], shared = r.tracks.find((t) => o.tracks.includes(t));
         if (shared === undefined) continue;
@@ -185,6 +189,42 @@ export class Railway {
       }
       r.phase = (i * 97) % HEADWAY;
     });
+  }
+
+  /** The phase that puts a linked route's dwell at the station it carries on from on the shared
+   *  dwell grid: with it the route's trains stand at that station, doors open, at wall-clock
+   *  moments a whole headway apart, and every map works those moments out the same way from the
+   *  clock every player already has. A train dwells at Bath Spa at the same moments one dwells at
+   *  Bradford-on-Avon, so a traveller who boards during a dwell steps off with a train at the
+   *  platform behind them on the far map too (docs/bradford-on-avon.md, stage 3). The routes of a
+   *  line that stop at its linked station are spread evenly across the grid in order, so a line's
+   *  two directions dwell half a headway apart — neither standing at one platform together nor
+   *  meeting on the track they share. Null if this route doesn't carry on from a station it stops
+   *  at. */
+  private linkPhase(r: Route): number | null {
+    const linked = this.routes.filter((o) => this.linkOf(o) !== null);
+    const l = this.linkOf(r);
+    if (!l) return null;
+    const onLine = linked.filter((o) => o.name === r.name);
+    const j = this.dwellIndex(r, l.station);
+    if (j < 0) return null;
+    const rank = onLine.indexOf(r);
+    return (((rank * HEADWAY) / onLine.length - j * STEP) % HEADWAY + HEADWAY) % HEADWAY;
+  }
+
+  /** The link a route carries on from, if it serves one: which line carries on, and the station
+   *  here it stops at. Null if the route carries on nowhere. */
+  private linkOf(r: Route) {
+    return (this.d.links ?? []).find((q) => q.line === r.name && r.stops.some(([, n]) => n === q.station)) ?? null;
+  }
+
+  /** The run index a route's dwell at `station` begins at (the timetable holds s still through it),
+   *  or -1 if the route stops nowhere near it. */
+  private dwellIndex(r: Route, station: string): number {
+    const at = r.stops.find(([, n]) => n === station)?.[0];
+    if (at === undefined) return -1;
+    for (let i = 0; i < r.run.length - 1; i++) if (Math.abs(r.run[i] - at) < 0.05 && Math.abs(r.run[i + 1] - at) < 0.05) return i;
+    return -1;
   }
 
   /** How far along a route each half second of a run gets, stopping at its stations. */

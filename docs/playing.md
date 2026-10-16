@@ -197,9 +197,10 @@ them down. Get up on the roof of one and it takes you with it.
 You can get on a train at a station, too. Stand on a platform while its doors are open and press E:
 it offers the towns its route carries on to, and the one from Bath Spa to **Bradford-on-Avon**
 rides the valley line through Freshford and Avoncliff and sets you down on the platform there. The
-screen goes black for the journey, and it's the same game: same room, same scoreboard. Take a train
-back, or catch a later one with your friends. Bradford-on-Avon is a town of its own on the map,
-built from the same data as Bath.
+screen goes black for the journey, and it's the same game: same room, same scoreboard. You step off
+with the train you rode standing at the platform behind you, doors open, ready to take you on or
+back. Take a train back, or catch a later one with your friends. Bradford-on-Avon is a town of its
+own on the map, built from the same data as Bath.
 
 The cable car Curo proposed in 2017 runs from Mulberry Park down to the river at Bath Spa, out over
 Lyncombe Vale to a tower on Beechen Cliff. Walk into a cabin while its doors are open and it takes

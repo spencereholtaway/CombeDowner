@@ -197,7 +197,10 @@ Bath's files must not change in this stage.
 - For a linked route, give its trains **the same service numbers on both maps**: service k is at
   Bath Spa at time `T(k)` and at Bradford-on-Avon at `T(k) + journey`. Today the phase comes from
   the route's index (`railway.ts:160-168`); a linked route takes its phase from the link instead,
-  so it's the same on both maps.
+  so it's the same on both maps. **Done** (`linkPhase` in `railway.ts`): a linked route's dwell at
+  its station is put on a shared wall-clock grid, the line's routes spread evenly across it, so a
+  train dwells at Bath Spa whenever one dwells at Bradford-on-Avon and a traveller steps off with a
+  train at the platform behind them.
 - A smoothed clock for every train, as `cableway.ts:295-302`.
 
 **Check (Mac, `kind: build`)**: Bath's rail file gains the new routes, and its four existing
