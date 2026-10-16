@@ -1890,12 +1890,12 @@ export class Game {
     this.askLadder({ op: "up", r: at });
   }
 
-  /** E at the foot of a ladder: take it down to carry. Returns true if E was for that. */
+  /** E at the foot of a ladder or on the roof over its top: take it down to carry. Returns true if E was for that. */
   private useLadder(): boolean {
     const p = this.player, me = this.net.selfId;
     if (!this.alive || this.riding || this.basket || p.ladder || performance.now() - this.ladderAsked < 800) return false;
     if (this.ladders.carriers.has(me)) return false;
-    const L = this.ladders.footAt(p.pos.x, p.pos.y, p.pos.z);
+    const L = this.ladders.footAt(p.pos.x, p.pos.y, p.pos.z) ?? this.ladders.topAt(p.pos.x, p.pos.y, p.pos.z);
     if (!L) return false;
     this.askLadder({ op: "down", i: L.id, drop: this.held ?? undefined });
     return true;
@@ -3514,7 +3514,7 @@ export class Game {
       }
       return this.aimText;
     }
-    const L = this.ladders.footAt(p.pos.x, p.pos.y, p.pos.z);
+    const L = this.ladders.footAt(p.pos.x, p.pos.y, p.pos.z) ?? this.ladders.topAt(p.pos.x, p.pos.y, p.pos.z);
     return L ? `<b>${use}</b> Take the ladder down · walk into it to climb` : "";
   }
   private aimT = 0;

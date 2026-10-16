@@ -1,8 +1,9 @@
 // A check on ladders (web/src/ladders.ts) in the real game: a built game (web/dist) served to a muted
 // headless Chrome that can't make a sound or take the mouse (as tools/shoot.mjs does). In one tab,
 // in a local test room, at a building in the village and one in town (a full-detail square):
-// - hands the player a ladder, faces them at the wall and presses E: one should stand there;
+// - hands the player a ladder, faces them at the wall and presses X: one should stand there;
 // - holds W: up the ladder and off onto the roof, where they should stand;
+// - presses E on the roof over its top: taken down from the top too;
 // - turns round and holds W: off the edge over the top of it and down to the foot;
 // - presses E at the foot: taken down, and carried again;
 // - drops a ladder pickup at their feet to walk over.
@@ -165,16 +166,16 @@ try {
     }, sp);
     await wait(600);
     await A.screenshot({ path: `${opt.out}/${S.name}-1-facing.png` });
-    await A.evaluate(() => window.__key("KeyE", true));
+    await A.evaluate(() => window.__key("KeyX", true));
     await wait(100);
-    await A.evaluate(() => window.__key("KeyE", false));
+    await A.evaluate(() => window.__key("KeyX", false));
     await wait(1600);
     const up = await A.evaluate(() => {
       const g = window.__game(), L = [...g.ladders.up.values()][0];
       return { n: g.ladders.up.size, carrying: g.ladders.carriers.has(g.net.selfId), L: L && { x: L.x, z: L.z, nx: L.nx, nz: L.nz, y0: L.y0, y1: L.y1, out: L.out, scale: L.ladder.scale.y } };
     });
     rec.up = up;
-    check(`${S.name}: E puts it up`, up.n === 1 && !up.carrying, JSON.stringify(up.L));
+    check(`${S.name}: X puts it up`, up.n === 1 && !up.carrying, JSON.stringify(up.L));
     if (!up.L) continue;
     const L = up.L;
     // a look at it from the side
@@ -204,6 +205,28 @@ try {
     await A.evaluate(() => { const p = window.__game().player; p.pitch = -0.35; });
     await wait(300);
     await A.screenshot({ path: `${opt.out}/${S.name}-4-on-the-roof.png` });
+    // take it down from the top: E on the roof over the ladder's top
+    await A.evaluate((L) => {
+      const p = window.__game().player;
+      p.pos.set(L.x + L.nx * 0.6, L.y1, L.z + L.nz * 0.6); p.onGround = true;
+    }, L);
+    await wait(300);
+    const topHint = await A.evaluate(() => document.getElementById("usehint")?.textContent ?? "");
+    await A.evaluate(() => window.__key("KeyE", true));
+    await wait(100);
+    await A.evaluate(() => window.__key("KeyE", false));
+    await wait(800);
+    const fromTop = await A.evaluate(() => { const g = window.__game(); return { n: g.ladders.up.size, carrying: g.ladders.carriers.has(g.net.selfId) }; });
+    check(`${S.name}: E on the roof over its top takes it down`, fromTop.n === 0 && fromTop.carrying, `hint "${topHint}"`);
+    // stand the same ladder back up exactly, so the rest of the run has it (the host's own say)
+    await A.evaluate((L) => {
+      const g = window.__game(), me = g.net.selfId;
+      g.ladders.give(me);
+      g.ladders.put(me, { x: L.x, z: L.z, nx: L.nx, nz: L.nz, y0: L.y0, y1: L.y1, out: L.out });
+      const p = g.player;
+      p.pos.set(L.x + L.nx * 0.6, p.pos.y, L.z + L.nz * 0.6);
+    }, L);
+    await wait(800);
     // and down: turn round, back to the edge over the ladder, and walk off it
     await A.evaluate((L) => {
       const p = window.__game().player;
@@ -267,9 +290,9 @@ try {
     await A.evaluate((sp) => { const g = window.__game(), p = g.player; p.pos.set(sp.x, sp.y, sp.z); p.yaw = sp.yaw; p.onGround = true; }, sp);
     await B.evaluate((sp) => { const g = window.__game(), p = g.player; p.pos.set(sp.x - 6 * Math.sin(sp.yaw + 2.6), sp.y, sp.z - 6 * Math.cos(sp.yaw + 2.6)); p.yaw = sp.yaw + 2.6 + Math.PI; p.pitch = 0.4; }, sp);
     await wait(2500);
-    await A.evaluate(() => window.__key("KeyE", true));
+    await A.evaluate(() => window.__key("KeyX", true));
     await wait(100);
-    await A.evaluate(() => window.__key("KeyE", false));
+    await A.evaluate(() => window.__key("KeyX", false));
     await wait(2500);
     const bs = await B.evaluate(() => window.__game().ladders.up.size);
     const as = await A.evaluate(() => window.__game().ladders.up.size);

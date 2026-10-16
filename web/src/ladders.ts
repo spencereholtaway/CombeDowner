@@ -204,6 +204,15 @@ export class Ladders {
     return null;
   }
 
+  /** The ladder whose top feet at (x, y, z) on a roof are standing over, to take down, if any. */
+  topAt(x: number, y: number, z: number): Standing | null {
+    for (const L of this.up.values()) {
+      const tx = L.x + L.nx * 0.6, tz = L.z + L.nz * 0.6;
+      if (Math.hypot(tx - x, tz - z) < 1.3 && Math.abs(y - L.y1) < 1) return L;
+    }
+    return null;
+  }
+
   /** Run new ones up to the roof. */
   update(dt: number) {
     this.t += dt;

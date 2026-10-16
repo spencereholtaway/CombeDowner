@@ -152,8 +152,8 @@ best.
 Ladders turn up round the streets (white on the minimap), and a ladder lad always leaves his behind
 when you put him down. Walk over one to carry it, face a wall and press X (Put up) and it runs up
 to the roof's edge, up to 15 m. Anyone can climb it: walk into its foot and W goes up. To come
-down, walk off the roof's edge over the top of it, and Space lets go. E at the foot takes it down
-again.
+down, walk off the roof's edge over the top of it, and Space lets go. E at the foot, or on the roof
+over its top, takes it down again.
 
 You carry one thing at a time, a ride or a ladder, shown over your rounds bottom right. X uses it;
 with your hands full, E swaps what you've got for what you're standing on.
