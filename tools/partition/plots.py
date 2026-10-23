@@ -130,6 +130,7 @@ class Parcels:
     never a rule about where its boundary runs."""
 
     def __init__(self, polys):
+        polys = list(polys or [])
         self.polys = polys
         self.lines = [LineString(r.coords)
                       for p in polys for pg in (p.geoms if p.geom_type == "MultiPolygon" else [p])
@@ -158,11 +159,11 @@ class Parcels:
         if self.tree is None:
             return None
         p = house.representative_point()
-        for k in self.tree.query(p):
-            k = int(k)
-            if self.polys[k].contains(p):
-                return k
-        return None
+        hits = [int(k) for k in self.tree.query(p) if self.polys[int(k)].contains(p)]
+        if not hits:
+            return None
+        return min(hits, key=lambda k: (self.polys[k].area, self.polys[k].centroid.x,
+                                        self.polys[k].centroid.y, k))
 
 
 def on_line(tree, lines, p, tol):
@@ -220,15 +221,14 @@ def _drop_dangling(edges, others, B):
         if not dangling:
             break
         dropped_any = False
-        ends = {i: (Point(edges[i][0].coords[0]), Point(edges[i][0].coords[-1])) for i in drawn}
-        for p in dangling:
-            for i in drawn:
-                if not keep[i]:
-                    continue
-                a, b = ends[i]
-                if a.distance(p) <= 1.0 or b.distance(p) <= 1.0:
-                    keep[i] = False
-                    dropped_any = True
+        # the end that dangles is one of the piece's own coordinates, so only the piece that owns
+        # it goes: a neighbour merely passing within a metre of it is held elsewhere
+        owners = {(p.x, p.y) for p in dangling}
+        for i in drawn:
+            c = edges[i][0].coords
+            if tuple(c[0][:2]) in owners or tuple(c[-1][:2]) in owners:
+                keep[i] = False
+                dropped_any = True
     # six fields out: the two labels either side go with them, but not the `keep` flag itself
     return [(s, kind, sup, src, pc, sides) if k else (s, "none", sup, "parcel-nothing", pc, sides)
             for (s, kind, sup, src, pc, _keep, sides), k in zip(edges, keep)]
@@ -284,7 +284,7 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
     segs = [np.asarray(l.coords, float) for l in lines if l.geom_type == "LineString" and l.length > 1]
     if not segs:
         return []
-    cos_tol = math.cos(math.radians(180 - ang_tol))
+    cos_tol = math.cos(math.radians(ang_tol))
     used = [False] * len(segs)
     out = []
     for i in range(len(segs)):
@@ -302,9 +302,9 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
                     continue
                 c, e = segs[j][0], segs[j][-1]
                 for (p, q) in ((c, e), (e, c)):
-                    if np.hypot(*(p - b)) <= gap and (np.hypot(*q) and np.dot(q - p, d) / (np.hypot(*(q - p)) or 1) > cos_tol):
+                    if np.hypot(*(p - b)) <= gap and (np.hypot(*(q - p)) and np.dot(q - p, d) / (np.hypot(*(q - p)) or 1) > cos_tol):
                         pts += [q]; used[j] = True; changed = True; break
-                    if np.hypot(*(a - p)) <= gap and (np.hypot(*q) and np.dot(p - q, -d) / (np.hypot(*(p - q)) or 1) > cos_tol):
+                    if np.hypot(*(a - p)) <= gap and (np.hypot(*(p - q)) and np.dot(p - q, d) / (np.hypot(*(p - q)) or 1) > cos_tol):
                         pts = [q] + pts; used[j] = True; changed = True; break
                 if changed:
                     break
@@ -415,7 +415,9 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
             other = np.array([h.centroid.x, h.centroid.y])
             m = (c + other) / 2
             gap = other - c; gap = gap / (np.hypot(*gap) or 1)
-            near = j if np.hypot(*(other - m)) < np.hypot(*(c - m)) else i
+            # the centroids are equidistant from m by construction, so compare the walls: the house whose
+            # footprint reaches nearer the middle of the gap sets the line's direction
+            near = j if h.distance(Point(m)) < g.distance(Point(m)) else i
             f = fbt[near]
             b = f if abs(np.dot(gap, f)) < 0.7 else np.array([-f[1], f[0]])
             line = _through(block, m, b, geoms)
@@ -1580,7 +1582,7 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
                     kind = ek if (sup >= SUPPORT and ek) else "none"
                 else:
                     kind = ek if (sup >= SUPPORT and ek) else front_style(zone_at(m.x, m.y), m.x, m.y, row_at(m.x, m.y) if row_at else None)
-                edges.append((s, kind, sup, "front", pc, True, key)); continue
+                edges.append((s, kind, sup, "front", pc, kind != "none", key)); continue
             # a boundary between plots, or between a plot and open land. What it is made of comes
             # from the pair of labels, as in stage 1 (a boundary between two gardens is a fence,
             # one against open land a hedge) and from the lidar where it saw one.

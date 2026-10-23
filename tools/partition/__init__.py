@@ -75,6 +75,8 @@ def load_layer(raw, name, bbox):
     path = os.path.join(raw, name + ".geojson")
     if not os.path.exists(path):
         xz = os.path.join(ROOT, "data", MAP, name + ".geojson.xz")
+        if name == "parcels" and not os.path.exists(xz):
+            return []                       # the plots then follow the evidence alone
         feats = json.load(lzma.open(xz))["features"]
     else:
         feats = json.load(open(path))["features"]

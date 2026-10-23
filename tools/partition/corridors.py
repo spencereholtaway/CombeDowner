@@ -89,13 +89,17 @@ def fit_cross_section(edge, ts, L, R, hold_out=False):
     for t in ts:
         w = ideal
         lanes = obs_at(t, "lanes"); width = None if hold_out else obs_at(t, "width")
-        try:
-            if lanes:
+        # parsed apart: a lanes tag like "2;1" must not hide a good width beside it
+        if lanes:
+            try:
                 w = max(minimum, float(lanes) * LANE)
-            if width:
+            except ValueError:
+                pass
+        if width:
+            try:
                 w = float(width)
-        except ValueError:
-            pass
+            except ValueError:
+                pass
         pl = pr = PAVE[0]
         sw = obs_at(t, "sidewalk")
         if sw == "left":

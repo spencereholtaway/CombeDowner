@@ -356,15 +356,22 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     return metrics
 
 
+def paths_from(argv):
+    """The raw folder and the terrain folder a command line names. The terrain follows `--raw`
+    unless it is named itself."""
+    raw = os.path.join(ROOT, "data", "raw", MAP, "wide")
+    if "--raw" in argv:
+        raw = argv[argv.index("--raw") + 1]
+    terrain = os.path.join(raw, "terrain15")
+    if "--terrain" in argv:
+        terrain = argv[argv.index("--terrain") + 1]
+    return raw, terrain
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     ti, tj, out = int(argv[0]), int(argv[1]), argv[2]
-    raw = os.path.join(ROOT, "data", "raw", MAP, "wide")
-    terrain = os.path.join(raw, "terrain15")
-    if "--raw" in argv:
-        raw = argv[argv.index("--raw") + 1]
-    if "--terrain" in argv:
-        terrain = argv[argv.index("--terrain") + 1]
+    raw, terrain = paths_from(argv)
     return build(ti, tj, out, raw, terrain)
 
 

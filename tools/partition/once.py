@@ -37,6 +37,7 @@ import os
 import time
 
 import numpy as np
+import shapely
 from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
@@ -84,8 +85,17 @@ def _poly_json(g, dec=None):
     such a ring into a solid slab over the ground it had cut out, so reading it back gives a face that
     overlaps its neighbours (measured: 28,126 m² of overlap on the village square against a partition
     that has none, 411,075 m² across the map, and every boundary drawn twice explains the 10.5 km of
-    extra edges and their `inferred` labels)."""
-    if g.is_empty or g.geom_type != "Polygon":
+    extra edges and their `inferred` labels).
+
+    A MultiPolygon is a list of such polygons, one level deeper. A pavement whose width drops to
+    nothing partway along comes out of the offset as two pieces, and writing nothing for it would
+    leave the whole pavement to the gardens."""
+    if g.is_empty:
+        return None
+    if g.geom_type == "MultiPolygon":
+        parts = [_poly_json(p, dec) for p in g.geoms if not p.is_empty]
+        return parts or None
+    if g.geom_type != "Polygon":
         return None
     rings = [[(x, y) for x, y in g.exterior.coords]]
     rings += [[(x, y) for x, y in r.coords] for r in g.interiors]
@@ -94,34 +104,41 @@ def _poly_json(g, dec=None):
     return [[[round(x, dec), round(y, dec)] for x, y in r] for r in rings]
 
 
-def _poly_json_valid(g, dec=None):
-    """A polygon's exterior, made valid at the precision actually written.
+def _poly_json_parts(g, dec=None):
+    """A polygon made valid at the precision actually written, as a list of `_poly_json` rings, one
+    for each part it falls into.
 
     The coordinates go out at full precision by default (rounding to 3 decimals made 366 of 57,279
     plots self-intersect and collapsed 185 slivers to nothing), but a ring can still come out
     self-intersecting from `difference`, and a self-intersecting outline fails GEOS later with "side
-    location conflict" wherever it is used. `buffer(0)` repairs it at the precision being written, so
-    what is read back is what was measured."""
+    location conflict" wherever it is used. `make_valid` repairs it at the precision being written, so
+    what is read back is what was measured.
+
+    A bow-tie repairs to two polygons, and both are ground: keeping only the larger left the other
+    uncovered. The caller writes one row for each part."""
     a = _poly_json(g, dec)
     if a is None:
-        return None
+        return []
     q = _poly_from(a)
     if q.is_valid:
-        return a
-    fixed = q.buffer(0)
+        return [a] if q.geom_type == "Polygon" else [_poly_json(p, dec) for p in q.geoms]
+    # `make_valid` and not `buffer(0)`: the buffer keeps one lobe of a bow-tie and loses the other
+    fixed = shapely.make_valid(q)
     if fixed.is_empty:
-        return None                 # the face has no area at this precision: there is nothing to write
-    best = max(([p for p in fixed.geoms if p.geom_type == "Polygon"] if hasattr(fixed, "geoms")
-                else [fixed]), key=lambda p: p.area, default=None)
+        return []                   # the face has no area at this precision: there is nothing to write
+    parts = []
+    for g in (fixed.geoms if hasattr(fixed, "geoms") else [fixed]):
+        parts += [p for p in (g.geoms if hasattr(g, "geoms") else [g])
+                  if p.geom_type == "Polygon" and not p.is_empty]
     # `buffer(0)` can return the same invalid ring, in which case writing the rounded original is
     # still better than writing the repaired empty: the caller drops a None, so a face that is
     # *tiny* must not become a face that is *missing*.
-    return _poly_json(best, dec) if best is not None else a
+    return [_poly_json(p, dec) for p in parts] or [a]
 
 
 def _poly_from(a):
     """A polygon read back from `_poly_json`: a list of rings, the first the exterior and the rest its
-    holes. `None` (or an empty list) is an empty polygon.
+    holes, or a list of those for a MultiPolygon. `None` (or an empty list) is an empty polygon.
 
     Every reader goes through this, so the ring list is understood in one place and a face that has
     holes cannot be read as a solid slab by accident."""
@@ -129,6 +146,8 @@ def _poly_from(a):
         return Polygon()
     if isinstance(a[0][0], (int, float)):        # an old exterior-only list, for a stale file
         return Polygon(a)
+    if isinstance(a[0][0][0], (list, tuple)):    # several polygons
+        return unary_union([Polygon(p[0], p[1:]) for p in a])
     return Polygon(a[0], a[1:])
 
 
@@ -200,7 +219,7 @@ def write_parents(out, blocks):
 
     Written sorted by a geometric key, like every list a pass writes."""
     blocks = sorted(blocks, key=_geom_key)
-    json.dump([dict(k=_geom_key(b), xy=_poly_json_valid(b)) for b in blocks],
+    json.dump([dict(k=_geom_key(b), xy=xy) for b in blocks for xy in _poly_json_parts(b)],
               open(parents_path(out), "w"))
     return blocks
 
@@ -307,6 +326,15 @@ def read_graph(out):
             for r in json.load(open(graph_path(out)))]
 
 
+def clear_owned(out, *names):
+    """Remove the per-square files a pass is about to write. A rerun that owns fewer squares or rows
+    than the last one would otherwise leave the old files beside the new, and the readers' glob would
+    take both."""
+    for name in names:
+        for f in glob.glob(os.path.join(out, "*", name)):
+            os.remove(f)
+
+
 def pass_streets(out, raw, jobs=4, log=print):
     """Fit each street edge once, in the square that owns its midpoint, and write
     `<out>/<ti>_<tj>/corridors.json`.
@@ -315,6 +343,7 @@ def pass_streets(out, raw, jobs=4, log=print):
     one task per owning square, each reading the raw data for the bbox of the edges it owns. Nothing
     about an edge's fit depends on which square built it - that is what
     `test_an_edges_fit_is_the_same_from_two_windows` holds."""
+    clear_owned(out, "corridors.json", "held-out.json")
     edges = build_graph(out, raw, log=log)
     bb = map_bbox()
     owned = collections.defaultdict(list)
@@ -612,6 +641,7 @@ def pass_blocks(out, raw, jobs=4, log=print):
     log(f"  pass 2: {len(cleaned)} cleaned footprints ({closed} sliver gaps closed)")
     del D
     t = time.time()
+    clear_owned(out, "blocks.json")
     pieces, blocks = worked_pieces(corridors, cleaned, bb, log=log)
     log(f"  pass 2: {len(pieces)} worked blocks in {time.time() - t:.0f}s")
     # the parent blocks are written once, so a task dividing a piece can cut the whole block it is a
@@ -622,8 +652,10 @@ def pass_blocks(out, raw, jobs=4, log=print):
     # than recomputing it, and so the "same outline from two windows" test has a file to read
     # the outline is made valid at the file's precision as it is written, because it is read back
     # and divided: a self-intersecting ring there fails GEOS wherever it is used
-    json.dump([dict(key=_geom_key(p), over=over, xy=_poly_json_valid(p))
-               for p, over in pieces],
+    # a piece that repairs to several parts is several rows, and ownership below is by row
+    rows = [(xy, over) for p, over in pieces for xy in _poly_json_parts(p)]
+    pieces = [(_poly_from(xy), over) for xy, over in rows]
+    json.dump([dict(key=_geom_key(p), over=over, xy=xy) for (p, over), (xy, _) in zip(pieces, rows)],
               open(blocks_path(out), "w"))
 
     # Ownership by the piece's representative point, as the plan says. Not its bounding box's
@@ -788,7 +820,7 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
             # same reason: rounding a thin plot's coordinates to the file's precision can make it
             # self-intersect, and pass 3 intersects the plots it reads (measured: 366 of 57,279
             # plots came back invalid, and the first one failed the assembling square outright)
-            plots=[dict(kind=k, bi=b, xy=_poly_json_valid(g)) for g, k, b in p],
+            plots=[dict(kind=k, bi=b, xy=xy) for g, k, b in p for xy in _poly_json_parts(g)],
             edges=[dict(a=_geom_key(s), xy=_line_json(s), la=_label_json(a1), lb=_label_json(b1))
                    for s, a1, b1 in e]))
     json.dump(rows, open(os.path.join(out_dir, "blocks.json"), "w"))
