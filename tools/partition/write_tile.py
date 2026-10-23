@@ -626,6 +626,15 @@ def unpaved_ground(zone, T, green):
 PLAZA_BEYOND = 1.5      # metres past a street's pavement where paving stops being that pavement
 
 
+def _minus(a, b):
+    """a less b, snapped to a millimetre where GEOS cannot settle the overlay of two nearly
+    coincident outlines (a plaza's edge laid along a street's pavement)."""
+    try:
+        return a.difference(b)
+    except shapely.errors.GEOSException:
+        return shapely.set_precision(a, 1e-3).difference(shapely.set_precision(b.buffer(0), 1e-3))
+
+
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
@@ -691,8 +700,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     taken = taken.union(path)
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
                                              for r in rows if (r[0], r[1]) != (r[2], r[3])] or [Polygon()])
-    drive = strips(dv, DRIVE_WIDTH / 2).intersection(square).difference(taken)
-    front = strips(fp, FRONT_PATH_HALF).intersection(square).difference(taken.union(drive))
+    drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
+    front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
 
     pieces = []
     for cls, g in (("carriageway", road), ("pavement", pave), ("path", path), ("front", front), ("drive", drive),

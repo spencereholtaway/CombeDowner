@@ -510,16 +510,20 @@ Six spots compared square by square against main's tiles.
   its plots are wedges, and only re-dividing it fixes that. Trade-off: the cut is made on the drawn line, not on the plots,
   which keep their shapes; capping the plots in `make_plots` (and stopping a plot at farmland) is the
   real fix and needs the plots rebuilt.
-- [ ] **Paving in squares and pedestrian streets lies on the ground.** A pavement face that belongs to
-  no kerbed street (a pedestrian street, Abbey Churchyard) is set 0.13 m below the ground, so the
-  game's pavement lift leaves it flush with the paths across it (`PLAZA_SINK`). It relies on the game's
-  `LIFT` figures in `world.ts`; if those change, change it too. A `living_street` keeps its kerbs.
+- [ ] **Paving in squares and pedestrian streets lies on the ground.** The game stands a pavement face
+  a kerb above the ground it pulls down round it, so every strip of pavement face across a plaza
+  (Abbey Churchyard, Stall Street) was a ledge. Pavement more than 1.5 m beyond any kerbed street's
+  pavement, and a pedestrian street's carriageway, are now written as `drive` faces, which the game
+  lays on the ground with no kerb. Trade-off: they take the drive's colour, a shade darker than a
+  pavement's; a kind of their own would need the game changed. A `living_street` keeps its kerbs.
 - [ ] **A bridge's pavements are made equal**, because the game stands both parapets at the wider
   pavement's edge and a narrower one left a slot to the river (Midland Bridge Road). A narrow side is
-  drawn up to 0.5 m wider than its face.
+  drawn up to 0.5 m wider than its face. A side with no pavement, or a bridge with buildings on its
+  deck, is left alone (a path often has its own deck there; Pulteney Bridge has its shops).
 - [ ] **A street over the canal's tunnel is not a bridge.** Pass 1 marked Sydney Road a span over the
-  canal where the canal runs in its tunnel, and the deck cut out of the faces left a dark slot beside
-  the parapet. The writer clears a span whose only crossing is the canal's tunnel. Fix it in
+  canal where the canal runs in its tunnel, and the deck cut out of the faces left a gap in the
+  pavement, a dark slot down to the ground beside the wall. The writer clears a span whose only
+  crossing is the canal's tunnel (nothing else on the ground under it). Fix it in
   `structures.py` when pass 1 is next rebuilt.
 - [ ] **Mapped walls and hedges in open land stand again.** The writer took only main's lidar runs
   (those with a height) as the measured barriers to stand in open land, so a mapped field hedge or
