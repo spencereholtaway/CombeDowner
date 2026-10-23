@@ -590,6 +590,35 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   lines only), so a guessed fence can stand 1.5 to 5 m beside a mapped one until the plots are
   rebuilt; a mapped barrier running along a path's middle is kept, and the path drawn beside it.
 
+- [ ] **Guessed boundaries take a mapped barrier's kind, and unsupported guessed walls and hedges go**
+  (`settle.py`, `standing.py`). Most of the precision lost to main was a guess lying on a mapped
+  barrier while keeping its own kind (a back fence rerolled from a hedge on the line of a mapped hedge
+  or wall, a front wall on a mapped fence). Now a guess takes the mapped kind wholly where the barrier
+  runs over half of it, and on the stretches it runs along (3 m or more) where it doesn't
+  (`restyle`, which `walls_and_gates` draws as separate runs). Then a guessed front or rule-drawn wall
+  or hedge loses the stretches with nothing standing within 4 m in the lidar (0.5 m and up, less
+  buildings and specks), nor a mapped or lidar barrier. 3, 4 and 5 m scored the same within noise
+  on 20 squares; 3 m took out 14.7 km there, 4 m 9.8 km, 5 m 6.2 km. Parcel edges are left alone
+  (a registered edge is evidence), which also left the scores as they were. Trade-offs: the edge is
+  relabelled stretch by stretch, so a stretch shorter than 3 m beside a mapped barrier keeps the guess;
+  plot edges drawn on a parcel edge lost 0.004 of recall (front walls on parcel lines with nothing
+  standing go); the nDSM is cached under `data/raw/.../lidar/ndsm/`, and a square without the lidar
+  keeps every guess.
+- [ ] **Listed railings and walls are on** (`tools/listed.py`, `data/combe-down/listed.geojson.xz`,
+  650 points). A guessed front whose house is within 4 m of a listed entry naming railings takes
+  railings, or a stone wall for one naming walls, and stands even where the centre's rule takes
+  fronts away (no garden, on the pavement, a shop): the Georgian areas' railings. A mapped barrier
+  along it still wins, except a mapped fence, which stays railings. About 1.2 km more railings in
+  0,3 and 1 km in 0,4; st-crescent and the terraces at -1669,2175 show them at the back of the
+  pavement. Boundary scores held: the scoreboard counts `railing` as no kind, so a fence front
+  turned to railings beside an OSM fence (`fence_type=railings`) reads as a lost fence (0,4 fence
+  recall 0.911 to 0.903). Counting railings as fences in the scoreboard would be fairer. The points
+  say which house, not where the line runs, so a corner house gets them on both fronts.
+- Scores after both, full write against main: wall / fence / hedge recall 0.951 / 0.918 / 0.991
+  (before 0.924 / 0.908 / 0.979, main 0.900 / 0.886 / 0.960); precision 0.970 / 0.951 / 0.987
+  (before 0.931 / 0.924 / 0.978, main 0.969 / 0.945 / 0.986); presence 0.967 unchanged. No check_map
+  count moved.
+
 ## Spencer's main merged in (23 October)
 
 - [ ] **Main merged at 6235fe9** (83 commits): the roof gate, OSTN15 for the lidar, and trees and

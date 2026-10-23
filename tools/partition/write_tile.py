@@ -52,7 +52,8 @@ from shapely.strtree import STRtree
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
-from partition.settle import house_kinds, load_evidence, owners_near, settle
+from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle
+from partition.standing import Standing
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
 from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
@@ -1412,7 +1413,17 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         if at < L:
             keep.append((at, L))
 
+        restyle = [(max(0.0, ra), min(L, rb), rk) for ra, rb, rk in e.get("restyle") or () if rk in BARRIER]
+        if restyle:
+            ends = sorted({v for ra, rb, _ in restyle for v in (ra, rb)})
+            keep = [(p, q) for a, b in keep for p, q in zip([a] + [v for v in ends if a < v < b],
+                                                             [v for v in ends if a < v < b] + [b])]
+
         for a, b in keep:
+            mid = (a + b) / 2
+            kind = next((rk for ra, rb, rk in restyle if ra <= mid <= rb), e["kind"])
+            style = BARRIER[kind]
+            height = HEIGHT.get(style, 1.2)
             sub = substring(line, a, b)
             if sub.is_empty or sub.length < 0.1:
                 continue
@@ -1460,8 +1471,9 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             za, zb = ground(pa.x, pa.y), ground(pb.x, pb.y)
             if za is None or zb is None:
                 continue
+            kind = next((rk for ra, rb, rk in restyle if ra <= (a + b) / 2 <= rb), e["kind"])
             gaps.append([round(pa.x, 1), round(pa.y, 1), round(pb.x, 1), round(pb.y, 1),
-                         round((za + zb) / 2, 1), style])
+                         round((za + zb) / 2, 1), BARRIER[kind]])
     # a gate needs wall at both sides: where the road took the wall off one side (or both) there is
     # only a gap in a boundary, which needs no gate
     if out and gaps:
@@ -2395,6 +2407,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     shapely.prepare(streets)
     settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
                      tile.get("sh") or [], row_at, streets)
+    footprints = [Polygon(b["r"][0]).buffer(0) for b in tile.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
+    settled["unstood"] = drop_unstood(part, evidence, Standing(sq, footprints))
 
     # the corridors pass 1 fitted, and this square's own share of them
     own = [r for r in rows if LineString(r[0]["line"]).intersects(box(*sq))]
@@ -2520,7 +2534,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
             print(f"  barriers cut at the road: {br_in_road:.0f} m dropped for lying wholly inside "
                   f"a carriageway")
         print(f"  guessed boundaries left out: {settled['front']:.0f} m of front with no garden, "
-              f"{settled['lane']:.0f} m along lanes, {settled['far']:.0f} m away from any garden")
+              f"{settled['lane']:.0f} m along lanes, {settled['far']:.0f} m away from any garden, "
+              f"{settled.get('unstood', 0):.0f} m of wall or hedge with nothing standing near")
         if fp_cut or fp_walled:
             print(f"  front paths meeting a wall: {fp_cut} cut short, {fp_walled} left out")
         if fp_dropped:
