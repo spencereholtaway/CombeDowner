@@ -497,7 +497,7 @@ Six spots compared square by square against main's tiles.
 - [ ] **Fences down country lanes.** A lane's edge against open land was drawn whole wherever the
   evidence covered 40% of it (Tadwick Lane: 840 m of fence on the strength of the lidar's runs). It
   is now drawn only where a mapped barrier or a lidar run lies within 1.5 m, and a fence there is a
-  hedge. Trade-off: a field fence the lidar really saw along a lane is drawn as a hedge.
+  hedge. Trade-off: a field fence the lidar really saw along a lane is drawn as a hedge; one mapped as a fence stays a fence.
 - [ ] **Plot boundaries running across fields.** Division lines run to a block's far side, and where a
   hamlet has no streets through it the plots came out as long wedges across each other and the
   fields. A guessed boundary (parcel or inferred) now stands only within 40 m (parcel) or 20 m (a
@@ -529,3 +529,12 @@ Six spots compared square by square against main's tiles.
   (those with a height) as the measured barriers to stand in open land, so a mapped field hedge or
   wall that the partition never drew was lost (the fields of -5,6). The mapped ones now come from the
   map itself and stand there too. Trade-off: a mapped fence across a field is drawn as a fence.
+- [ ] **Every mapped wall, fence and hedge the partition didn't draw stands**, not just those in
+  open land: one along a footpath, round a park, through a garden the plots divided elsewhere, or in a
+  square the partition paved. Those mapped as areas (a hedge round a field, a fence round a park) were
+  never read at all, and are now read by their outline, as main does. They stand wherever nothing
+  drawn is within 1.5 m, off the roads, the railway, the water and the houses, with a gap where a path
+  crosses them. On seven squares, held-out mapped length within 2 m went 0.772 to 0.926 (main 0.902).
+  Trade-offs: the partition's plots were divided without the area barriers (`once.py` still reads
+  lines only), so a guessed fence can stand 1.5 to 5 m beside a mapped one until the plots are
+  rebuilt; a mapped barrier running along a path's middle is kept, and the path drawn beside it.

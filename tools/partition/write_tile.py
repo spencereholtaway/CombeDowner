@@ -1252,7 +1252,7 @@ def _outside_blocked(line, blocked, floor):
 
 
 def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None, blocked=None,
-                    measured=None, houses=()):
+                    measured=None, houses=(), paths=()):
     """`br` and `gt` together, from one interval list per edge.
 
     The game builds a wall from the `br` points as one continuous run and never subtracts `gt` from it
@@ -1405,8 +1405,8 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = kept
     else:
         gaps = []
-    # measured barriers in open land join the runs before the tidy, so it trims where they meet
-    out += measured_in_open(measured, part, out, square, ground, blocked, houses)
+    # measured barriers the partition left out join the runs before the tidy, so it trims where they meet
+    out += measured_not_drawn(measured, out, square, ground, blocked, houses, paths)
     out = tidy_walls(out, ground, [(g[i], g[i + 1]) for g in gaps for i in (0, 2)])
     out, gaps = reseat_gates(out, gaps, ground)
     out, gaps = clear_gates_of_junctions(out, gaps, ground)
@@ -1415,36 +1415,49 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
 
 
 OPEN_CLEAR = 1.5        # metres: a measured barrier this near a drawn one is the same boundary
-OPEN_MIN = 5.0          # metres: a stretch of measured barrier in open land shorter than this is not kept
+OPEN_MIN = 5.0          # metres: a stretch of measured barrier shorter than this, left over, is not kept
 BUILDING_CLEAR = 0.3    # metres a measured barrier keeps off a building
+PATH_GAP = 0.4          # metres of gap either side of a path where it crosses a measured barrier
+PATH_CROSSING = 4.0     # a stretch inside a path's strip longer than this many path widths runs
+                        # along the path rather than across it, and stands
 
 
-def measured_in_open(measured, part, drawn, sq, ground, blocked, houses):
-    """Mapped and lidar barriers standing in open land. The partition draws a boundary only between
-    two faces it divided, and a hedge or wall across a field divides nothing, so none of them was
-    drawn: about half the mapped hedge and wall length went. They are measured, so they stand
-    wherever open land holds them and nothing drawn is within `OPEN_CLEAR`."""
-    open_faces = [face_shape(f) for f in part["faces"] if f["cls"] == "open" and len(f["xy"]) > 2]
-    if not open_faces or not measured:
+def measured_not_drawn(measured, drawn, sq, ground, blocked, houses, paths=()):
+    """Mapped and lidar barriers the partition did not draw. It draws a boundary only between two
+    faces it divided, so a hedge across a field, a fence round a park, a wall along a footpath or one
+    through a garden the plots divided elsewhere was lost: three quarters of the mapped length on
+    some squares. They are measured, so they stand wherever nothing drawn is within `OPEN_CLEAR`,
+    off the roads, the railway, the water and the houses, with a gap where a path crosses them, as
+    main opens its walls."""
+    if not measured:
         return []
-    keep_in = unary_union(open_faces).intersection(sq)
     taken = [LineString([q[:2] for q in b["p"]]).buffer(OPEN_CLEAR) for b in drawn if len(b["p"]) > 1]
     taken += [h.buffer(BUILDING_CLEAR) for h in houses]
     if blocked is not None:
         taken.append(blocked)
     taken = unary_union(taken)
-    shapely.prepare(keep_in)
     shapely.prepare(taken)
+    strips = [(line.buffer(half + PATH_GAP, cap_style="flat"), 2 * (half + PATH_GAP)) for line, half in paths]
+    strip_tree = STRtree([g for g, _ in strips]) if strips else None
     out = []
     for b in measured:
         if b["c"] not in BARRIER or len(b["p"]) < 2:
             continue
         line = LineString([q[:2] for q in b["p"]])
-        if not keep_in.intersects(line):
+        if not sq.intersects(line):
             continue
-        rest = line.intersection(keep_in)
+        rest = line.intersection(sq)
         if taken.intersects(rest):
             rest = rest.difference(taken)
+        if strip_tree is not None and not rest.is_empty:
+            gaps = []
+            for k in strip_tree.query(rest):
+                strip, wide = strips[int(k)]
+                cut = rest.intersection(strip)
+                gaps += [g.buffer(0.01) for g in getattr(cut, "geoms", [cut])
+                         if g.geom_type == "LineString" and g.length <= PATH_CROSSING * wide]
+            if gaps:
+                rest = rest.difference(unary_union(gaps))
         for g in getattr(rest, "geoms", [rest]):
             if g.geom_type != "LineString" or g.length < OPEN_MIN:
                 continue
@@ -2367,11 +2380,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                       min(max(y, T["y0"]), T["y0"] + (T["ny"] - 1.001) * T["dy"]))
 
     # the mapped walls and hedges, which main's tile keeps among its guesses, so they are taken from
-    # the map itself: one across a field divides nothing and was never drawn
+    # the map itself: the partition draws only the ones that divide two of its faces
     mapped = [dict(c=c, p=[list(q[:2]) for q in l.coords]) for l, c in evidence.mapped if l.length > 0]
     br, gt, br_in_road = walls_and_gates(part, sq, wall_ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
-                                         blocked=blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses)
+                                         blocked=blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses,
+                                         paths=[(LineString([q[:2] for q in r["p"]]), r.get("w", 1.8) / 2) for r in rd
+                                                if r["c"] in GAME_PATHS and len(r["p"]) > 1])
 
     fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br, gt)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
