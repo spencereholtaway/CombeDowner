@@ -16,6 +16,7 @@ barrier or a lidar run) stands along it, and left out elsewhere. Nothing real is
 a stretch with a mapped or lidar barrier along it always stands, and a guess along a mapped barrier
 takes its kind there, so a garden's fence is not drawn beside the hedge the map has on its line.
 A guessed wall or hedge with nothing at all standing near it in the lidar goes too (`standing.py`).
+A house Historic England lists railings or a wall in front of keeps them, wherever it stands.
 
 Decided at write time because the partition's edges already say which plot lies either side, and the
 squares can be written again in minutes where the plots take far longer; the rules belong in
@@ -57,6 +58,8 @@ UNSTOOD_SOURCES = {"front", "inferred"}     # a registered parcel's edge is evid
 MIN_GAP = 2.0           # metres: a dropped stretch shorter than this, between kept ones, stays
 
 
+LISTED_REACH = 4.0      # metres from a listed entry's point to the house whose front it is
+LISTED_WALL = "stone_wall"
 MAPPED_GROUP = {"wall": "wall", "retaining_wall": "wall", "hedge": "hedge", "fence": "fence"}
 WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall"}
 GUESSED = {"front", "parcel", "inferred"}
@@ -76,11 +79,22 @@ class Evidence:
     """The mapped barriers and lidar wall runs near a square, for asking whether a stretch of
     boundary has something real standing along it."""
 
-    def __init__(self, lines, mapped=()):
+    def __init__(self, lines, mapped=(), listed=()):
         self.lines = [l for l in lines if not l.is_empty and l.length > 0]
         self.mapped = [(l, c) for l, c in mapped if not l.is_empty and l.length > 0]
         self.tree = STRtree(self.lines) if self.lines else None
         self.mapped_tree = STRtree([l for l, _ in self.mapped]) if self.mapped else None
+        self.listed = list(listed)
+        self.listed_tree = STRtree([p for p, _ in self.listed]) if self.listed else None
+
+    def listed_front(self, house, reach=LISTED_REACH):
+        """The kind of a house's front boundary where Historic England lists railings or a wall
+        within `reach` of it, railings first (an area's railings often stand on a listed wall)."""
+        if self.listed_tree is None:
+            return None
+        hit = {self.listed[int(k)][1] for k in np.atleast_1d(self.listed_tree.query(house.buffer(reach)))
+               if house.distance(self.listed[int(k)][0]) <= reach}
+        return "railing" if "railing" in hit else LISTED_WALL if hit else None
 
     def near(self, p, tol=EVIDENCE_NEAR):
         if self.tree is None:
@@ -129,7 +143,8 @@ def load_evidence(sq, pad=50.0):
     for g, p in D.near(win, "infrastructure"):
         if p.get("subtype") == "barrier" and p.get("class") in ("fence", "wall", "hedge", "retaining_wall"):
             mapped += [(l, p["class"]) for l in barrier_lines(g)]
-    return Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped)
+    listed = [(g, p["kind"]) for g, p in D.near(win, "listed") if g.geom_type == "Point"]
+    return Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped, listed)
 
 
 def house_kinds(owners, tile_buildings):
@@ -261,8 +276,15 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None):
         pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
         real = [evidence.near(p) for p in pts]
         real_share = sum(real) / len(real)
+        listed = None
         if e.get("source") in GUESSED:
+            if "corridor" in sides and plots and plots[0] in owners and e["kind"] in FRONT_GUESSES:
+                listed = evidence.listed_front(owners[plots[0]])
+                if listed:
+                    e["kind"] = listed
             take_mapped(e, evidence.mapped_at(pts), L, n)
+        if listed:
+            continue
 
         if "corridor" in sides and plots:
             if e["kind"] not in FRONT_GUESSES or real_share >= SUPPORT:

@@ -230,7 +230,8 @@ Government Licence); terrain tiles by Mapzen (Amazon Terrain Tiles). Tree canopy
 World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall materials from
 Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
 contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards
-Agency (Open Government Licence). The copy of the map data in `data/` is shared under the same
+Agency (Open Government Licence). Listed railings and walls contain Historic England data ©
+Historic England 2026 (Open Government Licence). The copy of the map data in `data/` is shared under the same
 terms (see `data/combe-down/README.md`, which also says where each part comes from).
 
 Multiplayer runs over WebRTC with [Trystero](https://github.com/dmotz/trystero).
