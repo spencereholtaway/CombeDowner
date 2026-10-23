@@ -589,3 +589,23 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   Trade-offs: the partition's plots were divided without the area barriers (`once.py` still reads
   lines only), so a guessed fence can stand 1.5 to 5 m beside a mapped one until the plots are
   rebuilt; a mapped barrier running along a path's middle is kept, and the path drawn beside it.
+
+## Spencer's main merged in (23 October)
+
+- [ ] **Main merged at 6235fe9** (83 commits): the roof gate, OSTN15 for the lidar, and trees and
+  lone fence stubs kept off fences. The writer starts from main's tiles (`--base`), so it takes main's
+  roofs, trees and measured barriers as they are. Two copies of that logic were brought in line: the
+  parcels are reprojected through OSTN15 (`tools/parcels.py`), and the writer's lone stubs go again
+  until none is left, as main's do. The packed parcels and the `once` and `city` rows were not rebuilt,
+  so the plots are still divided on parcels about 0.36 m south of where OSTN15 puts them; rebuild
+  `parcels.geojson` from the INSPIRE download and pass 1 onwards to take that in.
+- [ ] **Main's canal now sets the towpath and tunnel levels**, and `check_map` checks them: our map
+  has 466 "towpath off the canal's level" (towpaths about 0.8 m below the water at 4,-1) and 39 "way
+  through a canal tunnel" (1,3), main has none. The street rows were built against the old canal
+  file; rebuild pass 1 with the new one, and carry main's towpath rules into `structures.py`.
+- [ ] **Bridge decks take main's `deckHalf`**: at least as wide as a default street's, so a deck can
+  reach past our narrower streets' faces.
+- Scores after the merge, against main rebuilt the same day: barriers drawn 0.967 (main 0.930),
+  street width MAE 0.71 m (0.93), pavements 0.933 (0.881), plot edges drawn on a parcel edge within
+  1 m 0.704 (0.347; 0.74 before the merge), flush 0.940 (0.816), building on a carriageway 124 (640),
+  on a pavement 35 (1,326).
