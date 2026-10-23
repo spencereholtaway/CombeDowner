@@ -481,3 +481,47 @@ Six spots compared square by square against main's tiles.
   files): footpath along a pavement 482 to 486, footpath along a carriageway 5 to 6, walls doubled
   0 to 1 (2_2, 1050,1694), walls a metre apart 5 to 4, too steep 270 to 268, headroom 13 to 12.
 - [ ] **Walls doubled at 2_2 (1050, 1694)**: one new brick_wall_low on brick_wall_low, 2 m. Not chased.
+
+## Boundaries against main, side by side (23 October)
+
+- [ ] **Front walls along shop streets and buildings on the pavement.** Every building had a plot and
+  every plot a front; a front with nothing seen along it took the zone's style, and the zones without
+  a mix of their own (`bath`, `victorian`) were all garden wall, so Stall Street and Union Street had
+  low walls down both sides. The writer now settles the guesses (`settle.py`): a front stands only for
+  a house (detached, semi or terrace, as `gardens.HOUSES`), not in the `bath` zone, not on a building
+  with a shop sign, and not where the house is within 1.5 m of its front line; a front the lidar or a
+  map backs over 40% of its length always stands. `victorian` and `riverside` fronts are rolled from
+  the suburb's mix, once per row along a street, as main rolls them. Trade-off: Georgian fronts keep
+  their railings (the Royal Crescent's are real); a house in the `bath` zone with a real front garden
+  loses its guessed wall. These rules belong in `classify_edges` when the plots are next rebuilt.
+- [ ] **Fences down country lanes.** A lane's edge against open land was drawn whole wherever the
+  evidence covered 40% of it (Tadwick Lane: 840 m of fence on the strength of the lidar's runs). It
+  is now drawn only where a mapped barrier or a lidar run lies within 1.5 m, and a fence there is a
+  hedge. Trade-off: a field fence the lidar really saw along a lane is drawn as a hedge.
+- [ ] **Plot boundaries running across fields.** Division lines run to a block's far side, and where a
+  hamlet has no streets through it the plots came out as long wedges across each other and the
+  fields. A guessed boundary (parcel or inferred) now stands only within 40 m (parcel) or 20 m (a
+  line only a rule drew, as deep as main's gardens) of every house it bounds, unless a mapped or lidar
+  barrier stands along it; a plot of a building that isn't a house has no guessed boundary of its own.
+  A boundary between two plots that runs off a house's garden ends where the garden does, so some
+  plots are left open at the back, and a guessed stretch then meeting nothing at either end goes. In
+  the centre (`bath` zone) a guessed yard boundary within 3 m of a street goes too (Stall Street's
+  fence). The hamlet at -410,-3060 is better but still shows short fence runs between the chalets:
+  its plots are wedges, and only re-dividing it fixes that. Trade-off: the cut is made on the drawn line, not on the plots,
+  which keep their shapes; capping the plots in `make_plots` (and stopping a plot at farmland) is the
+  real fix and needs the plots rebuilt.
+- [ ] **Paving in squares and pedestrian streets lies on the ground.** A pavement face that belongs to
+  no kerbed street (a pedestrian street, Abbey Churchyard) is set 0.13 m below the ground, so the
+  game's pavement lift leaves it flush with the paths across it (`PLAZA_SINK`). It relies on the game's
+  `LIFT` figures in `world.ts`; if those change, change it too. A `living_street` keeps its kerbs.
+- [ ] **A bridge's pavements are made equal**, because the game stands both parapets at the wider
+  pavement's edge and a narrower one left a slot to the river (Midland Bridge Road). A narrow side is
+  drawn up to 0.5 m wider than its face.
+- [ ] **A street over the canal's tunnel is not a bridge.** Pass 1 marked Sydney Road a span over the
+  canal where the canal runs in its tunnel, and the deck cut out of the faces left a dark slot beside
+  the parapet. The writer clears a span whose only crossing is the canal's tunnel. Fix it in
+  `structures.py` when pass 1 is next rebuilt.
+- [ ] **Mapped walls and hedges in open land stand again.** The writer took only main's lidar runs
+  (those with a height) as the measured barriers to stand in open land, so a mapped field hedge or
+  wall that the partition never drew was lost (the fields of -5,6). The mapped ones now come from the
+  map itself and stand there too. Trade-off: a mapped fence across a field is drawn as a fence.
