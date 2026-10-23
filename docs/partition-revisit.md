@@ -596,15 +596,53 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   lone fence stubs kept off fences. The writer starts from main's tiles (`--base`), so it takes main's
   roofs, trees and measured barriers as they are. Two copies of that logic were brought in line: the
   parcels are reprojected through OSTN15 (`tools/parcels.py`), and the writer's lone stubs go again
-  until none is left, as main's do. The packed parcels and the `once` and `city` rows were not rebuilt,
-  so the plots are still divided on parcels about 0.36 m south of where OSTN15 puts them; rebuild
-  `parcels.geojson` from the INSPIRE download and pass 1 onwards to take that in.
-- [ ] **Main's canal now sets the towpath and tunnel levels**, and `check_map` checks them: our map
-  has 466 "towpath off the canal's level" (towpaths about 0.8 m below the water at 4,-1) and 39 "way
-  through a canal tunnel" (1,3), main has none. The street rows were built against the old canal
-  file; rebuild pass 1 with the new one, and carry main's towpath rules into `structures.py`.
-- [ ] **Bridge decks take main's `deckHalf`**: at least as wide as a default street's, so a deck can
-  reach past our narrower streets' faces.
+  until none is left, as main's do.
+- [x] **The parcels were already on OSTN15.** Rebuilding `parcels.geojson` from the INSPIRE download
+  with the new `tools/parcels.py` gives the same coordinates as the raw file and the pack, to the
+  seventh decimal place, so pass 2 was not rerun. The scoreboard reads the same lon/lat file and
+  puts it in map metres as the build does, with no grid step, so its truth needs no change. The fall
+  in "plot edges drawn on a parcel edge" (0.74 to 0.704) came with recall falling too (0.469 to
+  0.412): fewer plot edges drawn, not edges drawn in the wrong place. Look at what the merge and the
+  mapped-barrier change took out.
+- [x] **The towpath keeps the canal's level** (`structures.py` writes which points are the towpath,
+  `tow`, and the writer holds them there instead of laying them on the ground), and **a path through
+  one of the canal's tunnels is left out** there (`gone`), as main leaves it to the tunnel's ledge.
+  Towpaths are still not moved onto the towpath's middle, as main moves them. Trade-off: the
+  scoreboard's road network counts the two Sydney Gardens tunnel stretches as missing (footway
+  missing 0.58 to 0.63 km, cycleway 1.000 to 0.999, main's figure); a towpath point next to a
+  bridge's first point is let down to the ground so the deck end meets it. A street whose span
+  over a canal tunnel is taken out (`no_span_over_tunnels`) now comes down to the ground instead of
+  staying at its deck's height (Beckford Road).
+- [x] **A canal bridge clears the towpath by a walker's height** (2.8 m over the towpath, `least`
+  out to `TOW_REACH` from the water), not only the boat over the water. Main's rule gives it 2.8 m at
+  the water's edge only, which is how main's Mill Lane has 2.6 m over the towpath.
+- [ ] **Midland Road's deck runs on over the cycleway joining it**, 1.9 m above it (the one "bridge
+  without headroom" left; main has one, at Mill Lane). Its profile is the survey's, carried level
+  from the bridge, while main's tile ground there was dipped for main's road. Stopping the deck short
+  of the cycleway (`grow_marks` `forbid` for streets) left a kink at the deck's end, so it was not
+  kept.
+- [x] **Bridge decks fit our streets** (`dk`, written by `deck_reach`): the street's own width and
+  its wider pavement, or out to a path riding the deck beside it if that reaches further. The game
+  takes `dk` where the map gives it and main's rule (at least a default street's width) otherwise, so
+  main's tiles build as before.
+- [ ] **Ground filled up to the deck under bridges.** Two causes. Main's: under a span the survey's
+  ground is kept (`PROTECT`) and a hump is cut only to 0.6 m below the deck, and a path is never
+  flattened into its ground, so a path dipped under a bridge for its headroom runs through the
+  survey's ground, which often has the bridge in it (Linear Park under Bridge Road / Claude Avenue).
+  The fix for main, as its own change: in `prep_map.py`, flatten the ground along a path's dipped
+  points (rule 3's dip) the way a road's is, lifting `PROTECT` along that path. Ours: the writer now
+  cuts the tile's ground to a path buried under a bridge (`cut_under_bridges`), but never under a
+  way at grade or the four grid corners an at-grade point reads its height from, and never raises
+  it. With a 4 m grid that leaves most short bridges uncut (8 vertices on ten squares); cutting them
+  broke deck ends instead.
+  The other cause is ours alone: our profiles are carried at the survey's height out to the bridge's
+  ends, where main's tile ground was laid to main's lower, dipped approaches (London Road junction,
+  Midland Road), so a deck end stands a metre over ground. That needs the ground laid to our own
+  roads, which the writer does not do yet.
+- After these fixes (full write, `check_map` against a7a5c17): towpath off the canal's level 466 to 2,
+  way through a canal tunnel 39 to 0, bridge without headroom 4 to 1 (main 1), span sunk in the
+  ground 2 to 1, road too steep 178 to 177, footpath along a pavement 486 to 484; nothing went up.
+  The scoreboard is unchanged but for the road network above.
 - Scores after the merge, against main rebuilt the same day: barriers drawn 0.967 (main 0.930),
   street width MAE 0.71 m (0.93), pavements 0.933 (0.881), plot edges drawn on a parcel edge within
   1 m 0.704 (0.347; 0.74 before the merge), flush 0.940 (0.816), building on a carriageway 124 (640),
