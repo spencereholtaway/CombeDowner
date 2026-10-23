@@ -40,6 +40,7 @@ CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.8, 35.0
 CANAL_HEAD = 2.6
 LOCK_REACH, BESIDE = 15.0, 8.0
 TOW_UP = 0.4      # the canal's banks stand this far above the water
+TOW_REACH = 6.0   # metres out from the water's edge that the towpath may run
 RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, "residential": 4, "living_street": 4,
         "unclassified": 5, "pedestrian": 5, "service": 6, "unknown": 6}
 SIGMA = 6.0       # metres: how far along a road its heights are evened out
@@ -259,7 +260,8 @@ def make_run(chain, elev):
 
 
 def split_back(r):
-    """{edge id: dict(z, span, deck, bored)} from a solved through-road, each in its edge's own direction."""
+    """{edge id: dict(z, span, deck, bored, dip, tow, gone)} from a solved through-road, each in its
+    edge's own direction: `tow` the points on the canal's towpath, `gone` those in a canal tunnel."""
     out = {}
     for eid, rev, s, e in r["parts"]:
         idx = list(range(s, e + 1))
@@ -279,7 +281,9 @@ def split_back(r):
         out[eid] = dict(z=[round(r["z"][i], 2) for i in idx],
                         span=sorted(pos[i] for i in r["span"] if i in pos),
                         deck=sorted(pos[i] for i in r["deck"] if i in pos), bored=bored,
-                        dip=sorted(pos[i] for i in r.get("dipped", ()) if i in pos))
+                        dip=sorted(pos[i] for i in r.get("dipped", ()) if i in pos),
+                        tow=sorted(pos[i] for i in r["tow"] if i in pos) if r.get("tow") else [],
+                        gone=sorted(pos[i] for i in r.get("gone", ()) if i in pos))
     return out
 
 
@@ -321,6 +325,22 @@ def towpath_points(run, z, c, canal_open, canal_tree, locks, bridged):
     return at
 
 
+def canal_bores(canal):
+    """The canal's tunnels, each from portal to portal, as one area wide enough to take the towpath's
+    ledge in it; None if the canal has none."""
+    out = []
+    for run in (canal or {}).get("runs", []):
+        bore = []
+        for q in run["p"] + [[0, 0, 0, 0, 0, 0, 0]]:
+            if q[6] & 1:
+                bore.append(q)
+                continue
+            if len(bore) > 1:
+                out.append(LineString([b[:2] for b in bore]).buffer(max(b[2] for b in bore) + 1.3 + 2.0, cap_style="flat"))
+            bore = []
+    return shapely.union_all(out) if out else None
+
+
 def by_a_lock(x, y, locks):
     """Is (x, y) beside one of the canal's locks, or between its wing walls?"""
     for lk in locks:
@@ -360,12 +380,23 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
         for i in range(len(p) - 1):
             if not (p[i][6] | p[i + 1][6]) & 3:
                 canal_open.append((p[i], p[i + 1], run["lv"]))
+    # where the towpath goes through one of the canal's tunnels it is the tunnel's own ledge, which
+    # the game builds, so a path is not drawn there, and nothing over it is a bridge
+    bores = canal_bores(canal)
+    if bores is not None:
+        for r in pending:
+            if r["c"] in PATHS and r["c"] != "pedestrian":
+                r["gone"] = {i for i, q in enumerate(r["run"]) if bores.contains(Point(q[:2]))}
+                if r["gone"]:
+                    r["span"] -= r["gone"]
+                    r["bored"] = [b for b in r["bored"] if not any(b[0] <= i <= b[1] for i in r["gone"])]
     # the towpath is level with the canal's banks: nothing eases it and no span is carried over it
     if canal_open:
         canal_tree = STRtree([LineString([a[:2], b[:2]]) for a, b, _ in canal_open])
         for r in pending:
             if r["c"] in PATHS:
-                r["tow"] = towpath_points(r["run"], r["z"], r["c"], canal_open, canal_tree, locks, r["span"])
+                r["tow"] = {i: h for i, h in towpath_points(r["run"], r["z"], r["c"], canal_open, canal_tree, locks, r["span"]).items()
+                            if i not in r.get("gone", ())}
                 r["span"] -= set(r["tow"])
                 for i, h in r["tow"].items():
                     r["z"][i] = h
@@ -659,6 +690,11 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                     r["solid"].add(i)
                 if math.dist(q[:2], (x.x, x.y)) < half + 1.5:
                     r["least"][i] = lv + CANAL_HEAD + 0.6
+                # and over the towpath, with a walker's headroom that still holds once heights are
+                # rounded to the decimetre
+                pt = Point(q[:2])
+                if any(canal_runs[int(c)][0].distance(pt) < half + TOW_REACH for c in canal_tree.query(pt.buffer(half + TOW_REACH))):
+                    r["least"][i] = max(r["least"].get(i, -math.inf), lv + TOW_UP + CLEAR_PATH + 0.1)
 
     def carry_spans(raise_only=False):
         """Carry every span straight (carry_profile) along whole roads; raise_only: a deck may come

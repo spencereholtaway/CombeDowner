@@ -33,7 +33,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; held?: boolean }   // held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number; held?: boolean }   // dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it); held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
@@ -1305,7 +1305,8 @@ export const PAVE = 1.7;
  *  pavements as they're drawn (its own width and pavements where the map gives them), or a path
  *  and its verge. The deck is built, drawn and stood on out to here, to its parapets, so no part
  *  of the street drawn on a bridge has nothing under it. */
-export function deckHalf(r: { c: string; w?: number; pv?: number[] }): number {
+export function deckHalf(r: { c: string; w?: number; pv?: number[]; dk?: number }): number {
+  if (r.dk) return r.dk;
   const pave = KERBED.has(r.c) ? Math.max(0, ...(r.pv ?? [PAVE, PAVE])) : r.w ? 0 : 0.3;
   return Math.max(roadHalf(r.c) + (KERBED.has(r.c) ? PAVE : 0.3), roadHalf(r.c, r.w) + pave);
 }
