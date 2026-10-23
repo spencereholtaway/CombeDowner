@@ -497,7 +497,7 @@ Six spots compared square by square against main's tiles.
 - [ ] **Fences down country lanes.** A lane's edge against open land was drawn whole wherever the
   evidence covered 40% of it (Tadwick Lane: 840 m of fence on the strength of the lidar's runs). It
   is now drawn only where a mapped barrier or a lidar run lies within 1.5 m, and a fence there is a
-  hedge. Trade-off: a field fence the lidar really saw along a lane is drawn as a hedge.
+  hedge. Trade-off: a field fence the lidar really saw along a lane is drawn as a hedge; one mapped as a fence stays a fence.
 - [ ] **Plot boundaries running across fields.** Division lines run to a block's far side, and where a
   hamlet has no streets through it the plots came out as long wedges across each other and the
   fields. A guessed boundary (parcel or inferred) now stands only within 40 m (parcel) or 20 m (a
@@ -515,7 +515,11 @@ Six spots compared square by square against main's tiles.
   (Abbey Churchyard, Stall Street) was a ledge. Pavement more than 1.5 m beyond any kerbed street's
   pavement, and a pedestrian street's carriageway, are now written as `drive` faces, which the game
   lays on the ground with no kerb. Trade-off: they take the drive's colour, a shade darker than a
-  pavement's; a kind of their own would need the game changed. A `living_street` keeps its kerbs.
+  pavement's; a kind of their own would need the game changed. A `living_street` is now flush too (it was kept
+  kerbed at first), and a carriageway face more than 1.5 m beyond every vehicle street's pavement (a
+  square the partition laid as road) is paving: on 0,3 and 1,3 flush went 0.910 to 0.938 in areas and
+  0.922 to 0.948 along pedestrian streets. Trade-off: cars on a living street drive on drive-coloured
+  paving. Where a vehicle street runs through a mapped square (Trinity Street) its kerbs stay.
 - [ ] **A bridge's pavements are made equal**, because the game stands both parapets at the wider
   pavement's edge and a narrower one left a slot to the river (Midland Bridge Road). A narrow side is
   drawn up to 0.5 m wider than its face. A side with no pavement, or a bridge with buildings on its
@@ -570,6 +574,18 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 - **Roofs** (main's tools): a footprint filling under 0.68 of its rectangle got a flat cap, which is
   why St Stephen's had no roof. Dropping that gate gives about 1,700 buildings a pitched roof
   (`claude/roofs`, off main). Oversized and undersized roofs remain.
-- [ ] **The scoreboard says ours loses most mapped walls, fences and hedges** (22 % drawn within 2 m,
-  against 93 % in main) and puts kerbs on more pedestrian ground (57 % flush against 82 %). Being
-  fixed on `claude/partition-fix-barriers`.
+- **Mapped walls, fences and hedges, and kerbs on pedestrian ground**: the scoreboard first read 22 %
+  of mapped barriers drawn, but that was a stale written map; at the branch head it was 89 %. Barriers
+  mapped as areas, mapped barriers outside open land, and mapped fences turned to hedges were then
+  fixed (below), and ours scores 97 % against main's 93 %, with 94 % of pedestrian streets flush
+  against main's 82 %.
+
+- [ ] **Every mapped wall, fence and hedge the partition didn't draw stands**, not just those in
+  open land: one along a footpath, round a park, through a garden the plots divided elsewhere, or in a
+  square the partition paved. Those mapped as areas (a hedge round a field, a fence round a park) were
+  never read at all, and are now read by their outline, as main does. They stand wherever nothing
+  drawn is within 1.5 m, off the roads, the railway, the water and the houses, with a gap where a path
+  crosses them. On seven squares, held-out mapped length within 2 m went 0.772 to 0.926 (main 0.902).
+  Trade-offs: the partition's plots were divided without the area barriers (`once.py` still reads
+  lines only), so a guessed fence can stand 1.5 to 5 m beside a mapped one until the plots are
+  rebuilt; a mapped barrier running along a path's middle is kept, and the path drawn beside it.

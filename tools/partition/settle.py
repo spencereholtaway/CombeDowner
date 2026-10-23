@@ -59,8 +59,9 @@ class Evidence:
 
     def __init__(self, lines, mapped=()):
         self.lines = [l for l in lines if not l.is_empty and l.length > 0]
-        self.mapped = list(mapped)      # (line, class) of the mapped ones, for the writer to stand
+        self.mapped = [(l, c) for l, c in mapped if not l.is_empty and l.length > 0]
         self.tree = STRtree(self.lines) if self.lines else None
+        self.mapped_tree = STRtree([l for l, _ in self.mapped]) if self.mapped else None
 
     def near(self, p, tol=EVIDENCE_NEAR):
         if self.tree is None:
@@ -68,17 +69,44 @@ class Evidence:
         idx = np.atleast_1d(self.tree.query(p.buffer(tol)))
         return any(self.lines[int(k)].distance(p) <= tol for k in idx)
 
+    def mapped_hedge_or_fence(self, pts, tol=EVIDENCE_NEAR):
+        """'hedge' or 'fence' where most of `pts` that have a mapped barrier along them have that
+        one, else None."""
+        if self.mapped_tree is None:
+            return None
+        seen = {"hedge": 0, "fence": 0, "other": 0}
+        for p in pts:
+            near = [self.mapped[int(k)] for k in np.atleast_1d(self.mapped_tree.query(p.buffer(tol)))]
+            near = [c for l, c in near if l.distance(p) <= tol]
+            if near:
+                c = max(set(near), key=near.count)
+                seen[c if c in seen else "other"] += 1
+        best = max(seen, key=seen.get)
+        return best if best != "other" and seen[best] * 2 > sum(seen.values()) else None
+
+
+def barrier_lines(g):
+    """A mapped barrier's lines. A fence round a park or a hedge round a field is mapped as an area,
+    and stands along its outline, as main's `prep_map.py` reads it."""
+    out = []
+    for part in getattr(g, "geoms", [g]):
+        if part.geom_type == "Polygon":
+            out.append(LineString(part.exterior.coords))
+        elif part.geom_type == "LineString":
+            out.append(part)
+    return out
+
 
 def load_evidence(sq, pad=50.0):
-    """The same evidence the plots were divided against: mapped fences, walls and hedges, and the
-    lidar's wall runs."""
+    """Mapped fences, walls and hedges (with the outlines of those mapped as areas) and the lidar's
+    wall runs."""
     x0, y0, x1, y1 = sq
     win = (x0 - pad, y0 - pad, x1 + pad, y1 + pad)
     D = Data(os.path.join(ROOT, "data", "raw", MAP, "wide"), win, log=lambda *_: None)
     mapped = []
-    for g, p in D.lines_near(win, "infrastructure"):
+    for g, p in D.near(win, "infrastructure"):
         if p.get("subtype") == "barrier" and p.get("class") in ("fence", "wall", "hedge", "retaining_wall"):
-            mapped += [(l, p["class"]) for l in getattr(g, "geoms", [g])]
+            mapped += [(l, p["class"]) for l in barrier_lines(g)]
     return Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped)
 
 
@@ -206,13 +234,13 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None):
 
         if "corridor" in sides:
             # a lane's edge against open land: only what stands there, and a field's edge is a
-            # hedge, never a garden's fence
+            # hedge, not a garden's fence, unless a fence is mapped along it
             drop = _intervals(real, L, n)
             if drop:
                 e["drop"] = drop
                 gone["lane"] += sum(b - a for a, b in drop)
-            if e["kind"] == "fence":
-                e["kind"] = "hedge"
+            if e["kind"] in ("fence", "hedge"):
+                e["kind"] = evidence.mapped_hedge_or_fence(pts) or "hedge"
             continue
 
         if e.get("source") == "evidence" and real_share >= SUPPORT:
@@ -237,7 +265,7 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None):
             e["drop"] = drop
             gone["far"] += sum(b - a for a, b in drop)
         if not any(garden) and e["kind"] == "fence":
-            e["kind"] = "hedge"
+            e["kind"] = evidence.mapped_hedge_or_fence(pts) or "hedge"
         if not all(real):
             guessed.append(e)
     gone["far"] += _drop_loose(part["edges"], guessed, list(owners.values()))
