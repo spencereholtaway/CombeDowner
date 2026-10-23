@@ -103,6 +103,7 @@ GATEWAY_CLEAR = 0.9
 PATH_CLEAR = 0.8
 ALONG_STREET = 0.8         # a stretch of path this much of its length running along a carriageway is that street
 ALONG_PAVEMENT = 0.65      # beside a pavement it takes less, since a path leaving a pavement slants away
+ON_STREET = 0.9            # a path this much of its length on a street's carriageway and pavements is that street
 PATH_GATE_NEAR = 1.0       # a path crossing a boundary this close to a gate is going through the gate
 PATH_END_REACH = 1.5       # a wall this near the house end of a path is cut short, not the whole path dropped
 PATH_STOP_SHORT = 0.3
@@ -578,6 +579,21 @@ def unpack_surfaces(sf):
     return out
 
 
+def drawn_carriageway(sf):
+    """The road the game draws from `sf`: its `road` and `service` triangles. A pedestrian street or a
+    square's paving is not among them, though the partition may have laid it as carriageway."""
+    sf = unpack_surfaces(sf)
+    if not sf:
+        return None
+    v = np.asarray(sf["v"], float).reshape(-1, 3)[:, :2]
+    ids = np.asarray(list(sf.get("road") or []) + list(sf.get("service") or []), int)
+    if len(ids) < 3:
+        return Polygon()
+    tri = v[ids[: len(ids) // 3 * 3].reshape(-1, 3)]
+    polys = shapely.polygons(np.concatenate([tri, tri[:, :1]], axis=1))
+    return unary_union(polys[shapely.area(polys) > 1e-6])
+
+
 def _triangles(poly):
     """The triangles of a face. A face with a hole that touches its edge, which cutting an area out
     of a pavement can leave, defeats the constrained triangulation, so it is made valid and taken
@@ -627,6 +643,52 @@ PLAZA_BEYOND = 1.5      # metres past a street's pavement where paving stops bei
 SHARED_STREETS = ("pedestrian", "living_street")    # paved from wall to wall, flush, with no kerb
 
 
+PEDESTRIAN_FRONTAGE = 9.0  # metres from a pedestrian street's line: ground wholly within it fronts the street
+PEDESTRIAN_HALF = 6.0      # metres either side of its line that a pedestrian street is paved across open ground
+WALLED_FRONT = 0.3         # share of a frontage's edge with a wall, fence or hedge along it that makes it a yard
+
+
+def pedestrian_frontage(part, peds, br=()):
+    """Open ground and plots between a pedestrian street and its buildings, with nothing standing
+    between them and the street: the street's own paving, laid to the building line as a shopping
+    street is. The partition fits the street's corridor narrower than the gap between its buildings
+    and gives the rest to plots and open ground, which left grass along Union Street.
+
+    A plot or open face wholly within `PEDESTRIAN_FRONTAGE` of the street is paved whole. Open ground
+    reaching further back (a yard behind a row, a square) is paved only to `PEDESTRIAN_HALF`, the
+    width of a shopping street, and a plot reaching further back is someone's yard and is left. A
+    face walled, fenced or hedged off from the street is left too."""
+    if not peds:
+        return Polygon()
+    reach = unary_union([l.buffer(PEDESTRIAN_FRONTAGE) for l, _ in peds])
+    band = unary_union([l.buffer(max(half, PEDESTRIAN_HALF), cap_style="flat") for l, half in peds])
+    edge = unary_union([l.buffer(half + 0.5) for l, half in peds])
+    shapely.prepare(reach)
+    walls = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
+    wall_tree = STRtree(walls) if walls else None
+    out = []
+    for f in part["faces"]:
+        if f["cls"] not in ("open", "plot") or len(f["xy"]) < 3:
+            continue
+        g = face_shape(f).buffer(0)
+        if g.is_empty or not reach.intersects(g):
+            continue
+        front = g.boundary.intersection(edge)
+        if front.length < 1.0:
+            continue
+        if wall_tree is not None:
+            near = [walls[int(k)] for k in wall_tree.query(front.buffer(0.3))]
+            if near and front.intersection(unary_union(near).buffer(0.3)).length > WALLED_FRONT * front.length:
+                continue
+        if g.intersection(reach).area >= 0.95 * g.area:
+            out.append(g)
+        elif f["cls"] == "open":
+            near_edge = edge.buffer(0.1)
+            out += [q for q in getattr(g.intersection(band), "geoms", [g.intersection(band)])
+                    if q.geom_type == "Polygon" and q.intersects(near_edge)]
+    return unary_union(out) if out else Polygon()
+
+
 def _minus(a, b):
     """a less b, snapped to a millimetre where GEOS cannot settle the overlay of two nearly
     coincident outlines (a plaza's edge laid along a street's pavement)."""
@@ -636,7 +698,7 @@ def _minus(a, b):
         return shapely.set_precision(a, 1e-3).difference(shapely.set_precision(b.buffer(0), 1e-3))
 
 
-def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None):
+def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -699,6 +761,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                              for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
     plaza = pave.difference(kerbed.difference(walked.difference(on_street)))
     pave = pave.difference(plaza)
+    frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br)
+    if not frontage.is_empty:
+        frontage = frontage.intersection(square).difference(unary_union([road, pave]))
+        if T is not None:
+            frontage = frontage.difference(unpaved_ground(frontage, T, green if green is not None else Polygon()))
+        plaza = plaza.union(frontage)
     # carriageway the partition laid where no vehicle street runs is a square's paving, not a road
     own = unary_union([l.buffer(reach(r, PLAZA_BEYOND)) for l, r in vehicle] or [Polygon()])
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
@@ -799,6 +867,14 @@ def drop_paths_along_streets(rd):
                 lines.append(L)
     cars = [(L, 0) for L in lines]
     tree = STRtree(areas)
+    street = unary_union(areas)
+    shapely.prepare(street)
+
+    def on_street(line):
+        """A path lying wholly on a street's carriageway and pavements (a stub at a corner, a crossing
+        from one pavement to the other) is that street, which is already there to walk on."""
+        return line.length > 2 and line.intersection(street).length > ON_STREET * line.length
+
     out, cut = [], 0.0
     for r in rd:
         if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(r["p"]) < 2:
@@ -816,7 +892,7 @@ def drop_paths_along_streets(rd):
                 if abs(road.project(Point(b[:2])) - road.project(Point(a[:2]))) > ratios[int(k)] * part.length:
                     drop.append(part.buffer(0.05, cap_style=2))
         if not drop:
-            if not any(len(q) > 3 for q in r["p"]) and on_carriageway(line):
+            if not any(len(q) > 3 for q in r["p"]) and (on_carriageway(line) or on_street(line)):
                 cut += line.length
                 continue
             out.append(r)
@@ -826,7 +902,7 @@ def drop_paths_along_streets(rd):
         marks = {(q[0], q[1]): q[3:] for q in r["p"]}
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type == "LineString" and piece.length >= 2:
-                if on_carriageway(piece):
+                if on_carriageway(piece) or on_street(piece):
                     cut += piece.length
                     continue
                 out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
@@ -1907,7 +1983,7 @@ def reseat_on_pavement(kind, x, y, rd):
 
 
 def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=None, ground=None,
-                 moved=None, blocked=None, dv=None):
+                 moved=None, blocked=None, dv=None, carriageway=None):
     """Remove decoration the new layout contradicts, and count what went.
 
     `tr`, `sb`, `fx` and `dr` are **copied** from the existing tile, because placing them is a later
@@ -1926,10 +2002,18 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     up to `PLANT_BACK`, where that is clear. A tree that can't be is left on the pavement as a street
     tree; anything else on a face goes.
 
+    `carriageway` is the road as the game draws it (`drawn_carriageway`), when there is one: the
+    partition's carriageway faces also cover pedestrian streets, which are paved, and their benches stay.
+
     `dr` (doors) is **not** touched: a door is cut into its building, which did not move."""
-    road_faces = [face_shape(f) for f in part["faces"]
-                  if f["cls"] == "carriageway" and len(f["xy"]) > 2]
-    road = unary_union(road_faces) if road_faces else None
+    if carriageway is not None:
+        road = carriageway
+    else:
+        road_faces = [face_shape(f) for f in part["faces"]
+                      if f["cls"] == "carriageway" and len(f["xy"]) > 2]
+        road = unary_union(road_faces) if road_faces else None
+    if road is not None:
+        shapely.prepare(road)
     walls = [LineString([(p[0], p[1]) for p in r["p"]]) for r in br]
     wt = STRtree(walls) if walls else None
 
@@ -2411,7 +2495,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         y = min(max(y, T["y0"]), T["y0"] + (T["ny"] - 1.001) * T["dy"])
         return ground(x, y)
 
-    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq)), sq[0], sq[1])
+    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br),
+                               sq[0], sq[1])
     tile["br"] = br
     tile["gt"] = gt
     tile["fp"] = fp
@@ -2420,7 +2505,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["fx"] = [f for f in tile.get("fx") or [] if f[0] != "car"]
     moved = collections.Counter()
     gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved, blocked=blocked,
-                        dv=dv)
+                        dv=dv, carriageway=drawn_carriageway(tile["sf"]))
     # placed after the clash pass, which would take a car for a thing standing in the road
     cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground, dv)
     tile["fx"] += cars + drive_cars

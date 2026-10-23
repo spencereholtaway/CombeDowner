@@ -609,3 +609,28 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   street width MAE 0.71 m (0.93), pavements 0.933 (0.881), plot edges drawn on a parcel edge within
   1 m 0.704 (0.347; 0.74 before the merge), flush 0.940 (0.816), building on a carriageway 124 (640),
   on a pavement 35 (1,326).
+
+## Street furniture and pedestrian paving (23 October)
+
+- [ ] **Street items are checked against the road the game draws** (`sf`'s road and service
+  triangles), not the partition's carriageway faces, which also cover pedestrian streets. On 0,3 59
+  of the 60 benches lost stood on a pedestrian street (Stall Street, Union Street); benches within 3 m
+  of a mapped one went 0.841 to 0.931 (main 0.935). Trade-off: a tree on a pedestrian street now stays
+  as a street tree rather than going.
+- [ ] **A pedestrian street is paved to its buildings**: the partition fits its corridor narrower
+  than the gap between the buildings and gives the rest to plots and open ground. A plot or open face
+  fronting the street, wholly within 9 m of its line and not walled, fenced or hedged off, is paved
+  whole; open ground reaching further back is paved to 6 m of the line. Pedestrian street paved went
+  0.750 to 0.901 (main 0.932). Trade-offs: walled front gardens on Miles's Buildings and plots reaching
+  back more than 9 m (Chandos Buildings) are left as ground, where main's 15 m strips paved them; the
+  9 m and 6 m are judged, not measured, and plants on the new paving are not moved off it.
+- [ ] **A path lying wholly on a street's carriageway and pavements is that street** (90 % of its
+  length within them and a metre beyond): stubs at corners and crossings from one pavement to the
+  other. check_map's "footpath along a pavement" went 486 to 417 (main 458), "along a carriageway" 6
+  to 0. Most of the rest are crossings longer than the street (a path that crosses and carries on),
+  which the check counts because ours draws pavements where main mapped a separate footway and gave
+  the street none. Trade-off: a dropped crossing leaves the paths either side ending at the pavement,
+  joined by the race routes' loose-end rule rather than a shared point; path-or-road within 3 m of the
+  network went 0.990 to 0.989.
+- [ ] **Post boxes** stay at 0.722 (main 0.742): none is dropped; the two short of main were set back
+  onto our pavements from where our wider carriageways put them, ending over 3 m from the mapped box.
