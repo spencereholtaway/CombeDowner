@@ -529,3 +529,47 @@ Six spots compared square by square against main's tiles.
   (those with a height) as the measured barriers to stand in open land, so a mapped field hedge or
   wall that the partition never drew was lost (the fields of -5,6). The mapped ones now come from the
   map itself and stand there too. Trade-off: a mapped fence across a field is drawn as a fence.
+
+## Ideas from the research, tried and scored (23 October)
+
+Each was tried quickly behind a flag on its own branch and judged by shots and by
+`tools/scoreboard.py` (branch `claude/scoreboard`), so nobody needs to try them again blind.
+
+- **Wall, hedge or fence from the lidar's shape** (1 m grids, then the 2019 point cloud): no. Only
+  the width of the raised strip separates them (hedges about 3 m, walls and fences about 2 m);
+  height, roughness, return counts and the survey's vegetation classes look the same for all three,
+  because Bath's walls mostly stand beside greenery. Every Bath survey is winter, so there is no
+  leaf-on survey to difference against.
+- **Is anything standing along a guessed boundary** (the UKCEH hedgerow test, tightened to 3 to 5 m):
+  yes for walls and hedges. A third to a half of our guessed walls have nothing near them, against
+  a tenth of real ones. Not for fences: a third of real fences show nothing either.
+- **Footprints shifted onto the lidar** (the nDSM, then the point cloud's building class with
+  neighbours agreeing): no. The best shifts are noise; buildings on the street come from how
+  streets are fitted, not from misplaced outlines.
+- **The lidar's own position**: `tools/lidar.py` converts with rasterio, whose PROJ data lacks the
+  OSTN15 grid, so every lidar sample is read about 0.4 m south of where it should be. Fixed on
+  `claude/lidar-ostn15` (off main); clash counts unchanged.
+- **Street widths measured from the lidar or the intensity raster**: no. Both are worse than the
+  class defaults against tagged widths (the first rise is often a garden wall; intensity finds the
+  edge of the paving, drives and forecourts included, not the kerb).
+- **Service lanes from Overture against OSM**: no. They are almost the same network, and both builds
+  keep 99.8 % of OSM's road length.
+- **3D BAG heights** (p70 block, p5 ground): no; worse fit than main's heights, worst on flat roofs.
+- **Bridge headroom from the point cloud**: too noisy to replace the builds' numbers; it did find
+  bridges with the ground filled up to the deck (9 in ours, 7 in main) and a few big misses (Two
+  Tunnels Greenway, Warminster Road, London Road junction, Beckford Road).
+- **Retaining walls from steps in the ground**: no; the steps are mostly cuttings, quarries and banks.
+- **Fallback plots bounded behind the house** (for the hamlet at -410,-3060): no. The hamlet's houses
+  are in field-sized parcels, the branch's own changes already removed most of the wedges, and the
+  bounded plots come out bare because `settle.py` drops guessed boundaries over 20 m from a house.
+- **Listed railings** (Historic England): correct but hardly visible; 140 listed frontages get
+  railings in the centre. Worth it only if railings are drawn more boldly.
+- **Trees thinned and filled from the EA vegetation model**: no; two points of coverage, three more
+  trees on walls.
+- **Microsoft footprints**: no; whole terraces as single shapes, 1 to 3 m off in places.
+- **Roofs** (main's tools): a footprint filling under 0.68 of its rectangle got a flat cap, which is
+  why St Stephen's had no roof. Dropping that gate gives about 1,700 buildings a pitched roof
+  (`claude/roofs`, off main). Oversized and undersized roofs remain.
+- [ ] **The scoreboard says ours loses most mapped walls, fences and hedges** (22 % drawn within 2 m,
+  against 93 % in main) and puts kerbs on more pedestrian ground (57 % flush against 82 %). Being
+  fixed on `claude/partition-fix-barriers`.
