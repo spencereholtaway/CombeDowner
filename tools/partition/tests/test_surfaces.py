@@ -52,11 +52,20 @@ class SurfaceTest(unittest.TestCase):
         self.assertLess(sum(d.intersection(s).area for d in drive for s in street), 0.01)
         self.assertTrue(all(abs(v[3 * i + 2] - 10.0 - v[3 * i + 1]) < 0.02 for i in sf["drive"]))
 
-    def test_a_pedestrianised_street_is_paved(self):
+    def test_a_pedestrianised_street_is_paved_flush(self):
         part = dict(faces=[face("carriageway", 0, -3, 40, 3)])
-        sf = street_surfaces(part, [road(0, 10.0, c="pedestrian")], SQ, lambda x, y: 10.0)
-        self.assertTrue(sf["pave"])
-        self.assertFalse(sf["road"] or sf["service"])
+        sf = street_surfaces(part, [road(0, 10.0, c="pedestrian")], SQ, lambda x, y: 10.0 + y)
+        self.assertTrue(sf["drive"])
+        self.assertFalse(sf["road"] or sf["service"] or sf["pave"])
+        v = sf["v"]
+        self.assertTrue(all(abs(v[3 * i + 2] - 10.0 - v[3 * i + 1]) < 0.02 for i in sf["drive"]))
+
+    def test_paving_beyond_a_streets_pavement_is_flush(self):
+        part = dict(faces=[face("carriageway", 0, -3, 40, 3), face("pavement", 0, 3, 40, 20)])
+        sf = street_surfaces(part, [road(0, 10.0)], SQ, lambda x, y: 10.0)
+        v = sf["v"]
+        self.assertTrue(sf["pave"] and sf["drive"])
+        self.assertLessEqual(max(v[3 * i + 1] for i in sf["pave"]), 3 + 2 + 1.5 + 0.01)
 
 
 if __name__ == "__main__":
