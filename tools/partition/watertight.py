@@ -95,7 +95,8 @@ def measure(tile, part, sq):
         streets = streets.difference(deck)
     sf = unpack_surfaces(tile.get("sf"))
     on_street, doubled = drawn(sf, ("road", "service", "pave"))
-    on_street = on_street.intersection(square)
+    # a square's paving is laid on the ground as a drive is, so a drive face on a street face is street
+    on_street = on_street.union(drawn(sf, ("drive",))[0].intersection(streets)).intersection(square)
     out["street_missing"] = streets.difference(on_street).area
     out["street_extra"] = on_street.difference(streets).area
     out["doubled"] = doubled
