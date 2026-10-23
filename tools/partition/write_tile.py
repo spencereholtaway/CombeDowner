@@ -624,6 +624,7 @@ def unpaved_ground(zone, T, green):
 
 
 PLAZA_BEYOND = 1.5      # metres past a street's pavement where paving stops being that pavement
+SHARED_STREETS = ("pedestrian", "living_street")    # paved from wall to wall, flush, with no kerb
 
 
 def _minus(a, b):
@@ -680,20 +681,27 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         if T is not None:
             zone = unpaved_ground(zone, T, green if green is not None else Polygon())
         road, pave = road.difference(zone), pave.difference(zone)
-    walked = [LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2 + 0.5, cap_style="flat")
-              for r in streets if r["c"] == "pedestrian"]
-    if walked:
-        # a pedestrian street is paved from side to side: no kerb between its carriageway and pavements
-        walked = unary_union(walked)
-        pave, road = pave.union(road.intersection(walked)), road.difference(walked)
+    reach = lambda r, extra: r["w"] / 2 + max(r.get("pv") or (0, 0)) + extra
+    shared = [(l, r) for l, r in zip(lines, streets) if r["c"] in SHARED_STREETS]
+    vehicle = [(l, r) for l, r in zip(lines, streets) if r["c"] not in SHARED_STREETS]
+    carriageways = unary_union([l.buffer(r["w"] / 2, cap_style="flat") for l, r in vehicle] or [Polygon()])
+    walked = unary_union([l.buffer(reach(r, 0.5), cap_style="flat") for l, r in shared] or [Polygon()])
+    walked = walked.difference(carriageways)
+    # a pedestrian street is paved from side to side: no kerb between its carriageway and pavements
+    pave, road = pave.union(road.intersection(walked)), road.difference(walked)
     # Paving that is no kerbed street's (a pedestrian street, a square, a churchyard) is laid on the
     # ground as a drive is: the game stands a pavement a kerb above the ground it pulls down round
-    # it, which made a ledge of every strip of paving across a plaza.
-    kerbed = [l.buffer(r["w"] / 2 + max(r.get("pv") or (0, 0)) + PLAZA_BEYOND, cap_style="flat")
-              for l, r in zip(lines, streets) if r["c"] in KERBED]
-    kerbed = unary_union(kerbed) if kerbed else Polygon()
-    plaza = pave.difference(kerbed)
-    pave = pave.intersection(kerbed)
+    # it, which made a ledge of every strip of paving across a plaza. A pedestrian street or a living
+    # street meeting a kerbed one stays flush up to that street's own pavement.
+    kerbed = unary_union([l.buffer(reach(r, PLAZA_BEYOND), cap_style="flat")
+                          for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
+    on_street = unary_union([l.buffer(reach(r, 0), cap_style="flat")
+                             for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
+    plaza = pave.difference(kerbed.difference(walked.difference(on_street)))
+    pave = pave.difference(plaza)
+    # carriageway the partition laid where no vehicle street runs is a square's paving, not a road
+    own = unary_union([l.buffer(reach(r, PLAZA_BEYOND)) for l, r in vehicle] or [Polygon()])
+    plaza, road = plaza.union(road.difference(own)), road.intersection(own)
     taken = unary_union([road, pave, plaza, *(face_shape(f).buffer(0) for f in part["faces"]
                                        if f["cls"] == "building" and len(f["xy"]) > 2)])
     path = shapes("path").difference(taken)

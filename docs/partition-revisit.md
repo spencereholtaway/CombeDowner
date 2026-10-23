@@ -515,7 +515,11 @@ Six spots compared square by square against main's tiles.
   (Abbey Churchyard, Stall Street) was a ledge. Pavement more than 1.5 m beyond any kerbed street's
   pavement, and a pedestrian street's carriageway, are now written as `drive` faces, which the game
   lays on the ground with no kerb. Trade-off: they take the drive's colour, a shade darker than a
-  pavement's; a kind of their own would need the game changed. A `living_street` keeps its kerbs.
+  pavement's; a kind of their own would need the game changed. A `living_street` is now flush too (it was kept
+  kerbed at first), and a carriageway face more than 1.5 m beyond every vehicle street's pavement (a
+  square the partition laid as road) is paving: on 0,3 and 1,3 flush went 0.910 to 0.938 in areas and
+  0.922 to 0.948 along pedestrian streets. Trade-off: cars on a living street drive on drive-coloured
+  paving. Where a vehicle street runs through a mapped square (Trinity Street) its kerbs stay.
 - [ ] **A bridge's pavements are made equal**, because the game stands both parapets at the wider
   pavement's edge and a narrower one left a slot to the river (Midland Bridge Road). A narrow side is
   drawn up to 0.5 m wider than its face. A side with no pavement, or a bridge with buildings on its
