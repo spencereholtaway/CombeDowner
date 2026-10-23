@@ -10,11 +10,20 @@
 // ridden through in order before the finish counts; between them it's any way you like. The route
 // and its checkpoints are drawn on the maps, and an arrow over the crosshair points at the next
 // one. Over the line, a big banner, confetti and a fanfare say where you came and in what time,
-// with everyone else's times as they come in (racefinish.ts).
+// with everyone else's times as they come in (missionscreens.ts).
+//
+// A race is quicker than riding about: it lifts every ride's top speed and push (player.ts's
+// rideMul, said every frame through the quest world), boost pads lie across the road between
+// checkpoints (placed from the seed, so everyone has the same ones), and riding close behind
+// another racer gives a slipstream. Each checkpoint has a clock to the next, from gold pace with
+// little slack; run out and you're out of the race . A lone racer has a faint gold-pace rider to chase. Riding hard into another racer
+// knocks them off: the rammer sees the contact and tells them ("knk", inside "qe"), and they
+// tumble themselves.
 //
 // The ride suits the route, from the lie of the land along the way: a steep climb is a BMX's (or a
 // racing bike's, if it's long), a run that only goes down is for the skateboard or the shopping
-// trolley, the flat is for the rollerblades or the scooter, and a short flat hop is a pogo dash.
+// trolley (these two are only ever raced downhill: the streets between must fall 25 m and
+// mostly run down, or the race gets another place or another ride), the flat is for the rollerblades or the scooter, and a short flat hop is a pogo dash.
 //
 // Each checkpoint is a split, flashing green or red against your best, like a time trial. There's
 // gold, silver and bronze, and a hidden author's time, worked out from riding the route's line on
@@ -36,7 +45,7 @@
 // cross the line ("fin"), with their run ("gh") if it's a best. Everyone keeps the results from
 // those, counting a finish only from someone who's been through every checkpoint in order; the
 // host checks the time against its own clock as well, and sends the results that stand ("res"),
-// or says a finish doesn't count ("dq"). A go of your own sends "pb" with its time, and the daily
+// or says a finish doesn't count ("dq"). A racer out of time says "out", which the room counts like a finish when deciding the race is over. A go of your own sends "pb" with its time, and the daily
 // race's board is everyone saying their best and how many goes they've had ("brd").
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -46,7 +55,7 @@ import { clearSpot } from "./haunts";
 import { type RideKind, TROLLEY_AHEAD, rideModel, rideSpecs } from "./rides";
 import type { RouteLine } from "./minimap";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng } from "./quests";
-import { Celebration, type FinishRow } from "./racefinish";
+import { type EndHandle, type EndRow, missionEnd, placeWord } from "./missionscreens";
 import { type PathPoint, type RacePath, along, gatesOf, racePath } from "./raceroute";
 
 const COLOUR = "#3ec7e8";
@@ -55,7 +64,7 @@ const COUNTDOWN = 8;       // seconds on the grid from the entries closing to GO
 const RETRY = 3;           // and for a go of your own
 const GRID_WAIT = 2.5;     // seconds after the entries close to wait for the host's grid
 const PASS = 12;           // metres from a checkpoint's middle that counts as through it, at least
-const TOP_SPEED = 30;      // metres a second: nobody's quicker over the whole route than this
+const TOP_SPEED = 48;      // metres a second: nobody's quicker over the whole route than this, boosts and all
 const LATE = 30;           // seconds a finish's time may be quicker than the host's clock says it can be
 const GATE_SEEN = 450;     // metres from the next checkpoint that its gate stands up
 const GHOST_EVERY = 0.1;   // seconds between the points of a ghost run
@@ -63,6 +72,18 @@ const AFTER = 90;          // seconds after the first one's over the line that t
 const MAX_RACE = 900;      // seconds after GO that a race nobody's finished is over
 const LINGER = 30;         // seconds a go of your own stays up after you're over the line
 const GHOSTS = 4;          // the most ghosts out at once
+const RACE_MUL = 1.3;      // a race lifts every ride's top speed and push by this
+const PAD_MUL = 1.3;       // and a boost pad by this on top, for PAD_SECS
+const PAD_SECS = 3.5;
+const PAD_R = 3.6;         // metres from a pad's middle that counts as on it
+const PAD_SEEN = 320;      // metres from a pad that it's drawn
+const SLIP_MUL = 1.07;     // riding in another racer's slipstream
+const SLIP_AHEAD = 16, SLIP_SIDE = 2.4;   // metres: how far behind them, and how far off line, still counts
+const KNOCK_SPEED = 5;     // m/s closing on another racer, at least, to knock them off
+const KNOCK_COOL = 3;      // seconds before the same racer can be knocked off again
+const SLACK = 1.25, LEG_BASE = 6;   // a leg's time limit: gold pace times this, and a few seconds for the standing start
+const DOWN_ONLY: RideKind[] = ["trolley", "board"];   // no good on the flat or uphill: only ever raced downhill
+const MIN_DROP = 25;       // metres a downhill-only race must fall over its route
 const KEY = "cd-race-";
 const KEEP = 40;           // routes whose best runs are kept
 const DAILY = 1;           // offer.mode for the daily race
@@ -87,7 +108,7 @@ function profile(w: QuestWorld, ax: number, az: number, bx: number, bz: number):
 }
 
 /** The ride for the lie of the land: never one that's plainly wrong for it. */
-function rideFor(r: Rng, d: number, hs: number[], short: boolean): RideKind {
+function rideFor(r: Rng, d: number, hs: number[], short: boolean, noDownOnly = false): RideKind {
   const seg = d / (hs.length - 1);
   let climb = 0, fall = 0, steep = 0;
   for (let k = 1; k < hs.length; k++) {
@@ -97,10 +118,10 @@ function rideFor(r: Rng, d: number, hs: number[], short: boolean): RideKind {
   }
   const drop = hs[0] - hs[hs.length - 1];
   if (short && climb < 12 && steep < 0.06) return "pogo";                      // a short flat hop
-  if (drop > 35 && climb < 20) return drop > 60 && r() < 0.6 ? "trolley" : pickOf(r, ["trolley", "board"] as RideKind[]);   // all downhill
+  if (!noDownOnly && drop > 35 && climb < 20) return drop > 60 && r() < 0.6 ? "trolley" : pickOf(r, ["trolley", "board"] as RideKind[]);   // all downhill
   if (climb > 60 || (steep > 0.12 && climb > 30)) return steep > 0.12 || d < 1800 ? "bmx" : "bike";   // a real climb
   if (climb + fall < 35 && steep < 0.06) return d < 1300 ? "scooter" : "blades";      // the flat
-  if (drop > 20 && climb < 20) return "board";                                   // gently down
+  if (!noDownOnly && drop > 20 && climb < 20) return "board";                                   // gently down
   if (climb < 25 && steep < 0.06) return "blades";                               // gently rolling
   return pickOf(r, ["bike", "bmx"] as RideKind[]);
 }
@@ -115,25 +136,52 @@ function authorTime(ride: RideKind, d: number, hs: number[]): number {
     let v = s.top;
     if (!s.pogo && g < 0) v = Math.min(s.maxDown, s.top + (9.8 * -g * s.downhill) / 0.15);
     else if (!s.pogo && g > 0) { const push = s.accel - 9.8 * g * s.downhill; v = push > 0.6 ? s.top : Math.max(1.4, s.top * (push + 0.6) / 1.2); }
-    t += (seg * 1.3) / (v * 0.92);
+    t += (seg * 1.3) / (v * RACE_MUL * 0.95);
   }
-  return Math.round(t + 4);
+  return Math.round(t * 0.93 + 4);
 }
-const medals = (a: number) => ({ gold: a * 1.12, silver: a * 1.35, bronze: a * 1.7 });
+const medals = (a: number) => ({ gold: a * 1.03, silver: a * 1.22, bronze: a * 1.5 });
+
+/** Does the way by the streets from the board to the place fall well and mostly downhill, with no long climbs? */
+function downhill(w: QuestWorld, o: { x: number; z: number }, to: { x: number; z: number }): boolean {
+  const p = racePath(w.map, o.x, o.z, to.x, to.z);
+  if (!p) return false;
+  const n = Math.max(4, Math.round(p.len / 40));
+  let prev = 0, climb = 0, run = 0, worst = 0, first = 0, last = 0;
+  for (let k = 0; k <= n; k++) {
+    const a = along(p, (p.len * k) / n), h = groundOf(w, a.x, a.z);
+    if (k === 0) first = h; else { const dh = h - prev; if (dh > 0.3) { climb += dh; run += dh; worst = Math.max(worst, run); } else if (dh < -0.3) run = 0; }
+    prev = h; last = h;
+  }
+  const drop = first - last;
+  return drop >= MIN_DROP && climb <= Math.max(5, drop * 0.2) && worst <= 4;
+}
 
 /** The route from the poster: where to, on what, and the author's time. */
 function routeOf(o: Offer, w: QuestWorld): Route | null {
   const r = rng(o.seed);
   const ok = (x: number, z: number) => w.map.fieldEdge(x, z) > 100;
-  const short = o.mode !== DAILY && r() < 0.15;
+  const fixed = o.to;
+  const short = fixed ? Math.hypot(fixed.x - o.x, fixed.z - o.z) < 800 : o.mode !== DAILY && r() < 0.15;
   const near = short ? [500, 1000] : o.mode === DAILY ? [1200, 2500] : [1000, 3000];
-  const all = [...w.pubs().map((p) => ({ n: p.name, x: p.x, z: p.z })), ...w.places()]
+  const all = fixed ? (Math.hypot(fixed.x - o.x, fixed.z - o.z) < 250 ? [] : [fixed]) : [...w.pubs().map((p) => ({ n: p.name, x: p.x, z: p.z })), ...w.places()]
     .filter((p) => ok(p.x, p.z) && Math.hypot(p.x - o.x, p.z - o.z) > near[0] && Math.hypot(p.x - o.x, p.z - o.z) < near[1])
     .sort((a, b) => a.x - b.x || a.z - b.z || a.n.localeCompare(b.n));
   if (!all.length) return null;
-  const to = pickOf(r, all), d = Math.hypot(to.x - o.x, to.z - o.z);
-  const hs = profile(w, o.x, o.z, to.x, to.z);
-  const ride = rideFor(r, d, hs, short);
+  let to = pickOf(r, all), d = Math.hypot(to.x - o.x, to.z - o.z);
+  let hs = profile(w, o.x, o.z, to.x, to.z);
+  let ride = rideFor(r, d, hs, short);
+  if (DOWN_ONLY.includes(ride) && !downhill(w, o, to)) {
+    // somewhere else well below the board that the streets really do run down to, else a ride that copes with the rest
+    const from = Math.floor(r() * all.length);
+    let found = false;
+    for (let k = 0; k < all.length && k < 40 && !found; k++) {
+      const c = all[(from + k) % all.length], cd = Math.hypot(c.x - o.x, c.z - o.z), ch = profile(w, o.x, o.z, c.x, c.z);
+      if (ch[0] - ch[ch.length - 1] < MIN_DROP + 10 || !DOWN_ONLY.includes(rideFor(r, cd, ch, false)) || !downhill(w, o, c)) continue;
+      to = c; d = cd; hs = ch; ride = rideFor(r, d, hs, false); found = true;
+    }
+    if (!found) ride = rideFor(r, d, hs, short, true);
+  }
   const label = ride === "trolley" ? "Trolley dash" : ride === "pogo" ? "Pogo dash" : ride === "board" ? "Skate run" : ride === "blades" ? "Blade run"
     : ride === "scooter" ? "Scooter sprint" : ride === "bmx" ? "BMX climb" : "Bike race";
   return { to, ride, d, author: Math.max(30, authorTime(ride, d, hs)), name: label };
@@ -150,6 +198,7 @@ let world: QuestWorld | null = null;   // for the daily race's poster
 
 registerJob({
   id: "race", glyph: "R", colour: COLOUR, label: "Race", again: true,
+  goal: (o) => (o.mode === DAILY ? "Race to the finish and get your time on today's board" : "Race through every checkpoint and over the line first"),
   offer(r, spot: PostSpot, w) {
     const o: Offer = { kind: "race", seed: hash("race", r() * 1e9), stars: 1, title: "", blurb: "", reward: "", x: spot.x, z: spot.z, where: spot.name };
     const rt = routeOf(o, w);
@@ -171,6 +220,14 @@ registerJob({
       return o;
     }
     return null;
+  },
+  build(o, w) {
+    const rt = routeOf(o, w);
+    if (!rt) return null;
+    o.title ||= `${rt.name} to ${rt.to.n}`;
+    poster(o, rt);
+    if (o.say) o.blurb = `${esc(o.say)} ${o.blurb}`;
+    return o;
   },
   poster(o) {
     if (o.mode !== DAILY) return "";
@@ -266,7 +323,7 @@ function hudBit(css: string): HTMLDivElement {
 }
 
 /** A see-through rider: the ride and a figure on it, all one mesh. */
-function ghostModel(ride: RideKind, colour: string): THREE.Mesh {
+export function ghostModel(ride: RideKind, colour: string): THREE.Mesh {
   const g = rideModel(ride), s = rideSpecs[ride];
   if (ride === "trolley") g.position.z = -TROLLEY_AHEAD;
   const root = new THREE.Group();
@@ -297,7 +354,7 @@ const nth = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th",
 
 /** A gate across the street: two posts and a banner, in the race's colour with what it is on it, or
  *  chequered for the finish. One mesh for the posts and one for the banner. */
-function gateModel(g: PathPoint, text: string): THREE.Group {
+export function gateModel(g: PathPoint, text: string): THREE.Group {
   const w = g.half + 0.8, grp = new THREE.Group(), c = document.createElement("canvas");
   c.width = 512; c.height = 64;
   const x = c.getContext("2d")!;
@@ -357,12 +414,27 @@ class Race implements Job {
   private arch: THREE.Group | null = null;
   private marked = "";
   private routeLine: RouteLine;
-  private party: Celebration | null = null;
+  private party: EndHandle | null = null;
   private arrow = hudBit("top:calc(50% - 96px);width:48px;margin-left:-24px;color:" + COLOUR);
   private flash = hudBit("top:calc(50% + 48px);width:260px;margin-left:-130px");
   private flashT = 0;
   private firstT = 0;
   private daily: boolean;
+  private legs: number[] = [];              // seconds allowed to reach each gate from the one before
+  private parAt: number[] = [];             // and gold pace at each gate
+  private deadline = 0;                     // on my clock, when I'm out of time
+  private out = false;                      // I ran out of time
+  private outs = new Set<string>();         // and who else did
+  private pads: { x: number; z: number; dx: number; dz: number }[] = [];
+  private padMesh: THREE.Mesh | null = null; private padKey = "";
+  private padUntil = 0; private padHit = new Map<number, number>();
+  private slip = false;
+  private prevPos = new Map<string, { x: number; z: number }>();
+  private knockedAt = new Map<string, number>();
+  private immune = 0;                       // when I can be knocked off again, ms since 1970
+  private beeped = 6;
+  private timer = hudBit("top:112px;width:240px;margin-left:-120px;line-height:1");
+  private timerHtml = "";
 
   constructor(readonly offer: Offer, private w: QuestWorld, started: number, by: string, private local: boolean) {
     this.rt = routeOf(offer, w)!;
@@ -387,9 +459,11 @@ class Race implements Job {
     }
     const f = this.gates[this.gates.length - 1];
     this.fin = { x: f.x, z: f.z };
+    this.setUpClock();
     this.start = this.slot(0);
     this.routeLine = { pts: p ? p.pts : [this.line.x, this.line.z, f.x, f.z], gates: [], colour: COLOUR };
     this.lineGates();
+    this.addPar();
     // your best to race, and the fastest anyone's sent you on this route
     if (this.best) this.addGhost(w.selfId, "Your best", COLOUR, this.best);
     try {
@@ -413,6 +487,36 @@ class Race implements Job {
     else if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press E and enter`, 3);
     else w.toast(`A race is taking entries: E to enter (${left} s)`, 4);
   }
+
+  /** Each leg's time limit and gold pace at each gate, and where the boost pads lie. */
+  private setUpClock() {
+    const p = this.path, total = p ? p.len : this.rt.d;
+    const stops = p ? [...gatesOf(p), p.len] : [this.rt.d];
+    const perM = this.medal.gold / Math.max(100, total - (p ? this.lineAt : 0));
+    const start = p ? this.lineAt : 0;
+    const pad = rng(hash("pads", this.offer.seed));
+    stops.forEach((s, k) => {
+      const a = k ? stops[k - 1] : start, len = Math.max(40, s - a);
+      this.legs.push(LEG_BASE + len * perM * SLACK);
+      this.parAt.push((s - start) * perM);
+      if (!p || len < 120) return;
+      for (const f of len > 500 ? [0.3, 0.65] : [0.3 + pad() * 0.4]) {
+        const at = along(p, a + len * f), off = (pad() * 2 - 1) * Math.max(0, at.half - 2) * 0.5;
+        this.pads.push({ x: at.x - at.dz * off, z: at.z + at.dx * off, dx: at.dx, dz: at.dz });
+      }
+    });
+  }
+
+  /** A faint rider at gold pace along the route, for racing alone. */
+  private addPar() {
+    const p = this.path;
+    if (!p) return;
+    const e = 0.5, T = this.parAt[this.parAt.length - 1], pts: number[] = [];
+    for (let t = 0; t <= T + e; t += e) { const a = along(p, this.lineAt + Math.min(1, t / T) * (p.len - this.lineAt)); pts.push(a.x, a.z); }
+    this.ghosts.set("@par", { id: "@par", name: "Gold pace", colour: "#ffe27a", b: { t: T, sp: this.parAt, g: "", e, cp: this.gates.length - 1 }, pts, heading: this.start.yaw });
+  }
+
+  private alone() { return this.own || (this.grid?.length ?? 1) <= 1; }
 
   /** Seconds since my GO. */
   private get now() { return (Date.now() - this.myGo) / 1000; }
@@ -482,6 +586,7 @@ class Race implements Job {
     if (!this.w.me().alive) return false;
     this.own = true; this.racing = true; this.over = false;
     this.splits = []; this.run = []; this.runT = 0; this.pipped = 4; this.next = 0;
+    this.out = false; this.deadline = 0; this.padUntil = 0; this.padHit.clear(); this.beeped = 6;
     this.myGo = Date.now() + RETRY * 1000;
     this.party?.remove(); this.party = null;
     this.lineGates();
@@ -506,23 +611,28 @@ class Race implements Job {
     if (!this.roomOver && !this.local) {
       const racers = this.grid?.length ?? Infinity, since = (Date.now() - this.go) / 1000;
       if (this.results.length && (Date.now() - this.firstT) / 1000 > AFTER) this.roomOver = true;
-      else if (since > 0 && this.results.length >= racers) this.roomOver = true;
+      else if (since > 0 && this.results.length + this.outs.size >= racers) this.roomOver = true;
       else if (since > MAX_RACE) this.roomOver = true;
     }
     // the room's race is over once I'm not in the middle of a go of my own; a go of my own, a while after it
     if (!this.done) {
-      const busy = this.racing && !this.over;
-      if (this.local ? this.over && Date.now() - this.overT > LINGER * 1000 : this.roomOver && !busy) this.finish();
+      const busy = this.racing && !this.over && !this.out;
+      if (this.local ? (this.over || this.out) && Date.now() - this.overT > LINGER * 1000 : this.roomOver && !busy) this.finish();
     }
     if (this.done) { this.hideHud(); return; }
-    const live = this.racing && !this.over;
+    const live = this.racing && !this.over && !this.out;
     const target = live ? this.gates[this.next] : this.gates[this.gates.length - 1];
     const d = Math.hypot(target.x - me.x, target.z - me.z);
     if (live && t >= 0) {
       // the run, for your ghost
       if ((this.runT -= dt) <= 0) { this.runT += GHOST_EVERY; if (this.runT < 0) this.runT = 0; this.run.push(me.x, me.z); }
       if (d < Math.max(PASS, target.half + 6) && me.alive) this.through(t);
+      if (live) this.pace(t, me);
     }
+    if (!live || t < 0) this.rideNormally();
+    this.watchRacers(dt);
+    this.drawTimer(live && t >= 0, t);
+    this.drawPads(me);
     this.drawArrow(me, target, live);
     if (this.flashT > 0 && (this.flashT -= dt) <= 0) this.flash.hidden = true;
     this.drawGhosts(t);
@@ -535,6 +645,131 @@ class Race implements Job {
       const at = live ? this.gates[this.next] : this.fin;
       this.w.mark("@race", at, live && !last ? `Checkpoint ${this.next + 1} of ${this.gates.length - 1}` : `Finish: ${this.rt.to.n}`, COLOUR);
     }
+  }
+
+  private rideNormally() { if (this.boosting) { this.boosting = false; this.w.rideBoost?.(1); } }
+  private boosting = false;
+
+  /** The race's speed-up for my ride: the race's own, a boost pad's, a slipstream's; and the clock running out. */
+  private pace(t: number, me: { x: number; z: number; yaw: number; alive: boolean }) {
+    if (!this.deadline) this.deadline = this.legs[0];
+    for (let k = 0; k < this.pads.length; k++) {
+      const p = this.pads[k];
+      if (t > (this.padHit.get(k) ?? -9) + 2 && Math.hypot(p.x - me.x, p.z - me.z) < PAD_R) {
+        this.padHit.set(k, t); this.padUntil = t + PAD_SECS;
+        this.w.rideBoost?.(RACE_MUL * PAD_MUL, 3);
+        SFX.whoosh();
+        this.show(`<span style="font-size:40px;color:#ffd23a">BOOST!</span>`, 0.8);
+      }
+    }
+    const fx = -Math.sin(me.yaw), fz = -Math.cos(me.yaw);
+    this.slip = false;
+    if (!this.alone()) for (const o of this.w.players()) {
+      if (o.id === this.w.selfId || !o.alive || !this.grid?.includes(o.id)) continue;
+      const dx = o.x - me.x, dz = o.z - me.z, ahead = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+      if (ahead > 2 && ahead < SLIP_AHEAD && side < SLIP_SIDE) { this.slip = true; break; }
+    }
+    this.boosting = true;
+    this.w.rideBoost?.(RACE_MUL * (this.padUntil > t ? PAD_MUL : 1) * (this.slip ? SLIP_MUL : 1));
+    const left = this.deadline - t;
+    if (left <= 5 && Math.ceil(left) < this.beeped && left > 0) { this.beeped = Math.ceil(left); SFX.urgent(this.beeped); }
+    if (left <= 0 && me.alive) this.timeUp();
+  }
+
+  private timeUp() {
+    this.out = true; this.overT = Date.now();
+    this.lineGates();
+    SFX.urgent(0);
+    this.party?.remove();
+    this.party = missionEnd({ result: "failed", colour: COLOUR, title: "Out of time", lines: [`Missed checkpoint ${this.next + 1}`, "Backspace to go again"] });
+    if (!this.own) {
+      const msg = { k: "out", s: this.offer.seed };
+      this.w.send("qe", msg);
+      this.outs.add(this.w.selfId);
+    }
+    this.rideNormally();
+  }
+
+  /** The countdown to the next gate, big at the top of the screen. */
+  private drawTimer(on: boolean, t: number) {
+    if (!on) { if (!this.timer.hidden) this.timer.hidden = true; return; }
+    const left = Math.max(0, this.deadline - t), low = left <= 10;
+    const tag = this.padUntil > t ? "BOOST" : this.slip ? "SLIPSTREAM" : `CHECKPOINT ${Math.min(this.next + 1, this.gates.length - 1)}`;
+    const col = left <= 5 && Math.floor(left * 2) % 2 ? "#fff" : low ? "#ff5a4e" : "#fff";
+    const html = `<div style="font-size:clamp(34px,10vw,58px);color:${col}">${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}${low ? `.${Math.floor((left % 1) * 10)}` : ""}</div><div style="font-size:clamp(12px,3.4vw,16px);color:#cde">${tag}</div>`;
+    if (html !== this.timerHtml) { this.timerHtml = html; this.timer.innerHTML = html; }
+    this.timer.hidden = false;
+  }
+
+  /** Other racers' speeds from how far they moved, and a barge hard enough to knock one off. */
+  private watchRacers(dt: number) {
+    const me = this.w.me(), prev = this.prevPos.get(this.w.selfId);
+    const mine = { x: me.x, z: me.z };
+    const ids = this.w.players();
+    const vel = (id: string, x: number, z: number) => { const q = this.prevPos.get(id); return q && dt > 0 ? { x: (x - q.x) / dt, z: (z - q.z) / dt } : { x: 0, z: 0 }; };
+    const mv = prev ? vel(this.w.selfId, me.x, me.z) : { x: 0, z: 0 };
+    const t = this.now;
+    const can = this.racing && !this.over && !this.out && t >= 1 && !this.own && !this.w.passive && me.alive && this.grid;
+    for (const o of ids) {
+      if (o.id === this.w.selfId) continue;
+      if (can && this.grid!.includes(o.id) && o.alive && Date.now() > (this.knockedAt.get(o.id) ?? 0)) {
+        const dx = o.x - me.x, dz = o.z - me.z, d = Math.hypot(dx, dz);
+        if (d < 1.6 && d > 0.01) {
+          const ov = vel(o.id, o.x, o.z), closing = ((mv.x - ov.x) * dx + (mv.z - ov.z) * dz) / d;
+          if (closing > KNOCK_SPEED && Math.hypot(mv.x, mv.z) > Math.hypot(ov.x, ov.z)) {
+            this.knockedAt.set(o.id, Date.now() + KNOCK_COOL * 1000);
+            this.w.send("qe", { k: "knk", s: this.offer.seed }, o.id);
+            this.w.rideBoost?.(RACE_MUL, -Math.min(3, closing * 0.35));
+            SFX.thump();
+            this.show(`<span style="font-size:30px;color:#ffd23a">Barged ${esc(o.name)} off!</span>`, 1.2);
+          }
+        }
+      }
+    }
+    for (const o of ids) this.prevPos.set(o.id, { x: o.x, z: o.z });
+    this.prevPos.set(this.w.selfId, mine);
+  }
+
+  /** Pads for the maps' sake are only drawn near: one mesh, laid on the ground and redone now and then as the squares load. */
+  private drawPads(me: { x: number; z: number }) {
+    const near: number[] = [];
+    if (this.racing && !this.over && !this.out) this.pads.forEach((p, k) => { if (Math.hypot(p.x - me.x, p.z - me.z) < PAD_SEEN) near.push(k); });
+    const key = near.join(",") + (near.length ? `/${Math.floor(Date.now() / 2000)}` : "");
+    if (key === this.padKey) return;
+    this.padKey = key;
+    this.dropPads();
+    if (!near.length) return;
+    const pos: number[] = [], col: number[] = [], L = 6, W = 3.4, rows = 5, cols = 2;
+    const hot = [new THREE.Color("#ffd23a"), new THREE.Color("#ff7a1a")];
+    const at = (p: { x: number; z: number; dx: number; dz: number }, u: number, v: number) => {
+      const x = p.x + p.dx * u - p.dz * v, z = p.z + p.dz * u + p.dx * v;
+      const y = this.w.map.ground(x, z);
+      return [x, (Number.isFinite(y) ? y : 0) + 0.08, z];
+    };
+    for (const k of near) {
+      const p = this.pads[k];
+      for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+        const u0 = -L / 2 + (L * i) / rows, u1 = u0 + L / rows, v0 = -W / 2 + (W * j) / cols, v1 = v0 + W / cols;
+        // chevrons: each side's rows are offset one from the other
+        const c = hot[(i + j) % 2];
+        const a = at(p, u0, v0), b = at(p, u1, v0), cc = at(p, u1, v1), d = at(p, u0, v1);
+        for (const q of [a, b, cc, a, cc, d]) { pos.push(q[0], q[1], q[2]); col.push(c.r, c.g, c.b); }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    this.padMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+    this.padMesh.frustumCulled = false;
+    this.w.scene.add(this.padMesh);
+  }
+
+  private dropPads() {
+    if (!this.padMesh) return;
+    this.w.scene.remove(this.padMesh);
+    this.padMesh.geometry.dispose();
+    (this.padMesh.material as THREE.Material).dispose();
+    this.padMesh = null;
   }
 
   /** The checkpoints still to pass, for the maps. */
@@ -557,8 +792,12 @@ class Race implements Job {
     const was = this.best && this.best.cp === n ? this.best.sp[k] : undefined;
     const diff = was !== undefined ? t - was : null;
     const col = diff === null ? "#fff" : diff <= 0 ? "#58e06a" : "#ff5a4e";
+    this.deadline += this.legs[k + 1] ?? 0;
+    this.beeped = 6;
+    const par = t - this.parAt[k], pc = par <= 0 ? "#58e06a" : "#ff5a4e";
     this.show(`<div style="font-size:16px;color:#ddd">Checkpoint ${k + 1} of ${n}</div><span style="color:#fff">${clock(t, true)}</span>`
-      + (diff !== null ? ` <span style="color:${col}">${diff <= 0 ? "-" : "+"}${Math.abs(diff).toFixed(1)}</span>` : ""), 2.5);
+      + (diff !== null ? ` <span style="color:${col}">${diff <= 0 ? "-" : "+"}${Math.abs(diff).toFixed(1)}</span>` : "")
+      + `<div style="font-size:16px;color:${pc}">${par <= 0 ? "-" : "+"}${Math.abs(par).toFixed(1)} s on gold pace · +${Math.round(this.legs[k + 1] ?? 0)} s</div>`, 2.5);
     SFX.checkpoint();
     if (!this.own) {
       const msg = { k: "cp", s: this.offer.seed, i: k, t: Math.round(t * 10) / 10 };
@@ -604,8 +843,12 @@ class Race implements Job {
     const mine = this.results.findIndex((r) => r.id === this.w.selfId);
     const place = this.own ? 0 : mine + 1, of = this.own ? 0 : this.grid?.length ?? 1;
     const m = this.medalOf(t);
-    this.party = new Celebration({
-      place: place > 0 ? place : 0, of, time: clock(t, true),
+    const won = place === 1 && of > 1;
+    this.party = missionEnd({
+      result: "complete", colour: COLOUR,
+      title: place === 0 ? "Time trial" : won ? "Winner!" : of === 1 ? "Finished!" : "Over the line!",
+      big: place > 0 && of > 1 ? placeWord(place) : undefined, gold: place === 1, lead: true,
+      lines: [clock(t, true)],
       medal: `${m[0].toUpperCase()}${m.slice(1)}${!beat && was ? ` · your best ${clock(was.t, true)}` : ""}`,
       best: beat ? (was ? `New best! ${(was.t - t).toFixed(1)} s quicker` : "Your first time here: a best to beat") : "",
       rows: this.rows(),
@@ -613,7 +856,7 @@ class Race implements Job {
     SFX.fanfare(place > 0 ? place : 0);
   }
 
-  private rows(): FinishRow[] {
+  private rows(): EndRow[] {
     if (this.own) return [];
     return this.results.map((r) => ({ name: r.id === this.w.selfId ? "You" : this.w.nameOf(r.id), time: clock(r.t, true), colour: this.w.colourOf(r.id), me: r.id === this.w.selfId }));
   }
@@ -626,13 +869,13 @@ class Race implements Job {
 
   /** The best runs, see-through, racing you on your clock: yours and the fastest few from the room. */
   private drawGhosts(t: number) {
-    const live = this.racing && !this.over && t >= 0;
+    const live = this.racing && !this.over && !this.out && t >= 0;
     const mine = this.ghosts.get(this.w.selfId);
     const shown = [...this.ghosts.values()].filter((g) => g !== mine).sort((a, b) => a.b.t - b.b.t).slice(0, GHOSTS - (mine ? 1 : 0));
     if (mine) shown.push(mine);
     for (const g of this.ghosts.values()) {
       const n = g.pts.length / 2;
-      if (!live || n < 2 || !shown.includes(g)) { if (g.view) g.view.visible = false; continue; }
+      if (!live || n < 2 || !shown.includes(g) || (g.id === "@par" && !this.alone())) { if (g.view) g.view.visible = false; continue; }
       if (!g.view) { g.view = ghostModel(this.rt.ride, g.colour); this.w.scene.add(g.view); }
       const f = t / g.b.e, i = Math.min(n - 1, Math.floor(f)), j = Math.min(n - 1, i + 1), u = Math.min(1, f - i);
       const x = g.pts[i * 2] + (g.pts[j * 2] - g.pts[i * 2]) * u, z = g.pts[i * 2 + 1] + (g.pts[j * 2 + 1] - g.pts[i * 2 + 1]) * u;
@@ -658,7 +901,8 @@ class Race implements Job {
   }
 
   private hideHud() {
-    this.arrow.hidden = true; this.flash.hidden = true;
+    this.arrow.hidden = true; this.flash.hidden = true; this.timer.hidden = true;
+    this.rideNormally(); this.dropPads(); this.padKey = "";
     for (const g of this.ghosts.values()) if (g.view) g.view.visible = false;
     this.dropGate(); this.dropArch();
   }
@@ -748,6 +992,15 @@ class Race implements Job {
       if (!this.grid && Date.now() < this.close + GRID_WAIT * 1000) this.enter(from);
     } else if (d.k === "grid" && Array.isArray(d.ids)) {
       this.onGrid(d.ids.map(String), true);
+    } else if (d.k === "out") {
+      if (!self) this.outs.add(from);
+    } else if (d.k === "knk") {
+      const t = this.now;
+      if (self || this.w.passive || !this.grid?.includes(from) || !this.racing || this.over || this.out || t < 0 || Date.now() < this.immune || !this.w.me().alive) return;
+      this.immune = Date.now() + KNOCK_COOL * 1000 + 1400;
+      this.w.knock?.();
+      SFX.thump();
+      this.show(`<span style="font-size:34px;color:#ff5a4e">KNOCKED OFF!</span>`, 1.5);
     } else if (d.k === "cp") {
       const i = Number(d.i), had = this.cps.get(from) ?? 0;
       if (i === had && i < this.gates.length - 1) this.cps.set(from, i + 1);
@@ -787,7 +1040,12 @@ class Race implements Job {
     }
     const top = this.results.slice(0, 3).map((r, k) => `${k + 1}. ${r.id === this.w.selfId ? "You" : this.w.nameOf(r.id)} ${clock(r.t, true)}`).join(" · ");
     // first over the line in the room: a traffic cone for your head
-    this.done = { won: true, text: top, x: this.fin.x, z: this.fin.z, wear: !this.local && this.results[0].id === this.w.selfId ? ["cone"] : undefined };
+    const mine = this.results.find((r) => r.id === this.w.selfId), first = !this.local && this.results[0].id === this.w.selfId;
+    const tier = mine ? (this.medalOf(mine.t) === "silver" ? 2 : this.medalOf(mine.t) === "bronze" || this.medalOf(mine.t) === "no medal" ? 1 : 3) : 0;
+    this.done = {
+      won: true, screen: !!this.party, text: top, x: this.fin.x, z: this.fin.z, wear: first ? ["cone"] : undefined,
+      grade: mine ? { tier: tier as 1 | 2 | 3, best: { v: tier * 1e5 - mine.t, text: ["", "bronze", "silver", "gold"][tier] }, also: first && (this.grid?.length ?? 1) > 1 ? ["rawin"] : undefined } : undefined,
+    };
   }
 
   progress() { return { r: this.results, e: this.entries, g: this.gridFromHost ? this.grid : null, c: [...this.cps] }; }
@@ -819,6 +1077,16 @@ class Race implements Job {
   }
 
   card(): Card {
+    const c = this.cardBase();
+    if (!this.racing || this.over || this.now < 0 || (!this.local && !this.grid)) return c;
+    const last = this.gates.length - 1, k = this.next;
+    return {
+      ...c, progress: k < last ? `${k} / ${last}` : "Finish", timer: clock(Math.max(0, this.now), true),
+      stage: { key: `cp${k}`, title: k === 0 ? "Go!" : k < last ? `Checkpoint ${k} of ${last}` : "Head for the finish", sub: k < last ? undefined : this.rt.to.n, life: k === 0 ? 1.5 : 1.8 },
+    };
+  }
+
+  private cardBase(): Card {
     const t = this.now, me = this.w.me(), m = this.medal, nowMs = Date.now();
     const medalLine = `Gold ${clock(m.gold)} · silver ${clock(m.silver)} · bronze ${clock(m.bronze)}`;
     const legend = this.daily ? boardHtml() : "";
@@ -833,6 +1101,9 @@ class Race implements Job {
     }
     if (this.racing && !this.over && t < 0) {
       return { line: `<b class="clue">${Math.ceil(-t) <= 3 ? Math.ceil(-t) : "Get ready"}</b>`, sub: `${esc(rideSpecs[this.rt.ride].name)} · ${medalLine}${this.best ? ` · best ${clock(this.best.t, true)}` : ""}${this.grid && !this.own ? `<br>Racing: ${names(this.grid)}` : ""}` };
+    }
+    if (this.out && !this.over) {
+      return { line: `<b class="clue">Out of time</b> at checkpoint ${this.next + 1}`, sub: `<b>Backspace</b> to go again${!this.own && this.results.length ? `<br>Leader ${clock(this.results[0].t, true)}` : ""}` };
     }
     const roomMine = this.results.find((r) => r.id === this.w.selfId);
     const last = this.gates.length - 1;
@@ -859,6 +1130,9 @@ class Race implements Job {
     };
   }
 
+  /** A lost race leaves its skid marks and the winner's ghost on the start line. */
+  scarAt() { return { x: this.line.x, z: this.line.z }; }
+
   end() {
     this.w.mark("@race", null);
     for (const g of this.ghosts.values()) if (g.view) { this.w.scene.remove(g.view); g.view.geometry.dispose(); (g.view.material as THREE.Material).dispose(); }
@@ -867,6 +1141,9 @@ class Race implements Job {
     this.dropArch();
     this.arrow.remove();
     this.flash.remove();
+    this.timer.remove();
+    this.rideNormally();
+    this.dropPads();
   }
 }
 

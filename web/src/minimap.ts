@@ -8,11 +8,15 @@
 // the big map's key (mapkey.ts), which draws its rows with the same icons as here. The bus stops
 // round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
 // with its stops along it and the next one picked out. A race's route
-// and its checkpoints (race.ts) are drawn on every map while it's on.
+// and its checkpoints (race.ts) are drawn on every map while it's on, and the pencil lines
+// (signals.ts) on the big map. Your map (yourmap.ts)
+// borrows the big map to colour every square in by what you've done there.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
+import type { PencilLine } from "./signals";
 import type { WideChunk } from "./wide";
 import { GROUND } from "./groundkinds";
+import { drawOwn, type Own } from "./yourmap";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
@@ -73,7 +77,7 @@ function routeLine(g: CanvasRenderingContext2D, b: BusLine, P: (x: number, z: nu
 }
 
 /** An area to search (a treasure trail's clue, a Wanted poster's last-seen circle): scene x, z, r metres. */
-export interface Circle { x: number; z: number; r: number; colour: string }
+export interface Circle { x: number; z: number; r: number; colour: string; pulse?: boolean }
 /** A race's way along the streets (scene x, z pairs) and its checkpoints, from the next one on
  *  (gates, x, z pairs; the first drawn biggest), ending at the finish. */
 export interface RouteLine { pts: number[]; gates: number[]; colour: string }
@@ -198,6 +202,16 @@ function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: numb
     const [cx, cy] = P(c.x, c.z), r = Math.max(6 * dpr, c.r * scale);
     g.save();
     g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
+    if (c.pulse) {
+      // a bold, breathing ring, dark-edged so it shows on any map
+      const beat = 0.5 + 0.5 * Math.sin(performance.now() / 350);
+      g.globalAlpha = 0.18 + 0.14 * beat; g.fillStyle = c.colour; g.fill();
+      g.setLineDash([]);
+      g.globalAlpha = 0.8; g.strokeStyle = "#14161c"; g.lineWidth = (6 + 2 * beat) * dpr; g.stroke();
+      g.globalAlpha = 0.7 + 0.3 * beat; g.strokeStyle = c.colour; g.lineWidth = (3.5 + 1.5 * beat) * dpr; g.stroke();
+      g.restore();
+      continue;
+    }
     g.globalAlpha = 0.16; g.fillStyle = c.colour; g.fill();
     g.globalAlpha = 0.95; g.strokeStyle = c.colour; g.lineWidth = 2 * dpr; g.setLineDash([6 * dpr, 4 * dpr]); g.stroke();
     g.restore();
@@ -206,6 +220,22 @@ function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: numb
 
 /** The point-of-interest marker, centred on (x, y), k pixels to the unit (about 11 units across):
  *  a dark disc ringed in bright cyan with a white star in it. */
+/** Pencil lines, a little rough, as if drawn on the map by hand. */
+function drawPencil(g: CanvasRenderingContext2D, lines: PencilLine[], P: (x: number, z: number) => number[], dpr: number) {
+  g.lineCap = g.lineJoin = "round";
+  for (const l of lines) {
+    if (l.pts.length < 4) continue;
+    g.setLineDash(l.dash ? [8 * dpr, 6 * dpr] : []);
+    for (const [w, col] of [[5 * dpr, "rgba(14,16,18,0.6)"], [2.4 * dpr, l.colour]] as const) {
+      g.strokeStyle = col; g.lineWidth = w;
+      g.beginPath();
+      for (let i = 0; i < l.pts.length; i += 2) { const [x, y] = P(l.pts[i], l.pts[i + 1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.stroke();
+    }
+  }
+  g.setLineDash([]);
+}
+
 export function spotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
   g.save();
   g.translate(x, y);
@@ -324,14 +354,16 @@ export class Minimap {
   spots: Spot[] = [];
   /** The players' map markers (markers.ts), set by the game each frame. */
   markers: Marker[] = [];
-  /** The other players, as last drawn on the minimap, for the pub map. */
-  private mates: Mate[] = [];
   /** Today's jobs (quests.ts), and any areas to search. */
   jobs: JobSpot[] = [];
   circles: Circle[] = [];
   routes: RouteLine[] = [];
+  /** Lines drawn on the big map with the pencil (signals.ts). */
+  pencil: PencilLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
+  /** Your map (yourmap.ts) while it's open: every square coloured by what you've done there, in place of the tint. */
+  own: Own[] | null = null;
   /** The bus stops round about (scene x, z), and the bus route you're driving, if you are. */
   stops: { x: number; z: number }[] = [];
   bus: BusLine | null = null;
@@ -642,9 +674,12 @@ export class Minimap {
     }
     if (on("cable") && this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
-    if (on("flags")) drawTint(g, this.tint, P, scale);
+    if (this.own) drawOwn(g, this.own, P, scale, dpr);
+    else if (on("flags")) drawTint(g, this.tint, P, scale);
     drawRoutes(g, this.routes, P, dpr);
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
+    drawPencil(g, this.pencil, P, dpr);
+    this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the bus stops (zoomed in), and the route you're driving, its next stop named
     if (on("stops") && this.zoom >= 2.5) for (const st of this.stops) { const [sx, sy] = P(st.x, st.z); stopIcon(g, sx, sy, 1.2 * dpr); }
     if (this.bus && on("route")) {
@@ -817,19 +852,14 @@ export class Minimap {
     }
   }
 
-  /**
-   * The pub map: north up, centred on data point (cx, cy) at mpp metres to the canvas pixel, with
-   * street names, you, a pint glass on each pub, and the big map's minigames, jobs, players' markers,
-   * other players and Bendy (whatever its key has switched on). Returns where each pin landed on the canvas,
-   * in canvas pixels, for picking one. redraw: called when a sharper picture is ready.
-   */
-  drawView(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, you: { x: number; z: number; yaw: number },
-           pins: Pin[], redraw: () => void): [number, number][] {
-    const W = c.width, H = c.height, dpr = Math.min(2, devicePixelRatio || 1), g = c.getContext("2d")!;
-    const P = (x: number, y: number): [number, number] => [W / 2 + (x - cx) / mpp, H / 2 - (y - cy) / mpp];
-    this.backdrop(g, W, H, cx, cy, mpp, dpr, redraw);
-    // the pubs: a pint each, and their names where there's room (the one you're pointing at always)
-    const at = pins.map((p) => P(p.x, -p.z));
+  /** The pubs the pub menu is choosing between: a pint glass each, drawn on the full map. */
+  pins: Pin[] = [];
+
+  /** A pint glass on each pin, and their names where there's room (the one you're pointing at always). */
+  private drawPins(g: CanvasRenderingContext2D, P: (x: number, z: number) => number[], dpr: number, fontPx: number) {
+    const pins = this.pins;
+    if (!pins.length) return;
+    const at = pins.map((p) => P(p.x, p.z));
     const pint = (x: number, y: number, k: number) => {
       g.beginPath();
       g.moveTo(x - 4 * k, y - 6 * k); g.lineTo(x + 4 * k, y - 6 * k); g.lineTo(x + 3 * k, y + 6 * k); g.lineTo(x - 3 * k, y + 6 * k); g.closePath();
@@ -838,9 +868,9 @@ export class Minimap {
       g.fillStyle = "#f6efd8"; g.fillRect(x - 4 * k + 1, y - 6 * k + 1, 8 * k - 2, 3 * k);
     };
     pins.forEach((p, i) => { if (!p.on) pint(at[i][0], at[i][1], 1.1 * dpr); });
-    g.font = `700 ${Math.round(14 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
-    g.textAlign = "left";
-    const taken: number[][] = [];
+    g.font = `700 ${fontPx}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "left"; g.textBaseline = "alphabetic"; g.lineJoin = "round";
+    const hover = pins.findIndex((p) => p.on), taken: number[][] = [];
     const label = (text: string, x: number, y: number, force: boolean) => {
       const w = g.measureText(text).width, h = 16 * dpr, bx = x + 9 * dpr, by = y - h / 2;
       if (!force && taken.some(([tx, ty, tw, th]) => bx < tx + tw && bx + w > tx && by < ty + th && by + h > ty)) return;
@@ -848,48 +878,9 @@ export class Minimap {
       g.strokeStyle = "rgba(20,24,28,0.9)"; g.lineWidth = 4 * dpr; g.strokeText(text, bx, y);
       g.fillStyle = force ? "#ffdd00" : "#f4f1ea"; g.fillText(text, bx, y);
     };
-    const hover = pins.findIndex((p) => p.on);
+    // the others claim their room first, so pointing at a pub doesn't make their names come and go
+    if (this.zoom >= 3) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
     if (hover >= 0) { pint(at[hover][0], at[hover][1], 1.7 * dpr); label(pins[hover].label, at[hover][0] + 4 * dpr, at[hover][1], true); }
-    if (mpp < 4) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
-    // the minigames, over the pubs
-    const on = (layer?: string) => !layer || !this.off.has(layer);
-    if (on("cable") && this.cable.length === 2) drawCable(g, P(this.cable[0][0], -this.cable[0][1]), P(this.cable[1][0], -this.cable[1][1]), dpr, 1.8 * dpr);
-    if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, -s.z)), dpr);
-    if (on("flags")) drawTint(g, this.tint, (x, z) => P(x, -z), 1 / mpp);
-    drawRoutes(g, this.routes, (x, z) => P(x, -z), dpr);
-    if (on("search")) drawCircles(g, this.circles, (x, z) => P(x, -z), 1 / mpp, dpr);
-    for (const j of this.jobs) { if (!on(j.layer)) continue; const [jx, jy] = P(j.x, -j.z); spotBadge(g, jx, jy, 1.7 * dpr, j); }
-    // the markers players have put down, with whose they are, as on the big map
-    g.font = `700 ${Math.round(14 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
-    g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
-    for (const m of on("markers") ? this.markers : []) {
-      if (m.job) continue;
-      const [mx, my] = P(m.x, -m.z);
-      pinIcon(g, mx, my, 1.5 * dpr, m.colour, m.mine);
-      const text = m.mine ? "Your marker" : m.name;
-      g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr; g.strokeText(text, mx, my - 28 * dpr);
-      g.fillStyle = m.colour; g.fillText(text, mx, my - 28 * dpr);
-    }
-    // the other players, named
-    g.font = `600 ${Math.round(13 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
-    g.textBaseline = "top";
-    for (const m of on("players") ? this.mates : []) {
-      const [mx, my] = P(m.x, -m.z);
-      this.mate(g, mx, my, -m.yaw, m, 1.2 * dpr, dpr);
-      g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr; g.strokeText(m.name, mx, my + 11 * dpr);
-      g.fillStyle = m.colour; g.fillText(m.name, mx, my + 11 * dpr);
-    }
-    if (this.boss && on("bendy")) { const [bx, by] = P(this.boss.x, -this.boss.z); bendyIcon(g, bx, by, 2 * dpr, this.boss.after); }
-    // you: an arrow pointing the way you face
-    const [px, py] = P(you.x, -you.z);
-    g.save();
-    g.translate(px, py); g.rotate(-you.yaw);
-    g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = 2 * dpr;
-    const k = 1.6 * dpr;
-    g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
-    g.fill(); g.stroke();
-    g.restore();
-    return at;
   }
 
   /** Paint the wider map span metres across round (cx, cy) at about mpp metres to the pixel. */
@@ -927,7 +918,6 @@ export class Minimap {
   /** Draw the minimap around the player at scene (x, z) facing yaw, with the other players at the
    *  rim, pointing their way, when they're out of range. */
   draw(x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
-    this.mates = mates;
     const c = this.canvas, dpr = Math.min(2, devicePixelRatio || 1);
     const css = c.clientWidth;
     if (!css) return;

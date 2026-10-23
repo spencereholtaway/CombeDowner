@@ -15,6 +15,10 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
+`tools/new_area.py` does the registering and the build in order for an ordinary area, and the
+`new-area` skill (`.claude/skills/new-area/`) walks through it; `docs/own-area.md` says what a script
+cannot do for you.
+
 All raw data goes in `data/raw/<map id>/`, which git ignores. For a map with a wide area, a copy of
 what the build reads from it, small enough to keep, then goes in the repository, in `data/<map id>/`
 (`tools/mapdata.py pack`, after building with `--measure`): from then on anyone can rebuild the
@@ -54,7 +58,7 @@ Set the map id once:
 ```sh
 MAP=my-place
 mkdir -p data/raw/$MAP
-pip3 install overturemaps rasterio
+pip3 install overturemaps rasterio scipy scikit-image
 ```
 
 ### Overture Maps (required)

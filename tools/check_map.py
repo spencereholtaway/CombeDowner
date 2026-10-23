@@ -21,7 +21,9 @@ case by case:
  6. The railway: track on the ground sits on it; a road crossing the line is a bridge or an
     underpass, never at grade (there are no level crossings in Bath).
  7. The canal: every road or path crossing it (outside its tunnels) is a bridge with headroom for
-    a boat over the water, and the ground under the span is dug below the water.
+    a boat over the water, and the ground under the span is dug below the water; a path on its
+    towpath is level with the coping (tools/canal.py's banks, web/src/works.ts); and nothing runs
+    through one of its tunnels below the arch (a street over one is on its cover).
  8. The corridors are clear: no tree, shrub, street item (parked cars aside) or wall stands in a
     road's carriageway, on the railway, in the water or in the canal's channel.
  9. Things on the ground fit together: every gate has a wall or fence at both sides; no two walls,
@@ -168,7 +170,8 @@ def main():
                     if not mk[end] and abs(p[end][2] - ground(p[end][0], p[end][1])) > 0.6:
                         note("3 deck end off the road", abs(p[end][2] - ground(p[end][0], p[end][1])), (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # something to cross
-                under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg))
+                under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg)) \
+                    or any(canal_segs[int(c)][0].intersects(seg) for c in canal_tree.query(seg))
                 # a stream or river drawn as a line is something to cross too, if it crosses the span and doesn't merely meet its end
                 under = under or any(streams[int(w)].intersects(seg) and not streams[int(w)].touches(seg) for w in stree_w.query(seg))
                 if not under:
@@ -228,8 +231,32 @@ def main():
                 x = ln.intersection(seg); x = x.geoms[0] if hasattr(x, "geoms") else x
                 if x.geom_type != "Point": continue
                 zr, i = z_at(r, x)
+                # (a path across a lock's gates is the lock's own walkway: canal.ts builds it, and the lock's chamber)
+                if r["c"] in PATHS and any(math.dist((x.x, x.y), g) < 15 for lk in canal["locks"] for g in (lk["lo"], lk["hi"])): continue
                 if not mk[i] or zr < lv + 2.0: note("7 road through the canal", lv + 2.6 - zr, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} at {zr:.1f}, water {lv:.1f}, {'span' if mk[i] else 'no span'}")
                 elif ground(x.x, x.y) > lv - 0.3: note("7 ground not dug under a canal bridge", ground(x.x, x.y) - lv, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} ground {ground(x.x, x.y):.1f} water {lv:.1f}")
+        if canal:
+            for run in canal["runs"]:
+                p, lv = run["p"], run["lv"]
+                for k in range(len(p) - 1):
+                    a, b = p[k], p[k + 1]
+                    if len(a) < 9 or (a[6] | b[6]) & 2: continue
+                    seg = LineString([a[:2], b[:2]])
+                    L = seg.length or 1
+                    nx_, ny_ = -(b[1] - a[1]) / L, (b[0] - a[0]) / L
+                    for r, ln in zip(roads, lines):
+                        if r["c"] not in PATHS or ln.distance(seg) > a[2] + 4: continue
+                        for q in r["p"]:
+                            if seg.distance(Point(q[:2])) > a[2] + 4: continue
+                            o = (q[0] - a[0]) * nx_ + (q[1] - a[1]) * ny_
+                            t = ((q[0] - a[0]) * (b[0] - a[0]) + (q[1] - a[1]) * (b[1] - a[1])) / L ** 2
+                            if not 0 <= t <= 1: continue
+                            if (a[6] & 1) and abs(o) < a[2] + 1.3 and q[2] < lv + 3.5 and len(q) < 4:
+                                note("7 way through a canal tunnel", lv + 3.5 - q[2], (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} at {q[2]:.1f}, water {lv:.1f}")
+                            if any(math.dist(q[:2], g) < 45 for lk in canal["locks"] for g in (lk["lo"], lk["hi"])): continue    # (beside a lock the towpath climbs with it)
+                            w = a[7] if o > 0 else a[8]
+                            if not (a[6] & 1) and w >= 1.5 and a[2] + 0.5 < abs(o) < a[2] + w - 0.3 and len(q) < 4 and abs(q[2] - lv - 0.4) > 0.3:
+                                note("7 towpath off the canal's level", abs(q[2] - lv - 0.4), (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} at {q[2]:.1f}, water {lv:.1f}")
         # ---- 8. the corridors are clear -------------------------------------------------------------
         corr = [l.buffer((r.get("w") or RW.get(r["c"], 4)) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
         b = m["b"]
@@ -276,7 +303,7 @@ def main():
     print("rule failures across", len(files), "map files:")
     for rule in sorted(totals):
         print(f"  {totals[rule]:5d}  {rule}")
-        for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:6]:
+        for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:int(os.environ.get("SHOW", 6))]:
             print(f"           {where[0]:>8s} ({where[1]:>6},{where[2]:>6})  {what}")
     if not totals: print("  none")
 

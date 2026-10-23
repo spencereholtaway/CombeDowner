@@ -6,6 +6,7 @@ import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { PubMap } from "./pubmap";
+import { YourMap } from "./yourmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
@@ -19,8 +20,12 @@ import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
 import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 import { closeWardrobe, openWardrobe } from "./wardrobe";
+import * as Trophies from "./trophies";
+import { closeCabinet, completion, openCabinet } from "./trophies";
 import { colourFor } from "./avatar";
 import { dayLength, skipHours } from "./daylight";
+import * as Telemetry from "./telemetry";
+import * as Recent from "./recentrooms";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -237,6 +242,18 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
+/** Keep the room in the start screen's recent list while you're in it, with whoever has been there. */
+let roomTimer = 0, roomNote = () => {};
+addEventListener("pagehide", () => roomNote());
+function watchRoom(code: string) {
+  clearInterval(roomTimer);
+  roomNote = () => {};
+  if (code === "SOLO") return;
+  roomNote = () => { if (game) Recent.remember(code, current.id, game.mateNames()); };
+  roomNote();
+  roomTimer = window.setInterval(roomNote, 30000);
+}
+
 /** Hand the Game its travel hook, so a train at a platform can take us to another town. */
 function armTravel(g: Game, code: string) {
   g.onTravel = (toMap, carry) => void travel(toMap, code, carry);
@@ -266,6 +283,7 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     old.dispose(false);   // keep the connection and the voice links
     const { map, world } = current;
     game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
+    Telemetry.play(toMap);
     (window as any).__travelStage = "built";
     armTravel(game, code);
     game.player.sensitivity = 0.0022 * sensitivity;
@@ -295,7 +313,11 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  Telemetry.play(id);
+  Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
+  Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
   armTravel(game, code);
+  watchRoom(code);
   game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
@@ -348,6 +370,7 @@ function lockFailed() {
 
 function lock() {
   closeWardrobe();
+  closeCabinet();
   if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
@@ -360,6 +383,8 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+/** The pause menu's Trophies button says how much of Bath you've done. */
+function showCompletion() { $("trophybtn").textContent = `Trophies \u00b7 ${completion().pct}% of Bath done`; }
 let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
 function showPause() {
   if (!game) return;
@@ -368,13 +393,16 @@ function showPause() {
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
   $("calloff").hidden = !game.quests.running;
+  showCompletion();
   game.drawDaily();
 }
 /** Esc out of the pause menu: back to the game at once, the mouse captured if the browser allows it,
  *  and if not the click hint shows and your next click captures it. */
 function resume() {
   if (!game) return;
+  closeChronicle();
   closeWardrobe();
+  closeCabinet();
   $("pause").hidden = true;
   game.active = true;
   if (!freeMode) $("clickhint").hidden = false;
@@ -388,7 +416,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else { pausedAt = performance.now(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
+  else { pausedAt = performance.now(); showCompletion(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
 // Playing with the mouse loose (the browser wouldn't capture it as the game started, because joining
 // took too long after the click on Play): the first click anywhere captures it, the minimap and the
@@ -610,6 +638,18 @@ $("play").onclick = () => {
   $("menuerr").textContent = "";
   play(code);
 };
+const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? "" : mapName(m)), async (r) => {
+  $("menuerr").textContent = "";
+  $<HTMLInputElement>("code").value = r.code;
+  if (valid(r.map)) {
+    const radio = list.querySelector<HTMLInputElement>(`input[value="${r.map}"]`);
+    if (radio) radio.checked = true;
+    try { if (!(await showMap(r.map))) return; }
+    catch (e: any) { $("menuerr").textContent = String(e.message ?? e); return; }
+  }
+  $("play").click();
+});
+showRecent();
 $("solo").onclick = () => start("SOLO", true);
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
@@ -619,6 +659,61 @@ $("resume").onclick = () => { SFX.unlock(); lock(); };
 const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
 $("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
+$("trophybtn").onclick = () => openCabinet(() => showCompletion());
+
+// your map and the Chronicle's news: from the pause menu, the big map (Y) and the noticeboards (N)
+const yourMap = new YourMap(() => game);
+function pauseButton(id: string, text: string, onclick: () => void) {
+  const b = document.createElement("button");
+  b.type = "button"; b.id = id; b.textContent = text; b.onclick = onclick;
+  $("trophybtn").after(b);
+}
+pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
+pauseButton("yourmapbtn2", "Your map", () => yourMap.open(false));
+const yourBtn = document.createElement("button");
+yourBtn.type = "button"; yourBtn.id = "yourmapbtn"; yourBtn.textContent = "Your map (Y)";
+yourBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+yourBtn.onclick = () => toggleYours();
+document.querySelector("#bigmap .bigmapbar")?.prepend(yourBtn);
+$("bigmap").addEventListener("pointerdown", (e) => { if ((e.target as HTMLElement).closest("#yourpanel")) e.stopPropagation(); }, true);
+function toggleYours() {
+  if (!game || pubMap.isOpen) return;
+  if (yourMap.isOpen) yourMap.back(); else yourMap.open($("pause").hidden);
+}
+const paperHud = document.createElement("button");
+paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
+paperHud.onclick = () => readPaper();
+$("hud").appendChild(paperHud);
+/** Put the Chronicle away and go back to the pause menu. */
+function closeChronicle() { $("chronicle").hidden = true; }
+$("chronclose").onclick = () => closeChronicle();
+// Esc shuts the paper first, back to the pause menu it came from
+addEventListener("keydown", (e) => {
+  if (e.code !== "Escape" || $("chronicle").hidden) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!e.repeat) closeChronicle();
+}, true);
+/** The Chronicle, on its own sheet over the pause menu: the mouse is let go first. */
+function readPaper() {
+  if (!game) return;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  else if ($("pause").hidden) showPause();
+  game.readChronicle();
+}
+// stood at a noticeboard, the Chronicle's pinned up there too (looked for a few times a second, not every frame)
+setInterval(() => {
+  if ($("pause").hidden) closeChronicle();
+  const at = !!game?.active && game.quests.atBoard();
+  if (paperHud.hidden === !at) return;
+  paperHud.hidden = !at;
+  if (at && game) paperHud.textContent = `Read the Chronicle${MOUSE ? " (N)" : ""}`;
+}, 300);
+addEventListener("keydown", (e) => {
+  if (!game || e.repeat || e.target instanceof HTMLInputElement) return;
+  if (e.code === "KeyY" && !$("bigmap").hidden) toggleYours();
+  else if (e.code === "KeyN" && game.active && game.quests.atBoard()) readPaper();
+});
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();
@@ -670,5 +765,6 @@ void startReady().then(() => {
 
 // for automated tests
 (window as any).__game = () => game;
+(window as any).__trophies = Trophies;
 (window as any).__renderer = renderer;
 (window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs

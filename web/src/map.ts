@@ -16,6 +16,7 @@ import { twertonSolids } from "./landmarks/twerton";
 import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces } from "./landmarks/setpieces";
+import { CanalWorks } from "./works";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -32,7 +33,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number; pv?: number[]; held?: boolean }   // held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; held?: boolean }   // held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
@@ -246,6 +247,8 @@ export class GameMap {
   readonly cable: CableLine | null = null;
   /** The canal, once built (world.ts): the map's own water that's part of it is left out. Tiles share the main map's. */
   canal: { pondLevel(w: Pond): number | null | undefined } | null = null;
+  /** The canal's own banks where it crosses this map's grid (works.ts): the ground is theirs inside them. */
+  works: CanalWorks | null = null;
   /** More to stand on, from the canal and the railways (scene Y at scene x, z, or null): counted when
    *  it's no more than a step above the feet, like a bridge deck. */
   floors: ((x: number, z: number) => number | null)[] = [];
@@ -349,6 +352,9 @@ export class GameMap {
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
     const g = (x: number, z: number) => this.ground(x, z);
+    // on a map that marks its bridges, a road it doesn't mark is on the ground all the way (a path
+    // along the top of the canal's cutting stands well clear of the canal's bed, but it's no bridge)
+    if (d.rd.some((r) => spanMarked(r))) for (const r of d.rd) r.marked = true;
     for (const r of d.rd) {
       if (this.spent(2)) yield;
       const flags = spanFlags(r, g, this.z0);
@@ -371,8 +377,9 @@ export class GameMap {
     for (const r of [...d.rd, ...(wide?.rd ?? []).filter((r) => !r.p.some((q) => this.inGrid(q[0], -q[1])))]) {
       if (this.spent(2)) yield;
       if (!r.bridge) continue;
-      const k = this.decks.length, half = roadHalf(r.c, r.w) + 0.4, seen = new Set<number>();
-      this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
+      // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
+      const k = this.decks.length, half = deckHalf(r) + 0.2, seen = new Set<number>(), flags = spanFlags(r, g, this.z0);     // (out to its parapets: deckHalf)
+      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
         for (let s = 0; s <= n; s++)
@@ -386,6 +393,32 @@ export class GameMap {
     // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
     // along the edge where its streets carry on)
     d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors, () => this.spent(24));
+
+    this.phase = "canal";
+    // the canal's banks (works.ts): its ground where it runs through this map's grid, and the
+    // retaining walls along them you can't walk up
+    const canal = this.canalData ?? (this.canal as { d?: CanalData } | null)?.d;
+    if (canal && d.t.nx > 1) {
+      // (the decks over it: bridges, and the roads leading on to them)
+      const under = (x: number, y: number) => {
+        let low: number | null = null;
+        for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(-y / CELL))) ?? []) {
+          const { p, half } = this.decks[k];
+          for (let i = 0; i < p.length - 1; i++) {
+            const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+            const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (-y - a[1]) * vz) / l2));
+            if (Math.hypot(x - a[0] - vx * t, -y - a[1] - vz * t) < half + 0.5) low = Math.min(low ?? Infinity, a[2] + (b[2] - a[2]) * t + this.z0);
+          }
+        }
+        return low;
+      };
+      const T = d.t, w = new CanalWorks(canal, T, (x, y) => this.bareGround(x, -y) + this.z0, under);
+      if (!w.empty) {
+        this.works = w;
+        for (const [ax, ay, bx, by, top, foot] of w.walls) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0, foot === undefined ? -Infinity : foot - this.z0);
+      }
+    }
+    yield;
 
     this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
@@ -669,21 +702,25 @@ export class GameMap {
   }
 
   /** The deck of a bridge at scene (x, z), if feet at y are on it or a step below it (not down by
-   *  the river under it): its height, or null. */
+   *  the river under it): its height, or null. Where decks overlap (a slip road beside the main
+   *  one, a road's approach where the deck begins, one bridge over another) it's the highest
+   *  you're standing on or can step up to, so the one beside you never lets you through. */
   deck(x: number, z: number, y: number): number | null {
     const tile = this.tileAt(x, z);
     if (tile) return tile.deck(x, z, y);
-    let best: number | null = null, bd = Infinity;
+    let best: number | null = null, floor: number | null = null;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, half } = this.decks[k];
       for (let i = 0; i < p.length - 1; i++) {
         const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
         const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
-        const d = Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t);
-        if (d < half && d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * t; }
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        const h = a[2] + (b[2] - a[2]) * t;
+        if (h > y + 0.6 || (best !== null && h <= best)) continue;
+        if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
       }
     }
-    return best !== null && best <= y + 0.6 && best > this.ground(x, z) + 0.3 ? best : null;
+    return best;
   }
 
   /** The full-detail square loaded at scene (x, z), outside this map's own grid, if any. */
@@ -815,6 +852,20 @@ export class GameMap {
 
   ground(x: number, z: number): number {
     if (this.wide && !this.inGrid(x, z)) return (this.tileAt(x, z) ?? this.wide).ground(x, z);
+    const W = this.works;
+    if (W) {
+      // inside the canal's banks the ground is theirs (works.ts)
+      const T = this.d.t, fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
+      const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
+      const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j)), s = W.sd, n = T.nx, a = j * n + i;
+      const c = u + v <= 1 ? s[a] + (s[a + 1] - s[a]) * u + (s[a + n] - s[a]) * v : s[a + n + 1] + (s[a + n] - s[a + n + 1]) * (1 - u) + (s[a + 1] - s[a + n + 1]) * (1 - v);
+      if (c < 0) { const h = W.height(x, -z); if (h !== null) return h - this.z0; }
+    }
+    return this.bareGround(x, z);
+  }
+
+  /** The height of this map's own ground grid at scene (x, z), as its triangles draw it, without the canal's banks. */
+  bareGround(x: number, z: number): number {
     const T = this.d.t;
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
@@ -919,7 +970,16 @@ export class GameMap {
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
   inTunnel(x: number, z: number, y: number): number | null {
     const f = this.tunnelFloor(x, z);
-    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : null;
+    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : this.canalBore(x, z, y);
+  }
+
+  /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
+   *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of
+   *  the square loaded there. */
+  canalBore(x: number, z: number, y: number): number | null {
+    const h = this.works?.bore(x, -z, y + this.z0);
+    if (h !== undefined && h !== null) return h - this.z0;
+    return this.tileAt(x, z)?.canalBore(x, z, y) ?? null;
   }
 
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
@@ -1241,17 +1301,24 @@ export function roadHalf(c: string, w?: number): number {
 /** Streets with kerbs and a pavement each side, and how wide the pavement is. */
 export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
 export const PAVE = 1.7;
-/** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its pavements, or a path and its verge. */
-export function deckHalf(r: { c: string; w?: number; pv?: number[] }): number { return roadHalf(r.c, r.w) + (KERBED.has(r.c) ? Math.max(...(r.pv ?? [PAVE, PAVE])) : 0.3); }
+/** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its
+ *  pavements as they're drawn (its own width and pavements where the map gives them), or a path
+ *  and its verge. The deck is built, drawn and stood on out to here, to its parapets, so no part
+ *  of the street drawn on a bridge has nothing under it. */
+export function deckHalf(r: { c: string; w?: number; pv?: number[] }): number {
+  const pave = KERBED.has(r.c) ? Math.max(0, ...(r.pv ?? [PAVE, PAVE])) : r.w ? 0 : 0.3;
+  return Math.max(roadHalf(r.c) + (KERBED.has(r.c) ? PAVE : 0.3), roadHalf(r.c, r.w) + pave);
+}
 /** Does the map mark this road's bridge span point by point (newer builds of tools/prep_map.py)? */
-export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1 || q[3] === 2); }
+export function spanMarked(r: Road): boolean { return !!r.marked || r.p.some((q) => q[3] === 1 || q[3] === 2); }
 /**
  * Which of a road's points are on a bridge: 1 on a span the bridge is built for, 2 on the deck of
  * a bridge beside it (built for by the road it rides on), 0 on the ground. The map marks them on
- * newer builds. On a road it doesn't mark, a span is found where the road stands well clear of
- * the ground under it (a good three metres, for two points running, so a riverside path on its
- * embankment above the bank doesn't grow parapets), then taken out both ways to where the road
- * meets the ground, so the deck reaches the banks rather than stopping over the water.
+ * newer builds (and then a road with none marked has none). On an older map's road, a span is
+ * found where the road stands well clear of the ground under it (a good three metres, for two
+ * points running, so a riverside path on its embankment above the bank doesn't grow parapets),
+ * then taken out both ways to where the road meets the ground, so the deck reaches the banks
+ * rather than stopping over the water.
  */
 export function spanFlags(r: Road, ground: (x: number, z: number) => number, z0: number): number[] {
   const p = r.p, n = p.length;

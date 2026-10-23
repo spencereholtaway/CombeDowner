@@ -500,11 +500,13 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 ux, uy = (bx - ax) / l, (by - ay) / l
             rect, length, depth = oriented_rect(poly, ux, uy)
             fill = poly.area / max(1e-6, length * depth)
+            # an L-, T- or cross-shaped footprint (a church with transepts) still gets its roof: the
+            # game shrinks it to the biggest rectangle that stands on the walls and caps the rest flat
             if fill < 0.9:
                 rect, length, depth = core_rect(poly, ux, uy)
             if (zone == "riverside" and kind == "flats") or (m and m["flat"]):
                 pass                                    # flat roofs
-            elif m and fill > 0.68 and depth > 3:
+            elif m and depth > 3:
                 hip0 = hip1 = 0.0
                 half = min(depth / 2, length / 2)
                 if "hips" in m:
@@ -541,7 +543,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     rise = steep
                     if tall and kind != "church": tall = max(1, round((eaves - 0.8) / 3.5))
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
-            elif fill > 0.68 and depth > 3:
+            elif depth > 3:
                 rise = min(depth / 2 * PITCH, 5.5 if kind == "church" else 3.0 if zone == "georgian" else 4.2)
                 if kind == "church": rise = depth / 2 * 1.2
                 hip0 = hip1 = 0.0

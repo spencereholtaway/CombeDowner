@@ -11,6 +11,7 @@
 //   ("mhurt"). Using things (levers, chests, the winze, picking up a friend) goes through the host
 //   ("muse"), which says what happened to everyone ("mev").
 // - Positions ("st") and names ("hello") go to everyone, as do voices (../voice.ts).
+import * as Telemetry from "../telemetry";
 import * as THREE from "three";
 import * as SFX from "../audio";
 import { Avatar, colourFor } from "../avatar";
@@ -400,6 +401,7 @@ export class MineGame {
     this.puzzles.onDraught = () => this.toast("You feel a draught from somewhere in the rock", 3);
     this.scene.add(this.puzzles.group);
     this.levelKey = `${seed}:${depth}`;
+    Telemetry.note("mines_depth:" + depth);
     this.seen = new Uint8Array(this.L.w * this.L.h);
     this.horde = null;
     this.lastMobs = [];

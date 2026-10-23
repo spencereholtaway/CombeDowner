@@ -128,6 +128,17 @@ input.code { text-transform: uppercase; letter-spacing: 0.15em; font-family: ui-
 .err:not(:empty) { border-left: 5px solid var(--danger); padding-left: 10px; }
 .hint { color: var(--paper-muted); font-size: 14px; margin: 0; }
 .hint:empty { display: none; }
+/* recent rooms: one line each, the whole row a tap target */
+.recent { display: grid; gap: 6px; }
+.recent .q { font-weight: 700; font-size: 18px; color: var(--paper-ink); }
+.recent ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.recent li { display: flex; gap: 6px; }
+.recentgo { flex: 1; min-width: 0; min-height: 44px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; text-align: left; }
+.recentgo b { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.1em; }
+.recentgo span, .recentgo small { color: var(--paper-muted); font-size: 14px; }
+.recentgo small { flex-basis: 100%; overflow-wrap: anywhere; }
+.newsdot { font-style: normal; font-size: 12px; font-weight: 700; padding: 0 6px; border-radius: 8px; background: var(--accent); color: var(--paper-ink); }
+.recentx { flex: 0 0 44px; min-height: 44px; padding: 0; font-size: 22px; line-height: 1; }
 .inset { margin: 0; padding: 8px 12px; border-left: 8px solid var(--paper-line); color: var(--paper-ink); font-size: 15px; }
 .credit { color: var(--paper-muted); font-size: 11px; margin: 0; line-height: 1.4; border-top: 1px solid var(--paper-line); padding-top: 10px; }
 details summary { cursor: pointer; color: var(--link); text-decoration: underline; text-underline-offset: 3px; font-size: 16px; }
@@ -164,14 +175,10 @@ kbd {
 .wardtile.locked { color: var(--paper-muted); background: #fff; border-style: dashed; cursor: default; text-align: left; }
 .wardtile small { display: block; font-size: 12px; }
 @media (max-width: 560px) { .wardbody { grid-template-columns: 1fr; } .wardview { justify-self: center; width: 150px; height: 200px; } }
-/* the pub map, over the pause menu */
-#pubmap { z-index: 11; }
-.pubcard { width: min(960px, 100%); }
-#pubcanvas { display: block; width: 100%; height: min(72vh, 100vw); touch-action: none; cursor: grab; background: #1c2329; }
-#pubcanvas:active { cursor: grabbing; }
-.pubbar { display: flex; gap: 8px; align-items: center; padding: 10px 14px 12px; }
-.pubbar .hint { flex: 1; min-width: 0; color: var(--paper-ink); }
-.pubbar button { padding: 6px 14px 5px; font-size: 16px; }
+/* the pub menu borrows the big map, over the pause menu; its hint keeps one height so the map never shifts under the pointer */
+#hud.pubmode { z-index: 11; }
+#hud.pubmode > :not(#bigmap) { display: none; }
+#hud.pubmode .bigmapbar p { min-height: 2.6em; display: flex; align-items: center; text-align: center; }
 .music .hint { flex: 1; min-width: 0; }
 .music button { padding: 6px 12px; font-size: 14px; }
 
@@ -332,19 +339,8 @@ kbd {
 .panel .bar > div { height: 100%; width: 100%; transition: width 0.15s, background 0.15s; }
 .panel .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 3px), rgba(11, 12, 12, 0.85) calc(10% - 3px) 10%); }
 
-/* The job you're on: a plate at the top left, under whoever's talking */
-#jobcard { top: 64px; bottom: auto; left: 16px; width: min(320px, calc(100vw - 230px)); padding-bottom: 18px; }
-#jobcard .label { letter-spacing: 0.12em; }
-#jobcard.fresh { animation: cardflash 0.7s ease-in-out 4; }
+/* The job you're on: the panel is drawn by missionscreens.ts (#mprog) */
 @keyframes cardflash { 50% { box-shadow: 0 0 0 3px var(--accent), 0 0 28px var(--accent); } }
-#jobcard .jobtitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
-#jobcard .jobline { font-size: 15px; line-height: 1.3; }
-#jobcard .jobline b { color: var(--accent); }
-#jobcard .jobline b.clue { display: inline-block; color: #fff; letter-spacing: 0.08em; font-size: 17px; margin: 2px 0; }
-#jobcard .bar { margin-top: 6px; height: 8px; }
-#jobcard .bar::after { display: none; }
-#jobcard em { display: block; font-style: normal; color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.3; }
-#hud:has(#compass:not([hidden])) #jobcard { top: 96px; }
 /* the Flag Lads meter, under the minimap, and what to do next */
 #bunting { top: 204px; bottom: auto; right: 16px; width: 180px; padding: 5px 10px 6px; }
 #bunting .label { letter-spacing: 0.1em; margin: 0; }
@@ -354,6 +350,16 @@ kbd {
 #bunting .bar div { height: 100%; background: #d6283a; }
 #bunting em { display: block; font-style: normal; font-size: 13px; line-height: 1.25; margin-top: 3px; color: #d9b8f2; }
 #bunting em b { color: #fff; }
+#banner { top: 52px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(380px, calc(100vw - 340px)); text-align: center; padding: 5px 12px 6px; }
+#banner[hidden] { display: none; }
+#banner .label { letter-spacing: 0.08em; margin: 0; }
+#banner .label b { color: #d9b8f2; }
+#banner .bar { height: 8px; margin-top: 4px; }
+#banner .bar::after { display: none; }
+#banner .bar div { height: 100%; background: #b45cff; transition: width 0.4s linear; }
+#banner.late .bar div { background: #ff4a52; }
+#banner em { display: block; font-style: normal; font-size: 13px; line-height: 1.25; margin-top: 3px; color: #d9b8f2; }
+#hud:has(#banner:not([hidden])) #boss { top: 134px; }
 #bunting .downs { float: right; display: inline-block; color: #fff; letter-spacing: 0; }
 #bunting.tick .downs { animation: bunting-tick 0.22s ease-out; }
 @keyframes bunting-tick { from { transform: scale(1.5); color: #ffd84a; } to { transform: scale(1); } }
@@ -369,6 +375,11 @@ kbd {
 #jobposter p { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
 #jobposter .reward { font-weight: 700; color: #6a4a08; }
 #jobposter em { display: block; font: 800 15px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; color: #1f4a33; }
+/* the Chronicle, pinned up on every noticeboard (daily.ts) */
+#paperbtn { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); pointer-events: auto; font: 700 15px var(--f-hud); letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 14px 5px; }
+#paperbtn[hidden] { display: none; }
+#yourmapbtn { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 18px 6px; }
+#hud.pubmode:not(:has(#bigmap.yours)) #yourmapbtn { display: none; }
 
 /* Bendy's health, across the top (under the Now Playing amp) while he's near */
 #boss { top: 92px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 340px)); text-align: center; }
@@ -443,6 +454,11 @@ kbd {
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
 /* Driving a bus on the 2 or the 4 (busdriver.ts): the route, the next stop and who's on, over the speedo */
+#shootcard { left: 50%; top: 64px; bottom: auto; transform: translateX(-50%); text-align: center; max-width: calc(100vw - 32px); padding: 6px 14px; }
+#shootcard b { display: block; font-family: var(--f-hud); font-size: 20px; letter-spacing: 0.04em; }
+#shootcard em { display: block; font-style: normal; color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+#shoothint { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; text-align: center; max-width: calc(100vw - 32px); pointer-events: none; }
+#shoothint[hidden] { display: none; }
 #buscard { right: 18px; bottom: 132px; width: min(290px, calc(100vw - 260px)); padding-bottom: 18px; }
 #buscard .label { letter-spacing: 0.12em; color: #7fe08f; }
 #buscard .bustitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
@@ -532,24 +548,25 @@ kbd {
 /* Scores: the league table */
 #scoreboard { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); background: rgba(11, 12, 12, 0.88); min-width: min(440px, calc(100vw - 32px)); border-top: 6px solid var(--accent); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
 .sb-head { padding: 10px 16px 6px; font-size: 24px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
-#scoreboard table { width: 100%; border-collapse: collapse; font-size: 19px; }
-#scoreboard th { text-align: left; color: var(--muted); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.15em; padding: 4px 16px; border-bottom: 2px solid var(--line); }
-#scoreboard td { padding: 6px 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-#scoreboard tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.04); }
-#scoreboard td:first-child { font-weight: 700; }
-#scoreboard th:not(:first-child), #scoreboard td:not(:first-child) { text-align: right; }
-#scoreboard tr.me td { background: var(--accent); color: var(--black); text-shadow: none; }
+#scoreboard > table { width: 100%; border-collapse: collapse; font-size: 19px; }
+#scoreboard > table th { text-align: left; color: var(--muted); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.15em; padding: 4px 16px; border-bottom: 2px solid var(--line); }
+#scoreboard > table td { padding: 6px 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#scoreboard > table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.04); }
+#scoreboard > table td:first-child { font-weight: 700; }
+#scoreboard > table th:not(:first-child), #scoreboard > table td:not(:first-child) { text-align: right; }
+#scoreboard > table tr.me td { background: var(--accent); color: var(--black); text-shadow: none; }
 /* Today's jobs: in the league table under Tab, on their own when you join, and on the pause screen.
    Laid out as the front page of the Bath Chronicle: blackletter masthead, newsprint, ruled columns. */
-#scoreboard.join :is(.sb-head, #topleft, table) { display: none; }
-#scoreboard.join { top: 10%; max-width: min(460px, calc(100vw - 32px)); background: none; border-top: 0; box-shadow: none; }
-#scoreboard.join .daily { transform: rotate(-1deg); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); }
+#scoreboard.join > :is(.sb-head, #topleft, table) { display: none; }
+#scoreboard.join { z-index: 20; top: 2vh; width: min(980px, calc(100vw - 32px)); max-height: 96vh; overflow-y: auto; pointer-events: auto; background: none; border-top: 0; box-shadow: none; }
+#scoreboard.join .daily { max-width: none; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); }
 .daily {
   --news: #f1ead8; --news-ink: #1a1714; --news-muted: #5c544a; --news-rule: #1a1714;
-  padding: 8px 14px 12px; max-width: 460px; text-align: left; background: var(--news); color: var(--news-ink);
+  padding: 10px 18px 14px; max-width: 460px; text-align: left; background: var(--news); color: var(--news-ink);
   font-family: "Old Standard TT", Georgia, "Times New Roman", serif; text-shadow: none;
 }
-#scoreboard:not(.join) .daily { margin: 10px 12px; max-width: none; }
+#scoreboard:not(.join) { top: 2vh; width: min(980px, calc(100vw - 32px)); max-height: 96vh; overflow: hidden; display: flex; flex-direction: column; }
+#scoreboard:not(.join) .daily { order: 3; min-height: 0; overflow: hidden; margin: 10px 12px; max-width: none; }
 .card .daily { border: 1px solid var(--paper-line); }
 .chron-ears { display: flex; justify-content: space-between; font-size: 11px; font-style: italic; color: var(--news-muted); }
 .chron-mast {
@@ -574,6 +591,53 @@ kbd {
 .daily-flags b.pct { color: #a3171c; }
 .daily-flags small { display: block; font-size: 12px; font-style: italic; color: var(--news-muted); margin-top: 3px; }
 .daily-flags small.now { color: #5a2483; font-style: normal; }
+.chron-cols { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 0 18px; font-size: 14px; line-height: 1.38; }
+.chron-side { border-left: 1px solid var(--news-rule); padding-left: 18px; }
+.chron-side > .chron-box:first-child { margin-top: 0; border-top: 0; }
+.chron-kicker { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; padding: 3px 0 2px; border-top: 3px double var(--news-rule); border-bottom: 1px solid var(--news-rule); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+.chron-yest .chron-strap { margin-top: 6px; }
+.chron-sheet { width: min(980px, 100%); max-height: calc(100dvh - 32px); min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.chron-sheet .daily { max-width: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); }
+#chronclose { align-self: flex-end; flex: none; width: auto; padding: 8px 16px; }
+#chronicle { z-index: 12; }
+@media (min-width: 721px) and (max-height: 820px) {
+  .daily { padding: 6px 16px 8px; }
+  .chron-mast { font-size: 44px; margin: 0 0 4px; }
+  .chron-cols { font-size: 13px; line-height: 1.3; }
+  .daily li { padding: 2px 0; font-size: 14px; }
+  .daily-flags, .chron-box { margin-top: 6px; }
+  .chron-kicker { margin-top: 8px; }
+  .chron-lead h3 { font-size: 20px; }
+  .chron-lead p { margin-bottom: 4px; }
+  .chron-small { margin-top: 6px; gap: 6px; }
+  #scoreboard .daily { zoom: 0.9; }
+}
+@media (max-width: 720px) {
+  .chron-cols { grid-template-columns: minmax(0, 1fr); }
+  .chron-side { border-left: 0; padding-left: 0; }
+  .chron-side > .chron-box:first-child { margin-top: 10px; border-top: 3px double var(--news-rule); }
+  #chronicle { padding: 8px; }
+  .chron-sheet { max-height: calc(100dvh - 16px); }
+}
+@media (min-width: 721px) { .chron-photo { float: right; width: 44%; margin: 3px 0 6px 14px; } .chron-mast { font-size: 58px; margin-bottom: 8px; } .chron-small { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.chron-strap { display: flex; flex-wrap: wrap; gap: 1px 12px; padding-bottom: 4px; margin-bottom: 8px; border-bottom: 1px solid var(--news-rule); font-size: 11px; font-style: italic; color: var(--news-muted); }
+.chron-lead h3 { margin: 0 0 4px; font-size: 22px; line-height: 1.05; font-weight: 700; text-wrap: balance; }
+.chron-lead p { margin: 0 0 6px; }
+.chron-lead .stand { font-weight: 700; }
+.chron-lead .by { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--news-muted); margin-bottom: 6px; }
+.chron-lead figure { margin: 0 0 3px; aspect-ratio: 16 / 9; background: #2a2622; overflow: hidden; }
+.chron-lead figure img { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.chron-lead .cap { font-size: 12px; font-style: italic; color: var(--news-muted); }
+.chron-box { margin-top: 10px; padding-top: 5px; border-top: 3px double var(--news-rule); }
+.chron-box.scars { background: #e4d6b4; padding: 5px 8px 6px; }
+.chron-box h4, .chron-small h4 { margin: 0 0 3px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; }
+.chron-box p, .chron-box li, .chron-small p { margin: 0 0 4px; font-size: 13px; }
+.chron-box ul { margin: 0; padding-left: 18px; list-style: disc; }
+.chron-box li { display: list-item; padding: 0; border: 0; font-weight: 400; line-height: inherit; }
+.chron-league { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.chron-league td { padding: 2px 0; border-bottom: 1px dotted var(--news-muted); font-weight: 700; }
+.chron-league td:last-child { text-align: right; }
+.chron-small { display: grid; gap: 8px; margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--news-rule); }
 
 /* Big call-outs ("You shot ...") */
 #toast {
@@ -671,7 +735,7 @@ kbd {
   #drive { min-width: 120px; }
   #mph { font-size: 34px; }
   #buscard { bottom: auto; top: 54px; left: 8px; right: auto; width: min(220px, calc(100vw - 170px)); }
-  #hud:has(#jobcard:not([hidden])) #buscard { top: 190px; }
+  #hud:has(#mprog:not([hidden])) #buscard { top: 190px; }
   #buscard .bustitle { font-size: 17px; }
   #buscard .busline, #buscard em { font-size: 13px; }
   #drive em { display: none; }
@@ -690,13 +754,11 @@ kbd {
   #bigmapclose { padding: 5px 14px 3px; }
   #hud:has(#compass:not([hidden])) #np { display: none; }
   #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
-  #jobcard { top: 54px; width: min(240px, calc(100vw - 170px)); }
-  #jobcard .jobtitle { font-size: 17px; }
-  #jobcard .jobline { font-size: 13px; }
-  #hud:has(#compass:not([hidden])) #jobcard { top: 50px; left: 8px; }
   #jobposter { top: auto; bottom: 140px; font-size: 13px; }
   #feed { top: 160px; font-size: 15px; }
   #bunting { top: 150px; width: 140px; padding: 3px 8px 4px; }
+  #banner { top: 50px; width: min(300px, calc(100vw - 200px)); }
+  #banner em { font-size: 11px; }
   #bunting .label { display: block; font-size: 11px; }
   #bunting em { font-size: 11px; }
   #hud:has(#bunting:not([hidden])) #feed { top: 214px; }

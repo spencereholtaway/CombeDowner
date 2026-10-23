@@ -14,7 +14,7 @@ import type { Room, MessageAction } from "trystero";
 
 export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf", "tfw", "tfx", "tfp", "vk", "bd", "bhit", "cn", "cnu", "trh",
   "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver", "mk", "qe", "ow", "bv",
-  "dk", "dg", "clk", "ldr", "lds", "gtr", "wd", "wdq", "bl"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
+  "dk", "dg", "clk", "ldr", "lds", "gtr", "wd", "wdq", "bl", "scr", "pl", "so", "sd", "sg", "no"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 

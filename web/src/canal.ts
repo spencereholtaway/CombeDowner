@@ -24,7 +24,7 @@ import { compact } from "./railway";
 export interface CanalData {
   runs: { lv: number; p: number[][] }[];
   locks: { n: string; no: string; lo: number[]; hi: number[]; zl: number; zh: number; tl?: number }[];
-  tunnels: { n: string; a: number[]; b: number[] }[];
+  tunnels: { n: string; a: number[]; b: number[]; tw?: number }[];
   moor: number[][];
 }
 
@@ -191,6 +191,43 @@ export function lockPits(d: CanalData | null | undefined, z0: number, x0: number
     const wl = wingLength(lk);
     a.push(new THREE.Vector4(lx - ux * wl, -ly - uz * wl, ux, uz));
     b.push(new THREE.Vector4(floor, top - floor - 0.02, LOCK_HALF + COPE, wl - TAIL + 0.3));
+  }
+  return { a, b };
+}
+
+const TUNNEL_WATER = 2.6;               // half the water's width in a tunnel (tools/canal.py)
+const LEDGE = 1.3;                     // the towpath's ledge through a tunnel, on its side
+
+/** A canal tunnel's bore across the canal (to the left of the way its run goes, positive): from lo
+ *  to hi, the walls standing to wall, the arch rising another rise over them, centred at mid. */
+function tunnelBore(t: CanalData["tunnels"][number], lv: number) {
+  const side = t.tw ?? 0;
+  const lo = side < 0 ? -(TUNNEL_WATER + LEDGE) : -TUNNEL_WATER - 0.1, hi = side > 0 ? TUNNEL_WATER + LEDGE : TUNNEL_WATER + 0.1;
+  return { lo, hi, mid: (lo + hi) / 2, half: (hi - lo) / 2, wall: lv + 1.0, rise: 2.5 };
+}
+
+/** Where the ground is left out inside the canal's tunnels, from portal to portal, so you can see
+ *  through them (the hill or the street over them stays), as tunnelMouths does for the roads'
+ *  (tunnels.ts): boxes for the ground's shader, as lockPits gives. */
+export function canalBores(d: CanalData | null | undefined, z0: number, x0: number, y0: number, x1: number, y1: number): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
+  const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
+  for (const t of d?.tunnels ?? []) {
+    const [ax, ay] = t.a, [bx, by] = t.b;
+    if (Math.max(ax, bx) < x0 - 30 || Math.min(ax, bx) > x1 + 30 || Math.max(ay, by) < y0 - 30 || Math.min(ay, by) > y1 + 30) continue;
+    // the run's level and which way it runs through the tunnel
+    let lv = 0, dir = 1, best = Infinity;
+    for (const r of d!.runs) for (let k = 0; k < r.p.length - 1; k++) {
+      const q = r.p[k], dd = Math.hypot(q[0] - (ax + bx) / 2, q[1] - (ay + by) / 2);
+      if (dd < best) { best = dd; lv = r.lv; const n = r.p[k + 1]; dir = (n[0] - q[0]) * (bx - ax) + (n[1] - q[1]) * (by - ay) >= 0 ? 1 : -1; }
+    }
+    const L = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / L, uy = (by - ay) / L;
+    const bore = tunnelBore(t, lv);
+    // across the box, measured to its left as the run goes: the bore's middle is off the canal's
+    // middle by mid, on the towpath's side
+    const off = bore.mid * dir, cx = ax - uy * off, cy = ay + ux * off;
+    const floor = lv - 1.2 - z0;
+    a.push(new THREE.Vector4(cx - ux * 0.6, -(cy - uy * 0.6), ux, -uy));
+    b.push(new THREE.Vector4(floor, bore.wall + bore.rise - lv + 1.2 - 0.05, bore.half, L + 1.2));
   }
   return { a, b };
 }
@@ -373,29 +410,11 @@ export class Canal {
       }
     });
 
-    // banks: stone walls where the ground beside the water drops below it, the aqueduct, the tunnels
+    // the aqueduct and the tunnels (the banks along the open water are works.ts's, laid with the
+    // ground of each square of Bath)
     const st = new Mesher();
     d.runs.forEach((r, ri) => {
-      const y = r.lv - z0, p = r.p, L = this.legs[ri];
-      const edge = (k: number, side: number, off: number) => {
-        const a = p[Math.max(0, k - 1)], b = p[Math.min(p.length - 1, k + 1)], q = p[k];
-        const tx = b[0] - a[0], ty = b[1] - a[1], tl = Math.hypot(tx, ty) || 1;
-        const w = q[2] + off;
-        return [q[0] - (ty / tl) * w * side, -(q[1] + (tx / tl) * w * side)];
-      };
-      for (let k = 0; k < p.length - 1; k++) {
-        const fa = p[k][6], fb = p[k + 1][6];
-        if ((fa | fb) & 3) continue;
-        for (const side of [1, -1]) {
-          const g = Math.min(p[k][side > 0 ? 4 : 5], p[k + 1][side > 0 ? 4 : 5]);
-          if (g > r.lv + 0.25) continue;
-          const [ax, az] = edge(k, side, 0), [bx, bz] = edge(k + 1, side, 0), [cx, cz] = edge(k, side, 0.6), [dx, dz] = edge(k + 1, side, 0.6);
-          const bot = Math.min(g, p[k][3]) - z0 - 1.2, top = y + 0.35;
-          st.quad([ax, bot, az], [bx, bot, bz], [bx, top, bz], [ax, top, az], STONE);
-          st.quad([ax, top, az], [bx, top, bz], [dx, top, dz], [cx, top, cz], COPING);
-          st.quad([cx, top, cz], [dx, top, dz], [dx, bot, dz], [cx, bot, cz], STONE);
-        }
-      }
+      const p = r.p, L = this.legs[ri];
       // the aqueduct: a stone trough with a towpath each side, on arches between piers
       let k = 0;
       while (k < p.length) {
@@ -526,7 +545,8 @@ export class Canal {
     }
   }
 
-  /** A tunnel: a stone face round the arch at each portal, and a dark brick lining between. */
+  /** A tunnel: a stone face round the arch at each portal, and a dark brick lining between, with
+   *  the towpath's ledge through it on its side (tools/canal.py's "tw"). */
   private tunnel(st: Mesher, t: CanalData["tunnels"][number], STONE: string, BRICK: string) {
     const k = this.nearest(t.a[0], -t.a[1]);
     if (!k) return;
@@ -534,25 +554,33 @@ export class Canal {
     const sa = L.pts[k.i].s, kb = this.nearest(t.b[0], -t.b[1]);
     if (!kb || kb.run !== k.run) return;
     const sb = L.pts[kb.i].s, s0 = Math.min(sa, sb), s1 = Math.max(sa, sb);
-    const R = 2.7, wall = lv + 1.0;
+    const { lo, hi, wall, rise, mid, half } = tunnelBore(t, lv);
+    const side = t.tw ?? 0;
     const P = (s: number, v: number, h: number) => { const a = this.along(L, s), nx = a.tz, nz = -a.tx; return [a.x + nx * v, h, a.z + nz * v]; };
-    // the lining: walls up from the water, then the barrel of the arch
-    const ring: number[][] = [[R, lv - 0.6], [R, wall]];
-    for (let q = 1; q <= 10; q++) { const ang = (q / 10) * Math.PI; ring.push([R * Math.cos(ang), wall + R * Math.sin(ang)]); }
-    ring.push([-R, lv - 0.6]);
+    // the lining: walls up from the water (and the ledge), then the barrel of the arch
+    const ring: number[][] = [[hi, lv - 0.6], [hi, wall]];
+    for (let q = 1; q <= 10; q++) { const ang = (q / 10) * Math.PI; ring.push([mid + half * Math.cos(ang), wall + rise * Math.sin(ang)]); }
+    ring.push([lo, lv - 0.6]);
     for (let s = s0; s < s1 - 1e-6; s += 2) {
       const e = Math.min(s1, s + 2);
       for (let q = 0; q < ring.length - 1; q++) st.quad(P(s, ring[q][0], ring[q][1]), P(e, ring[q][0], ring[q][1]), P(e, ring[q + 1][0], ring[q + 1][1]), P(s, ring[q + 1][0], ring[q + 1][1]), BRICK);
+      // the towpath's ledge: its stone face down to the water, and its top
+      if (side) {
+        const v0 = side * TUNNEL_WATER, v1 = side * (TUNNEL_WATER + LEDGE);
+        st.quad(P(s, v0, lv - 0.6), P(e, v0, lv - 0.6), P(e, v0, lv + 0.4), P(s, v0, lv + 0.4), STONE);
+        st.quad(P(s, v0, lv + 0.4), P(e, v0, lv + 0.4), P(e, v1, lv + 0.4), P(s, v1, lv + 0.4), "#8f8573");
+      }
     }
     // the portals: a face 14 m wide with the arch cut out of it, a metre thick
+    const face = Math.max(7, half + 3.5), crown = wall + rise;
     for (const [s, back] of [[s0, -1], [s1, 1]]) {
-      for (let v = -7; v < 7 - 1e-6; v += 0.5) {
-        const w = v + 0.5, archAt = (x: number) => (Math.abs(x) < R ? wall + Math.sqrt(R * R - x * x) : lv - 1.2);
-        for (const off of [0, back]) st.quad(P(s + off, v, archAt(v)), P(s + off, w, archAt(w)), P(s + off, w, lv + 5.2), P(s + off, v, lv + 5.2), STONE);
-        st.quad(P(s, v, lv + 5.2), P(s, w, lv + 5.2), P(s + back, w, lv + 5.2), P(s + back, v, lv + 5.2), "#a89c86");
+      for (let v = mid - face; v < mid + face - 1e-6; v += 0.5) {
+        const w = v + 0.5, archAt = (x: number) => (Math.abs(x - mid) < half ? wall + rise * Math.sqrt(1 - ((x - mid) / half) ** 2) : lv - 1.2);
+        for (const off of [0, back]) st.quad(P(s + off, v, archAt(v)), P(s + off, w, archAt(w)), P(s + off, w, crown + 1.5), P(s + off, v, crown + 1.5), STONE);
+        st.quad(P(s, v, crown + 1.5), P(s, w, crown + 1.5), P(s + back, w, crown + 1.5), P(s + back, v, crown + 1.5), "#a89c86");
       }
       // a keystone over the arch
-      st.quad(P(s - 0.05 * back, -0.4, wall + R - 0.2), P(s - 0.05 * back, 0.4, wall + R - 0.2), P(s - 0.05 * back, 0.5, wall + R + 0.9), P(s - 0.05 * back, -0.5, wall + R + 0.9), "#e1d2ad");
+      st.quad(P(s - 0.05 * back, mid - 0.4, crown - 0.2), P(s - 0.05 * back, mid + 0.4, crown - 0.2), P(s - 0.05 * back, mid + 0.5, crown + 0.9), P(s - 0.05 * back, mid - 0.5, crown + 0.9), "#e1d2ad");
     }
   }
 

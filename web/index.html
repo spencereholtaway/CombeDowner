@@ -35,7 +35,7 @@
     <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
     <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
-    <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div></div><div class="bigmapbar"><p>Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
+    <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div></div><div class="bigmapbar"><p id="bigmaphint">Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
     <div id="feed"></div>
     <div id="notices" aria-live="polite"></div>
     <div id="watch" aria-hidden="true"><b class="gs-brand">G-SHOCK</b><div class="gs-face"><span class="gs-l">LIGHT</span><span class="gs-r">SHOCK RESIST</span><canvas id="watchlcd"></canvas></div><b class="gs-prot">PROTECTION</b></div>
@@ -61,9 +61,11 @@
       <div class="windrow"><b id="windarrow" aria-hidden="true">↑</b><span id="wind"></span></div>
       <em id="kickhint"></em>
     </div>
-    <div id="jobcard" class="panel" hidden></div>
+    <div id="shootcard" class="panel" hidden></div>
+    <div id="shoothint" hidden></div>
     <div id="buscard" class="panel" hidden></div>
     <div id="bunting" class="panel" hidden></div>
+    <div id="banner" class="panel" hidden></div>
     <div id="jobposter" hidden></div>
     <div id="boost" hidden></div>
     <div id="usehint" hidden></div>
@@ -112,6 +114,8 @@
       <div id="stickbase" hidden></div><div id="stickknob" hidden></div>
       <button id="t-pause" class="tbtn small" aria-label="Pause">II</button>
       <div class="tcluster">
+        <button id="t-dl" class="tbtn" hidden>◀ Dive</button>
+        <button id="t-dr" class="tbtn" hidden>Dive ▶</button>
         <button id="t-crouch" class="tbtn small">Crouch</button>
         <button id="t-reload" class="tbtn small">Reload</button>
         <button id="t-swap" class="tbtn small">Weapon</button>
@@ -152,6 +156,10 @@
           <div class="join">
             <label for="code"><span class="q">Name your game</span></label>
             <input id="code" class="code" maxlength="16" placeholder="e.g. HADLEY (blank for a random name)" autocomplete="off" spellcheck="false">
+          </div>
+          <div id="recent" class="recent" hidden>
+            <span class="q">Recent rooms</span>
+            <ul></ul>
           </div>
           <label class="check"><input id="menu-passive" type="checkbox"> Passive mode: nothing in the game attacks anyone (if you start the game, it's for everyone in it)</label>
           <div class="row">
@@ -203,6 +211,13 @@
     </div>
   </div>
 
+  <div id="chronicle" class="overlay" hidden>
+    <div class="chron-sheet">
+      <button id="chronclose" type="button">Close the paper (Esc)</button>
+      <div id="chrondaily" class="daily"></div>
+    </div>
+  </div>
+
   <div id="pause" class="overlay" hidden>
     <div class="card">
       <header class="masthead">
@@ -218,7 +233,6 @@
         </div>
         <p class="hint" id="nethint"></p>
         <p class="hint" id="pausehint"></p>
-        <div id="pausedaily" class="daily"></div>
         <div class="row">
           <button id="resume" class="primary">Resume</button>
           <button id="leave" class="warning">Leave game</button>
@@ -227,6 +241,7 @@
         <button id="settingsbtn2" type="button">Settings</button>
         <button id="gopub" type="button" hidden>Go to a pub</button>
         <button id="wardrobebtn" type="button">Wardrobe</button>
+        <button id="trophybtn" type="button">Trophies</button>
         <button id="calloff" type="button" class="warning" hidden>Call off the job</button>
         <div id="voiceopts">
           <label class="check"><input id="micon" type="checkbox" checked> Microphone on</label>
@@ -276,22 +291,6 @@
           <button id="setdone" type="button" class="primary">Done</button>
           <button id="setreset" type="button">Reset to defaults</button>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="pubmap" class="overlay" hidden>
-    <div class="card pubcard">
-      <header class="masthead">
-        <span class="mark" aria-hidden="true"></span>
-        <span>Bath &amp; North East Somerset<b>Go to a pub</b></span>
-      </header>
-      <canvas id="pubcanvas" aria-label="Map of the pubs. Click one to go there"></canvas>
-      <div class="pubbar">
-        <p id="pubinfo" class="hint"></p>
-        <button id="pubzoomout" type="button" aria-label="Zoom out">−</button>
-        <button id="pubzoomin" type="button" aria-label="Zoom in">+</button>
-        <button id="pubback" type="button">Back</button>
       </div>
     </div>
   </div>

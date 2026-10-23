@@ -71,8 +71,20 @@ Bath's great buildings are modelled by hand:
 
 Roads, paths, the canal and the railways cross on proper bridges, with Bath-stone parapets,
 abutments, piers and arches, and whatever they cross running on underneath (the Dundas Aqueduct
-carries the canal over the Avon and the railway). Roads rise and fall like roads, in cuttings and
-on embankments, and river banks slope down to the water.
+carries the canal over the Avon and the railway). A bridge's deck runs straight from one bank to
+the other, its road meeting it at its own height at each end and climbing to it along its own slope
+(a side road joining it on the bridge meets the deck too), and where a square of the map's edge
+splits a bridge it carries straight on, with no pier or parapet end in the middle. You walk on a
+bridge exactly where it's drawn, right out to its parapets, and a slip road or approach beside it
+never lets you through; and only a real bridge is built as one, so a path along the top of a
+cutting has no parapets across the road. Over the canal every bridge leaves the water and the towpath open under an
+arch springing from the banks, with no pier in the water, so the boats and you on the towpath go
+straight under, its banks' walls stopping under the deck. Argyle Street runs level off Pulteney Bridge, kerb to kerb. Roads rise and
+fall like roads, in cuttings and on embankments: evened out along their length, a side street
+meeting a main road at the main road's own height, and none steeper than the hill it climbs (main
+roads no steeper than 1 in 6.5 at all); a path or road crossing well below another goes under it on
+a bridge, with headroom. The railway is laid as railways are, never steeper than 1 in 50, level
+across its bridges and straight through its tunnels, and river banks slope down to the water.
 
 Walls the lidar sees stand at their measured height, and streets are as wide as the walls either
 side allow, with a pavement a kerb high only where there is one. Every garden has its own front
@@ -251,11 +263,16 @@ shoot him and he complains about that too.
 
 The Kennet and Avon Canal runs round the east of the map, from the Avon at Widcombe up the six
 locks of the Widcombe flight, through Sydney Gardens' tunnels, past Bathampton and Claverton and
-over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. Its banks are
-level, just above the water, with the towpath along them. Below each lock its stone walls run on
-past the bottom gates, and the towpath climbs gently beside them on flagstones to the top of the
-chamber; where the canal runs along a hillside it's on its own
-bank on the downhill side and in a cutting on the uphill side. The locks work:
+over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. The canal cuts
+through the land as it was built to, whatever the hillside does: stone coping along the water's
+edge, then a level bank on each side, the towpath on one of them, and a grass verge, or a retaining
+wall where the ground beyond climbs into a cutting or drops away (above the railway at Bathwick),
+down or up to the ground. The towpath stays level with the water's coping, going under the bridges
+rather than up to them, and through both Sydney Gardens tunnels on a ledge beside the water: you
+can walk through on it, and see from one portal to the other; the streets over the tunnels run
+over the top on the tunnels' own cover. Below each lock its stone walls run on past the bottom gates, and the towpath
+climbs gently beside them on flagstones to the top of the chamber, the banks carrying on under the
+lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers
@@ -346,27 +363,121 @@ group), and he remembers: win a pub off you and he comes back tougher. A pub won
 WELCOME banner, leaves a ride outside, puts out free rounds and keeps the lads out of that square
 for the day. Get the meter to 0% and Bath is flag-free till tomorrow.
 
+The fight is at the pub's front, and it can be lost. Once the crew turn up, lads go up ladders
+against the wall to hang their banner, and a bar across the top of the screen fills while any of
+them is up there. Fill it and the pub is theirs. Shoot a lad off a ladder and the bar drops back a
+quarter (the next one climbs up 15 seconds later), so you choose between the crew, the ladder and
+the Gaffer. Alone the bar takes 150 seconds; each other player in the room makes it a fifth quicker,
+and a bigger room puts more lads on ladders, rather than making any of them tougher.
+
+At half his health the Gaffer runs: on foot, on a mobility scooter, or in his van, by what he
+brought (a gazebo or the WhatsApp group means the van, a megaphone the scooter; alone it's never the
+van). Wear him down (a fifth of his health left) or stay right on top of him and he puts his hands
+up: cuff him (E) for bonus prizes. If he's 400 m from the pub, or has lost everyone, he's away, and
+the next game day the Wanted poster on that pub's noticeboard is him: "the Gaffer, last seen leaving
+the Crown in a hurry". The lads you left behind are still yours to clear for the pub.
+
 ### Wanted
 
 A ringleader with a silly title ("the Duke of Disorder") hides out with his crew. The poster says
-the one loud thing he wears, his routine (a pub, a park, a bus stop, round and round) and two
-quirks: slippery, lookouts or mob-handed. A hidden third is given away by the first clue. A search
-circle 300 m across goes on the map, and witnesses and dropped leaflets (E) shrink it. Spot him up
-close, or through binoculars or a scope, and everyone gets a marker on him. Put him down for the
-prizes, or wear him down until he gives up, cuff him (E) and walk him to the police at the nearest
-bus stop or police box for more, while his mates try to spring him. Each bounty is six to eight
-minutes, with one second chance if he slips the net.
+two things about how he looks, his routine (a pub, a park, a bus stop, round and round, but not
+where) and two quirks: slippery, lookouts or mob-handed. A hidden third is given away by the first
+clue. A search circle 300 m across goes on the map.
+
+He is not alone in looking like that: four to six of his crew are dressed like him, each with a
+different mix of a hat, a coloured jacket, a bag, a dog and a limp (more of them the more of you
+there are, and more lookouts). The poster's two features fit him and one or two of the others, and a
+witness (E) gives a third feature that picks him out: but one witness in three is wrong, and owns up
+if you press them (E again). Leaflets and knocked-out lookouts still shrink the circle. Look through
+binoculars (B, from a roof or a hill if you can) to see who has what, then point him out with E. Point
+at the wrong man and it costs you 15 seconds on the clock. Once he's pointed out, everyone gets a
+marker on him. Put him down for the prizes, or wear him down until he gives up, cuff him (E) and
+walk him to the police at the nearest bus stop or police box for more, while his mates try to
+spring him. Cuff the wrong man and he complains, his solicitor is on the card, you lose 30 seconds
+and the real one moves on.
+
+He does something at each stop for a minute (a pint, feeding the ducks, waiting for a bus). Work
+out where from the poster, wait for him there and catch him without a chase for a bonus prize. Each
+bounty is six to eight minutes, with one second chance if he slips the net. A Gaffer who got away
+from a takeover is a Wanted poster too, under his own name.
 
 ### Treasure trails
 
 A chain of four to six riddles, each about a real pub, church, park or street in Bath ("Bells ring
 for Saint Mary"), with a biscuit tin on a post nearby holding the next one. The riddles get harder
-with the stars, and now and then one is a sepia sketch of the view instead. Each leg comes with its
-own ride. Within 400 m a search circle goes on the map and shrinks as you close in; stuck for two
-minutes, E gives a hint at a cost. The last tin is the Bath Bun chest, buried in a mound: dig it up
-for a gold, silver or bronze rosette pinned on your jacket. Some trails you do together (with twin
-tins that must be opened within 30 seconds of each other), some are races, and one a day is the
-trail of the day, the same in every room.
+with the stars, and now and then one is a sepia sketch of the view instead. Nothing gives the answer
+away: a one-star riddle says roughly which way ("somewhere south of here"), and from two stars there's
+no distance or compass at all. No circle comes up by itself. Stuck, press E to ask a local, and a
+circle goes on the map (smaller each time you ask). The tin only shows when you're close, and rattles
+when you're right by it. The last tin holds a spade, and the last clue ends in paces to count from
+something in the street there ("from the post box, 14 paces south-west"). Hold E (Dig on a touch
+screen) to dig where you stand: in the wrong place you get a hole with a worm in it, which everyone
+can see and which fills itself in after half an hour. Near the Bath Bun chest the spade hits wood,
+and then it wants lifting: two of you holding E together, or a long heave on your own. Inside, a
+gold, silver or bronze rosette pinned on your jacket.
+
+Every tin has a three-wheel brass lock, and its code is read off the place: the house the tin stands
+at (the windows across its top floor, its chimney pots, its storeys), or the benches, bins and lamp
+posts in the park it's in, or the letters on the nearest shop sign. The card says what to count once
+you've seen the tin, so friends further off can help. On a touch screen tap above or below each
+wheel; at a keyboard W and S (or the scroll wheel, or the number keys) turn a wheel, A and D move
+between them, E tries it and Escape leaves it. A wrong code jams the lock for ten seconds. A look
+leg sends you to a street or place and then names a house you have to pick out by eye ("the house
+with the teal door", or the only red-brick one in the row): its tin is on the doorstep, and only
+shows when you're nearly there.
+
+Together there's no clock and no par. Each leg is worth three brass stars: asking a local, jamming a lock and
+opening a decoy or the wrong tin each cost one. The rosette comes from your total (gold for nine in
+ten), and the end card says how each leg went. A trail done together can't be lost. A race keeps
+its clock and par, and you're racing K too, a ghost rival who runs to the best time anyone's done
+on that trail on your device (the par the first time). If she gets to the chest first, she digs it
+up, leaving a hole and a note. Twin tins must be opened within 30 seconds of each other (or a little
+longer on your own), and one trail a day is the trail of the day, the same in every room.
+
+Each trail mixes its legs. A split clue gives each
+friend half the name (alternate letters) on their own screen; on your own, the other half is pinned
+to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
+A sketch-map leg gives you a riddle to the place and a rough inked sketch of 250 m round it, with
+an X where the tin is and no names (on hard trails, no north arrow either, and it may be turned
+round). Hold J (the Sketch button on a touch screen) to study it full screen; you can't see the big
+map while you do. With friends only the map-holder has it (one for every two of you, each with a
+torn strip of it), so they have to talk the others in.
+
+A bearing leg names two look-outs on high ground (ringed on the map). Stood at one, you see a gold
+line on the ground running away towards the tin, and on past it: the tin is where the lines cross.
+Each line you see is pencilled on your own map, so on your own you climb both; with friends, one of
+you on each hill, on the radio. A plaque leg has a plaque by the place with a little table on it
+("Not the gold lid", "Not BADGER"), and round the corner, out of sight of it, stand several tins:
+the table rules out all but the true one. One of you reads, the others open.
+
+More players make more to tell each other, not harder tins: whoever takes the trail on decides how
+many legs give each of you something different to know (a sketch map, a bearing, a split clue or a plaque:
+one on your own, two for two or three of you, three for four or five). A plaque gets another tin and
+another row for every two players, and with four or more a bearing has three look-outs. All of it
+works on your own too.
+
+### Scars
+
+Losing leaves its mark for the rest of the day (until midnight GMT), and each mark is a little
+rematch. Each is a grey ! on the map.
+
+- **The Flag Lads' banner** (a pub they kept): it hangs high up, held by cable ties, and two lads guard
+  it. Shoot every tie (small targets) and it drops.
+- **Nesting gulls** (a lost Seagull Attack): nests sit on roofs round the chips. Shoot them off, or climb
+  up with a ladder and press E beside one. Each nest has an angry parent that circles and swoops at you;
+  a peck jolts your aim but doesn't hurt.
+- **K's hole** (a trail race lost to K): her note is a riddle: a distance and a direction to the rosette she hid,
+  within 150 m. Mounds of earth stand where you could dig; hold E at the right one (the note says how warm
+  you are as you get close). Other mounds are only molehills.
+- **The smug ghost** (a race nobody finished): press E on the line and the ghost sets off along the
+  streets through its gates. Get to the last one before it does, any way you like.
+- **The tag** (a Wanted man who got away): hold fire, or the touch fire button, with the crosshair on the
+  tag to spray over it, like a can. Cover 90% of the lettering.
+
+A bigger room makes more to do rather than tougher enemies: more cable ties (4 alone, up to 8), nests
+(3, up to 7), ghost gates (1, up to 4), molehills and a farther clue, and a bigger tag; only the banner's
+guards get a bit tougher. Friends share progress, so you can split the ties or the paint. Calling a job
+off leaves nothing.
 
 ### Races
 
@@ -396,6 +507,33 @@ crate (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings).
 sandwich is left, a daily twist (bank holiday, Chip Tuesday, a hen do, bin day), and Backspace for
 another go.
 
+### The night out
+
+Jobs lead into each other. Within the minute of something being done, a follow-up turns up nearby, as
+a poster on the spot or a phone call with a marker. It is an ordinary job, built the same on every
+screen, so everything about it works as usual and it scales with the room as that job does.
+
+- **Pub won back:** the landlord has found his late wife's biscuit tin. A poster goes up at the pub
+  for a short three-clue trail from the bar, with a chest at the end.
+- **Gaffer cuffed:** his phone has the Flag Lads' plan. You get a call and a purple marker on the
+  square they are eyeing next, the most flagged one beside a square you have cleared or won back.
+- **Trail chest dug up:** the flyer in it says "Last one back to the pub buys". A race poster goes up
+  at the chest, to the pub the trail began at (or the nearest one).
+- **Seagull Attack won:** a tourist tells you there are men putting flags up, and a marker shows the
+  ladder crew. A crew needs a lamp near enough, so now and then there is no tip.
+- **Gaffer gets away:** nothing new; he is tomorrow's Wanted poster, and goes on the night's card.
+
+You do not have to follow any of them. A poster comes down after 75 seconds and a call after 90, and
+taking any job by hand (or the follow-up itself) takes the other posters down, so a follow-up never
+gets in the way. Only one follow-up is up at a time.
+
+**Last orders.** After three things done (jobs won, pubs won back, the Gaffer caught) and a quiet
+moment, everyone is called to one pub: the one won back most tonight, or the one nearest the night's
+first deed. Get the whole room within 30 m of the bar and the night's card comes up, a newspaper
+front page written from what you did. If someone has wandered off, whoever came gets it when the
+call runs out after four minutes. The next night starts from nothing. It works on a touch screen
+too: the posters are taken with the usual button, and the card is just something to read.
+
 ## Always there
 
 ### Climbing Bath Abbey
@@ -419,6 +557,26 @@ a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A a
 set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
 allow for. Score and a prize lands: Bucks Fizz, a sniper rifle, rounds, or Lucozade, which doubles
 your damage for 30 seconds. Then the telly takes over, with replays in letterbox and slow motion.
+
+A penalty is a set of three against the computer's keeper, who guesses a side, now and then reads
+you, and leans towards the side you last put one. The aiming dots (and the wind figure) are only
+there for the first kick; after that, read the wind from the flag on the pitch's corner. Two goals
+from three wins the prize.
+
+With friends it's a shoot-out. If others are near the goal when you line up a penalty, they're asked
+for a keeper: stand on the goal line and press E (the Use button on touch) to go in goal. The keeper
+dives by holding A or D and pressing Space (two Dive buttons on touch); a dive goes one way, takes
+under half a second to stretch across the goal, and a dive after the ball is past can't save it. A
+dive before the kick is a guess. A card at the top shows the score and whose turn it is, and saves
+get the telly replay as well as goals. It scales with the number of players:
+
+- 2 players: you swap, one kicking and one keeping; five kicks each, then sudden death.
+- 3 or 4: two teams (alternate players in the order they joined) take turns, rotating kickers and
+  keepers; five a side, then sudden death.
+- 5 to 8: a queue. Everyone takes three kicks in turn and keeps goal for the next kicker; most
+  goals wins, and a tie is shared.
+
+The winners get the prize. If someone walks off or leaves, the shoot-out ends.
 
 ### Get Wood
 
@@ -562,6 +720,13 @@ you're told to wait while they do, and they get a banner saying so.
 **Voice chat**: your mic is open to players nearby, heard in 3D and fading out by 60 m. Hold V
 (Radio) to talk to the whole room through a crackly walkie-talkie. The browser asks for the mic
 when you press Play, and you can mute it from the pause menu.
+
+**Signals**, for when talking won't do: press L (Flare on a touch screen) to send up a red flare
+that hangs 60 m over you for half a minute, seen right across the town (one a minute, or one per
+clue on a treasure trail); H on foot (Whistle) for a two-fingered whistle anyone within 300 m hears
+from where you are; and with the big map open, P or its Pencil button to draw on the map with a
+finger or the mouse. Everyone in the room sees your lines in your colour, and Rub out takes yours
+off. On a trail they're wiped when the clue changes.
 
 Other players wear a jacket in their own colour, with their own face and hair. Their heads turn to
 look where they're looking, their legs walk, run and crouch, and their mouths move as they talk.

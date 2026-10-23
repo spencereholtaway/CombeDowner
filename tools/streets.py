@@ -18,6 +18,7 @@ import shapely
 from shapely.geometry import LineString, Point
 
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
+RANK = {"primary": 5, "secondary": 4, "tertiary": 3, "unclassified": 2, "residential": 2, "living_street": 1}   # which gives way to which
 PAVE = 1.7
 CAR_COLOURS = 10   # the renderer picks from this many paints
 
@@ -146,10 +147,19 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
             if not near_junction(a.x, a.y, 10) and not near_junction(b.x, b.y, 10):
                 marks.append([r1(a.x), r1(a.y), r1(b.x), r1(b.y), r1(gelev(a.x, a.y)), r1(gelev(b.x, b.y)), 0])
             s += 9
+    def carries_on(k, x, y):
+        """Whether street k runs on past this end of it, under the same name (the map splits a
+        street into pieces wherever another one joins it)."""
+        n, pt = vehicle[k].get("n"), Point(x, y)
+        return bool(n) and any(m != k and vehicle[m].get("n") == n and min(Point(lines[m].coords[0]).distance(pt), Point(lines[m].coords[-1]).distance(pt)) < 2.5
+                               for m in (int(i) for i in tree.query(pt.buffer(3))))
     for x, y, k, j, end in junctions:
         line, r = lines[k], vehicle[k]
         if r["c"] not in KERBED: continue
         major = vehicle[j]
+        # a street running on past a side road gives way to it only if it's the lesser road
+        # (Broad Street doesn't stop for Green Street; a lane crossing a main road does)
+        if carries_on(k, x, y) and RANK.get(major["c"], 0) <= RANK.get(r["c"], 0): continue
         s = half(major) + 1.0
         s = s if end == 0 else line.length - s
         if not 0 < s < line.length: continue

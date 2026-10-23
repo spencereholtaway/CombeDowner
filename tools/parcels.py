@@ -65,7 +65,9 @@ def main():
     from pyproj import Transformer
     src = area(sys.argv[1], wide=sys.argv[4:] == ["wide"])
     in_path, out_path = sys.argv[2], sys.argv[3]
-    to_bng = Transformer.from_crs("EPSG:4326", "EPSG:27700", always_xy=True)
+    from lidar import bng_transformer
+    # (it stops the build if PROJ can't reach the OSTN15 grid, which the reverse needs as well)
+    to_bng = bng_transformer()
     to_wgs = Transformer.from_crs("EPSG:27700", "EPSG:4326", always_xy=True)
     W, S, E, N = src.bbox
     # the bbox's envelope in the grid's metres: a first, conservative cut before reprojecting, so

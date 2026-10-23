@@ -58,6 +58,7 @@ export interface RideSpec {
   trick: string;         // Space again in the air ("": none)
   flip: "roll" | "spin" | "none";   // how the ride turns under you doing it
   grind: string;         // what a grind's called on it ("": it can't)
+  grinds: string[];      // all five by the way you hold the stick: none, forward, back, left, right
   manual: string;        // and riding along on two wheels (or the back ones)
   snap: number;          // how near a kerb or wall it'll snap on to grind it, metres
   pogo?: boolean;        // bounces all the time instead of rolling
@@ -67,13 +68,13 @@ export interface RideSpec {
 }
 
 export const rideSpecs: Record<RideKind, RideSpec> = {
-  bike: { kind: "bike", name: "a racing bike", top: 13.5, rough: 5, accel: 4.2, brake: 10, back: 0, coast: 0.05, drag: 0.0035, turn: 2.2, spin: 3, downhill: 0.9, maxDown: 26, jump: 4.4, hop: 0.25, lift: 0.32, crash: 9.5, verb: "tuck", trick: "No hander", flip: "none", grind: "Kerb slide", manual: "Wheelie", snap: 1, keys: "Space tuck · Shift wheelie or grind", line: "Racing bike: flies on the roads, hates the grass. Hold Space to tuck down the hills. X to get on" },
-  bmx: { kind: "bmx", name: "a BMX", top: 10.5, rough: 8, accel: 5.5, brake: 10, back: 0, coast: 0.1, drag: 0.0045, turn: 3, spin: 7.5, downhill: 0.8, maxDown: 18, jump: 7.4, hop: 1.2, lift: 0.26, crash: 12, verb: "hop", trick: "Tailwhip", flip: "spin", grind: "Double peg", manual: "Manual", snap: 1.2, keys: "Hold and let go of Space to bunny hop · Shift manual or grind", line: "BMX: hold Space and let go to bunny hop, and it'll hop low walls. X to get on" },
-  blades: { kind: "blades", name: "rollerblades", top: 10.5, rough: 2.5, accel: 4.2, brake: 7, back: 2.5, coast: 0.08, drag: 0.0045, turn: 3.4, spin: 8, downhill: 0.9, maxDown: 20, jump: 6.2, hop: 0.3, lift: 0.1, crash: 9, verb: "jump", trick: "Spread eagle", flip: "none", grind: "Soul grind", manual: "Heel roll", snap: 1.7, keys: "Space jump · Shift grind (they grind anything) or heel roll", line: "Rollerblades: quick on the pavements, hopeless on grass, and they'll grind anything. X to put them on" },
-  board: { kind: "board", name: "a skateboard", top: 9.5, rough: 1.4, accel: 2.6, brake: 5, back: 0, coast: 0.05, drag: 0.0045, turn: 2.1, spin: 7.5, downhill: 1, maxDown: 22, jump: 5.6, hop: 0.3, lift: 0.12, crash: 8.5, verb: "ollie", trick: "Kickflip", flip: "roll", grind: "50-50", manual: "Manual", snap: 1.2, keys: "Space ollie, again for a kickflip · Shift manual or grind", line: "Skateboard: picks up speed downhill, Space to ollie. X to get on" },
-  scooter: { kind: "scooter", name: "a kick scooter", top: 7.6, rough: 3.2, accel: 8, brake: 10, back: 1.5, coast: 0.12, drag: 0.005, turn: 4.6, spin: 6, downhill: 0.7, maxDown: 15, jump: 3.6, hop: 0.25, lift: 0.12, crash: 10, verb: "kick", trick: "Tailwhip", flip: "spin", grind: "Feeble", manual: "Manual", snap: 1.1, keys: "Space kick for a burst · Shift manual or grind", line: "Kick scooter: off the mark in no time, turns on a sixpence. Tap Space to kick. X to get on" },
-  pogo: { kind: "pogo", name: "a pogo stick", top: 5.2, rough: 5.2, accel: 9, brake: 9, back: 3, coast: 0, drag: 0, turn: 9, spin: 9, downhill: 0, maxDown: 8, jump: 9.6, hop: 0, lift: 0.38, crash: 99, verb: "bounce", trick: "", flip: "none", grind: "", manual: "", snap: 0, pogo: true, keys: "Hold Space for a big bounce, or press it just as you land", line: "Pogo stick: hold Space for a big bounce over walls, or time it as you land. X to get on" },
-  trolley: { kind: "trolley", name: "a shopping trolley", top: 8.5, rough: 2, accel: 3, brake: 6, back: 2, coast: 0.06, drag: 0.006, turn: 1.25, spin: 2, downhill: 1, maxDown: 22, jump: 0, hop: 0.16, lift: 0, crash: 10, verb: "lean", trick: "", flip: "none", grind: "Trolley grind", manual: "Wheelie", snap: 1, wobble: 0.35, keys: "Hold Space to hop on the back and hold on · Shift wheelie or grind", line: "Shopping trolley: hold Space to hop on and hold on downhill, and a mate can ride in it (E). X to push it" },
+  bike: { kind: "bike", name: "a racing bike", top: 13.5, rough: 5, accel: 4.2, brake: 10, back: 0, coast: 0.05, drag: 0.0035, turn: 2.2, spin: 3, downhill: 0.9, maxDown: 26, jump: 4.4, hop: 0.25, lift: 0.32, crash: 9.5, verb: "tuck", trick: "No hander", flip: "none", grind: "Kerb slide", grinds: ["Kerb slide", "Nose slide", "Tail slide", "Feeble", "Smith"], manual: "Wheelie", snap: 1, keys: "Space tuck · Shift wheelie or grind", line: "Racing bike: flies on the roads, hates the grass. Hold Space to tuck down the hills. X to get on" },
+  bmx: { kind: "bmx", name: "a BMX", top: 10.5, rough: 8, accel: 5.5, brake: 10, back: 0, coast: 0.1, drag: 0.0045, turn: 3, spin: 7.5, downhill: 0.8, maxDown: 18, jump: 7.4, hop: 1.2, lift: 0.26, crash: 12, verb: "hop", trick: "Tailwhip", flip: "spin", grind: "Double peg", grinds: ["Double peg", "Icepick", "Toothpick", "Feeble", "Smith"], manual: "Manual", snap: 1.2, keys: "Hold and let go of Space to bunny hop · Shift manual or grind", line: "BMX: hold Space and let go to bunny hop, and it'll hop low walls. X to get on" },
+  blades: { kind: "blades", name: "rollerblades", top: 10.5, rough: 2.5, accel: 4.2, brake: 7, back: 2.5, coast: 0.08, drag: 0.0045, turn: 3.4, spin: 8, downhill: 0.9, maxDown: 20, jump: 6.2, hop: 0.3, lift: 0.1, crash: 9, verb: "jump", trick: "Spread eagle", flip: "none", grind: "Soul grind", grinds: ["Soul grind", "Royale", "Unity", "Frontside", "Backside"], manual: "Heel roll", snap: 1.7, keys: "Space jump · Shift grind (they grind anything) or heel roll", line: "Rollerblades: quick on the pavements, hopeless on grass, and they'll grind anything. X to put them on" },
+  board: { kind: "board", name: "a skateboard", top: 9.5, rough: 1.4, accel: 2.6, brake: 5, back: 0, coast: 0.05, drag: 0.0045, turn: 2.1, spin: 7.5, downhill: 1, maxDown: 22, jump: 5.6, hop: 0.3, lift: 0.12, crash: 8.5, verb: "ollie", trick: "Kickflip", flip: "roll", grind: "50-50", grinds: ["50-50", "Nosegrind", "5-0", "Boardslide", "Lipslide"], manual: "Manual", snap: 1.2, keys: "Space ollie, again for a kickflip · Shift manual or grind", line: "Skateboard: picks up speed downhill, Space to ollie. X to get on" },
+  scooter: { kind: "scooter", name: "a kick scooter", top: 7.6, rough: 3.2, accel: 8, brake: 10, back: 1.5, coast: 0.12, drag: 0.005, turn: 4.6, spin: 6, downhill: 0.7, maxDown: 15, jump: 3.6, hop: 0.25, lift: 0.12, crash: 10, verb: "kick", trick: "Tailwhip", flip: "spin", grind: "Deck grind", grinds: ["Deck grind", "Nosegrind", "Tailgrind", "Feeble", "Smith"], manual: "Manual", snap: 1.1, keys: "Space kick for a burst · Shift manual or grind", line: "Kick scooter: off the mark in no time, turns on a sixpence. Tap Space to kick. X to get on" },
+  pogo: { kind: "pogo", name: "a pogo stick", top: 5.2, rough: 5.2, accel: 9, brake: 9, back: 3, coast: 0, drag: 0, turn: 9, spin: 9, downhill: 0, maxDown: 8, jump: 9.6, hop: 0, lift: 0.38, crash: 99, verb: "bounce", trick: "", flip: "none", grind: "", manual: "", grinds: [], snap: 0, pogo: true, keys: "Hold Space for a big bounce, or press it just as you land", line: "Pogo stick: hold Space for a big bounce over walls, or time it as you land. X to get on" },
+  trolley: { kind: "trolley", name: "a shopping trolley", top: 8.5, rough: 2, accel: 3, brake: 6, back: 2, coast: 0.06, drag: 0.006, turn: 1.25, spin: 2, downhill: 1, maxDown: 22, jump: 0, hop: 0.16, lift: 0, crash: 10, verb: "lean", trick: "", flip: "none", grind: "Trolley grind", grinds: ["Trolley grind", "Nose grind", "Tail grind", "Side slide", "Cart slide"], manual: "Wheelie", snap: 1, wobble: 0.35, keys: "Hold Space to hop on the back and hold on · Shift wheelie or grind", line: "Shopping trolley: hold Space to hop on and hold on downhill, and a mate can ride in it (E). X to push it" },
 };
 
 // ---- models ---------------------------------------------------------------------------------------
@@ -203,6 +204,20 @@ function trolley(): THREE.Group {
   return g;
 }
 
+/** How a grind sits the ride on the edge: tipped on its nose or tail, or turned across it. rx tips the
+ *  front up, ry turns it, rz leans it over, dy sinks it on to the edge. Style 0..4 as in RideSpec.grinds. */
+export function grindPose(kind: RideKind, style: number): { rx: number; ry: number; rz: number; dy: number } {
+  const across = kind === "board" || kind === "trolley" ? Math.PI / 2 : kind === "blades" ? 0.9 : 0.55;
+  const lean = kind === "board" ? 0.3 : 0.32;
+  switch (style) {
+    case 1: return { rx: -0.32, ry: 0, rz: 0, dy: 0.04 };
+    case 2: return { rx: 0.32, ry: 0, rz: 0, dy: 0.04 };
+    case 3: return { rx: 0, ry: across, rz: 0, dy: 0.02 };
+    case 4: return { rx: 0, ry: -across, rz: kind === "board" ? lean : -lean, dy: 0.02 };
+    default: return { rx: 0, ry: 0, rz: 0, dy: 0 };
+  }
+}
+
 /** Where the trolley stands from whoever's pushing it: out in front of them. */
 export const TROLLEY_AHEAD = 0.95;
 
@@ -242,8 +257,8 @@ export class RideView {
 
   /** Feet at (x, y, z) on the ground at ground, going at speed the way heading points. Your own
    *  ride also shows its trick going round (0..1), the front lifting on a manual (0..1), and it
-   *  lying on its side when you've come off (0..1): nobody else sees those. */
-  pose(x: number, y: number, z: number, ground: number, heading: number, speed: number, dt: number, trick = 0, manual = 0, fallen = 0) {
+   *  lying on its side when you've come off (0..1): nobody else sees those. A grind (1 + the style) sits it on the edge. */
+  pose(x: number, y: number, z: number, ground: number, heading: number, speed: number, dt: number, trick = 0, manual = 0, fallen = 0, grind = 0) {
     if (!this.kind || !this.model) return;
     const s = rideSpecs[this.kind];
     this.heading = heading;
@@ -251,8 +266,9 @@ export class RideView {
     this.root.position.set(x, s.pogo ? y : this.kind === "trolley" ? ground : y, z);
     this.root.rotation.set(0, heading, fallen * 1.45);
     const turn = trick * Math.PI * 2;
-    this.model.rotation.set(manual * 0.35, s.flip === "spin" ? turn : 0, s.flip === "roll" ? turn : 0);
-    this.model.position.y = manual * 0.12 + (s.flip === "roll" && trick ? 0.15 : 0);
+    const gp = grind ? grindPose(this.kind, grind - 1) : null;
+    this.model.rotation.set(manual * 0.35 + (gp?.rx ?? 0), (s.flip === "spin" ? turn : 0) + (gp?.ry ?? 0), (s.flip === "roll" ? turn : 0) + (gp?.rz ?? 0));
+    this.model.position.y = manual * 0.12 + (s.flip === "roll" && trick ? 0.15 : 0) + (gp?.dy ?? 0);
     this.spin += speed * dt * 3;
     for (const w of this.wheels) w.rotation.x = -this.spin;
     if (s.pogo) {

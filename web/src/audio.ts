@@ -1070,7 +1070,7 @@ export function burner(): { set(vol: number, distance: number, pan: number): voi
  * rumbling on the road (roll 0..1, rough for grass and paths), and the scrape of a grind (0..1).
  * All from one loop of noise. Call set() every frame, and stop() when you get off.
  */
-export function rideNoise(): { set(wind: number, roll: number, rough: number, grind: number): void; stop(): void } | null {
+export function rideNoise(): { set(wind: number, roll: number, rough: number, grind: number, tone?: number): void; stop(): void } | null {
   if (!ctx) return null;
   const c = ctx, src = c.createBufferSource();
   src.buffer = noise; src.loop = true;
@@ -1091,14 +1091,14 @@ export function rideNoise(): { set(wind: number, roll: number, rough: number, gr
   let stopped = false;
   const unwatch = watch("the wind of a ride", all, () => { stopped = true; all.disconnect(); src.stop(); });
   return {
-    set(wind, roll, rough, grind) {
+    set(wind, roll, rough, grind, tone = 1) {
       if (stopped) return;
       const t = c.currentTime;
       glide(windG.gain, 0.32 * wind * wind, t, 0.15);
       glide(windF.frequency, 400 + 1400 * wind, t, 0.2);
       glide(rollG.gain, roll * (0.25 + rough * 0.5), t, 0.08);
       glide(grindG.gain, 0.16 * grind, t, 0.03);
-      if (grind > 0.01) glide(grindF.frequency, 2200 + Math.random() * 900, t, 0.02);
+      if (grind > 0.01) glide(grindF.frequency, (2200 + Math.random() * 900) * tone, t, 0.02);
     },
     stop() {
       if (stopped) return;
@@ -1612,6 +1612,16 @@ export function ladderUp(distance = 0, pan = 0) {
   clack(d, t + 1.05, 0.8, 800); clink(d, t + 1.07, 0.3, 1700);
 }
 
+/** A climbing stone sliding out of the Abbey tower's wall: a gritty stone-on-stone scrape and a low thump as it seats. */
+export function stoneOut(distance = 0, pan = 0) {
+  if (!ctx || distance > 90) return;
+  const t = now(), d = out(0.45 * fall(distance, 14), pan, distance, 0.3), dur = 0.45;
+  burst(d, t, dur, 0.5, 520, { q: 2.5, to: 230, attack: 0.05 });
+  burst(d, t + 0.05, dur - 0.1, 0.25, 1500, { q: 4, to: 700, attack: 0.08 });
+  tone(d, t + dur, 0.22, 0.6, 85, 42);
+  burst(d, t + dur, 0.1, 0.25, 300, { type: "lowpass" });
+}
+
 /** A foot on an aluminium rung, climbing. */
 export function rung() {
   if (!ctx) return;
@@ -1960,12 +1970,51 @@ export function jobDone(won: boolean) {
   burst(d, t + 1.25, 0.9, 0.12, 7000, { type: "highpass", attack: 0.02 });
 }
 
+/** A trophy: a short bright chime, a little higher and longer the better the tier. */
+export function trophy(tier: "bronze" | "silver" | "gold") {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.3), up = tier === "gold" ? 3 : tier === "silver" ? 2 : 1;
+  const notes = [659, 784, 988, 1319].slice(0, 1 + up);
+  notes.forEach((f, k) => { tone(d, t + k * 0.09, 0.5, 0.1, f, f, "triangle", 0.01); tone(d, t + k * 0.09, 0.4, 0.04, f * 2, f * 2, "sine", 0.01); });
+}
+
 /** Warmer (a soft rising chime, brighter when the search circle shrinks) or colder (falling). */
 export function warmer(up: boolean, shrink = false) {
   if (!ctx) return;
   const t = now(), d = out(0.6, 0, 0, 0.25);
   const notes = up ? (shrink ? [659, 880, 1047] : [659, 880]) : [523, 392];
   notes.forEach((f, k) => tone(d, t + k * 0.11, 0.4, 0.1, f, f, up ? "sine" : "triangle", 0.01));
+}
+
+/** A biscuit tin with something loose in it, rattling on its post: a clink and a couple of small knocks. */
+export function tinRattle(distance = 0, pan = 0) {
+  if (!ctx || distance > 160) return;
+  const t = now(), d = out(0.6 * fall(distance, 12), pan, distance, 0.2);
+  clink(d, t, 0.5, 2600 + Math.random() * 600);
+  clack(d, t + 0.07, 0.3, 1800);
+  clink(d, t + 0.13, 0.3, 3400);
+}
+
+/** A treasure trail's bell, tolling from where its tin is: a ding-dong that carries a long way, dulled by distance. */
+export function trailBell(distance = 0, pan = 0) {
+  if (!ctx || distance > 1100) return;
+  const t = now(), d = out(0.7 * fall(distance, 120), pan, distance, 0.5);
+  for (const [f, at] of [[392, 0], [311, 0.55]]) {
+    for (const [m, v, dur] of [[0.5, 0.25, 2.6], [1, 0.45, 2.2], [1.19, 0.15, 1.4], [2, 0.1, 0.9], [2.74, 0.05, 0.5]]) tone(d, t + at, dur, v, f * m);
+  }
+}
+
+/** A busker's whistled tune from where a trail's tin is: a little phrase, the same each time for the same seed. */
+export function buskerTune(seed: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 900) return;
+  const t = now(), d = out(0.45 * fall(distance, 90), pan, distance, 0.35);
+  const scale = [784, 880, 988, 1175, 1319, 1568];
+  let s = seed >>> 0;
+  for (let k = 0; k < 5; k++) {
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    const f = scale[(s >>> 16) % scale.length];
+    tone(d, t + k * 0.2, k === 4 ? 0.5 : 0.18, 0.3, f, f * 1.01, "sine", 0.02);
+  }
 }
 
 /** Digging up the chest: a few spadefuls, then the lid creaking open. */
@@ -1997,6 +2046,31 @@ export function checkpoint() {
   const t = now(), d = out(0.8, 0, 0, 0.15);
   tone(d, t, 0.12, 0.16, 988, 988, "square", 0.005);
   tone(d, t + 0.09, 0.3, 0.16, 1319, 1319, "square", 0.005);
+}
+
+/** A race clock running out: a beep a second, higher as it nears, and a low buzz at nought. */
+export function urgent(left: number) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.05);
+  if (left <= 0) tone(d, t, 0.7, 0.3, 140, 90, "sawtooth");
+  else tone(d, t, 0.09, 0.22, 780 + (5 - left) * 90, 780 + (5 - left) * 90, "square");
+}
+
+/** Over a boost pad: a rush of air rising up. */
+export function whoosh() {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.1);
+  burst(d, t, 0.6, 0.5, 400, { q: 1.1, to: 3200, attack: 0.25 });
+  tone(d, t, 0.4, 0.1, 300, 900, "triangle", 0.1);
+}
+
+/** Barged off your ride: a dull thump and a clatter. */
+export function thump() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.1);
+  tone(d, t, 0.18, 0.7, 120, 45);
+  burst(d, t, 0.12, 0.4, 700, { q: 0.8 });
+  clack(d, t + 0.06, 0.25);
 }
 
 /** Over a race's finish line: a brass-band fanfare, grander the better you placed (1 for a win),
@@ -2055,6 +2129,42 @@ export function counterTick() {
   tone(d, t, 0.05, 0.12, 1900, 2300, "triangle");
 }
 
+/** Flags shot in a row: each one a step further up a major scale, so a run sounds like it is going somewhere. */
+export function comboNote(n: number) {
+  if (!ctx) return;
+  const steps = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24], s = steps[Math.min(n, steps.length) - 1] ?? 24;
+  const f = 523 * 2 ** (s / 12), t = now(), d = out(0.55, 0, 0, 0.2);
+  tone(d, t, 0.22, 0.14, f, f, "triangle", 0.004);
+  tone(d, t, 0.3, 0.06, f * 2, f * 2, "sine", 0.004);
+}
+
+/** A whole string of bunting coming down: a rip of cloth and a rattle of little flags. */
+export function buntingDrop() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.15);
+  burst(d, t, 0.5, 0.2, 3000, { type: "highpass", to: 900, attack: 0.01 });
+  for (let k = 0; k < 7; k++) burst(d, t + 0.05 + k * 0.05, 0.05, 0.16, 1200 + Math.random() * 900, { q: 1.6, to: 500 });
+  tone(d, t, 0.35, 0.1, 880, 1320, "triangle");
+  tone(d, t + 0.09, 0.4, 0.1, 1175, 1760, "triangle");
+}
+
+/** The last flag in a square: a short brassy fanfare over a cheer of confetti. */
+export function squareCleared() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.3);
+  const notes: [number, number, number][] = [[392, 0, 0.12], [523, 0.12, 0.12], [659, 0.24, 0.12], [784, 0.36, 0.5], [659, 0.5, 0.1], [784, 0.62, 0.7]];
+  for (const [f, at, dur] of notes) { tone(d, t + at, dur, 0.12, f, f, "sawtooth", 0.015); tone(d, t + at, dur, 0.08, f * 2, f * 2, "triangle", 0.015); }
+  burst(d, t + 0.36, 0.9, 0.14, 6500, { type: "highpass", attack: 0.02 });
+}
+
+/** A bonus callout for a shot from a moving ride: a bright double ping. */
+export function trickShot() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.2);
+  tone(d, t, 0.12, 0.12, 1480, 1480, "square", 0.003);
+  tone(d, t + 0.09, 0.3, 0.12, 2217, 2217, "square", 0.003);
+}
+
 /** A megaphone squawk: the Chair heckling. */
 export function megaphone(distance = 0, pan = 0) {
   if (!ctx) return;
@@ -2066,6 +2176,14 @@ export function megaphone(distance = 0, pan = 0) {
 // ---- seagulls (gulls.ts) ----------------------------------------------------------------------
 
 /** A herring gull's cry: a falling "kyow", then a laughing "ha-ha-ha". big: Big Lad, an octave and a half down and far louder. */
+/** A spray can: a short hiss, with a rattle of the ball inside when you start (Jet Set Radio). */
+export function spray(start: boolean) {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.05);
+  burst(d, t, 0.14, 0.45, 5200, { type: "highpass", q: 0.7, attack: 0.01 });
+  if (start) for (let i = 0; i < 4; i++) clink(d, t + i * 0.045, 0.22, 2400 + i * 260);
+}
+
 export function gullCry(distance = 0, pan = 0, big = false) {
   if (!ctx || distance > (big ? 400 : 120)) return;
   const t = now(), d = out(big ? Math.min(1.1, 40 / (distance + 30)) : Math.min(0.45, 6 / (distance + 10)), pan, distance, 0.25);
@@ -2093,4 +2211,12 @@ export function gullMuck(distance = 0, pan = 0, big = false) {
   burst(d, t, big ? 0.3 : 0.14, 0.6, big ? 500 : 900, { type: "lowpass", to: 200 });
   tone(d, t, big ? 0.2 : 0.1, 0.3, big ? 160 : 260, 70);
   for (let i = 0; i < 3; i++) burst(d, t + 0.04 + Math.random() * 0.08, 0.03, 0.15, 1500 + Math.random() * 1500, { q: 2 });
+}
+
+/** A two-fingered whistle to call friends over (signals.ts): up, then down, carrying a long way. */
+export function callWhistle(distance = 0, pan = 0) {
+  if (!ctx || distance > 300) return;
+  const t = now(), d = out(0.5 * fall(distance, 60), pan, distance, 0.3);
+  tone(d, t, 0.32, 0.4, 1900, 2900, "sine", 0.02);
+  tone(d, t + 0.4, 0.5, 0.4, 2900, 1700, "sine", 0.02);
 }

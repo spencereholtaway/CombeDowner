@@ -51,7 +51,7 @@ import { BATHSPA_OUTLINE, BATHSPA_COVERS, BATHSPA_SINK } from "./bathspa";
 import { BOA_COVERS } from "./bradford";
 
 type LonLat = [number, number];
-type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean };
+type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean; fill?: boolean };
 
 /** What a set piece knows about where it stands, in the square being masked. Coordinates are in
  *  its own frame: x along it, z out of its front. */
@@ -93,7 +93,10 @@ export interface SetPiece {
   /** Its builder's args, worked out where it stands. */
   args?: (c: PlaceCtx, height: number) => (number | string)[];
   /** Ground it lowers, rectangles in its own frame, to y above its origin; street: to the
-   *  street's level (no lower) where a street's edge holds the ground up (see above). */
+   *  street's level (no lower) where a street's edge holds the ground up (see above); fill:
+   *  instead raised to the street's level wherever a street is drawn over it, inside its
+   *  outline or not (a street between the set piece's two sides, over the lidar's dips where
+   *  basements and the river bank show through). */
   sink?: Sink[];
   /** It's a pub, and hangs its own sign: the map's sign for it stays, marked as its own. */
   pub?: boolean;
@@ -158,6 +161,9 @@ export const SET_PIECES: SetPiece[] = [
     name: "Argyle Street", kind: "terraces", at: [-2.357923, 51.38304], bearing: 60, height: 25.2,
     outline: [[21, -26], [113, -26], [113, -5], [21, -5]],
     more: [[[21, 4], [113, 4], [113, 30], [21, 30]]],
+    // the street level with the bridge from its end, pavements and all (the lidar's ground
+    // drops away at the corners, to the river bank and the terraces' basements)
+    sink: [{ x0: 20.5, x1: 113, z0: -7, z1: 8, y: 0, fill: true }],
     args: terraceArgs("Argyle Street", 1, [20.4, 63]),
   },
   {
@@ -403,10 +409,12 @@ function lower(d: MapData, rects: Sink[], local: (x: number, y: number) => [numb
   }
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const k = j * T.nx + i, x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, street = pinned.get(k);
-    if (!inside(x, y)) continue;
     const [lx, lz] = local(x, y);
+    for (const r of rects) if (r.fill && street !== undefined && lx >= r.x0 && lx <= r.x1 && lz >= r.z0 && lz <= r.z1)
+      T.h[k] = Math.max(T.h[k], Math.round((street - T.z0) * 10));
+    if (!inside(x, y)) continue;
     for (const r of rects) {
-      if (street !== undefined && !r.street) continue;
+      if (r.fill || (street !== undefined && !r.street)) continue;
       if (lx > r.x0 - reach && lx < r.x1 + reach && lz > r.z0 - reach && lz < r.z1 + reach)
         T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, street ?? -Infinity) - T.z0) * 10));
     }

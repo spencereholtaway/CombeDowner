@@ -196,6 +196,19 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
     all of that.
 
+  The canal breaks this order on purpose: it cuts through the land. Its banks, coping, towpath,
+  verges and retaining walls are designed once for the whole canal (`tools/canal.py`) and built
+  by the game as their own ground (`web/src/works.ts`), with the square's 4 m ground grid cut
+  away exactly along their outer edge, because the grid is coarser than the canal and laid into
+  it the banks come out in teeth. The build leaves the ground there as it lies, keeps mapped
+  towpaths level on the canal's towpath, and leaves the ground over the canal's tunnels (and the
+  streets on it) alone; the game clears the ground out of the tunnels' bores. Bridges are
+  carried straight from abutment to abutment once every span is decided (`carry_spans` in
+  `tools/prep_map.py`), along whole roads, not the pieces the data splits them into; and the
+  roads are smoothed as one network before that (`smooth_network`: main roads first, side roads
+  meeting them at their height, no steeper than the hill), as the railway is (`tools/railway.py`;
+  the levelling both share is `tools/profiles.py`).
+
   A new kind of thing, or a fix for things clashing, goes into this order as a rule, not as
   a clean-up step on top. Rule 9 of `tools/check_map.py` counts the clashes (lone gates,
   doubled fences, things on walls or indoors, paths through walls, walls off their ground or on a

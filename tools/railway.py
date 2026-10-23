@@ -8,8 +8,9 @@ e.g. python3 -I tools/railway.py combe-down data/raw/combe-down/wide web/public/
 Reads the railway lines from Overture's segment layer (segment.geojson), keeping the working lines
 (not the old ones that are footpaths now, nor the disused sidings), cut to the wide area's circle,
 and the stations and platforms from its infrastructure layer (infrastructure.geojson). Heights
-come from the same terrain tiles as the map (tools/terrain.py): the track follows the ground,
-smoothed a little, and runs level from end to end of each bridge and tunnel Overture marks.
+come from the same terrain tiles as the map (tools/terrain.py): the track follows the ground as a
+railway is built over it, evened out, never steeper than 1 in 50, and carried straight from end to
+end of each bridge and tunnel Overture marks (tools/profiles.py).
 
 Trains run along routes: a route is the track followed from one edge of the circle to another,
 going straight on at each set of points. Trains in Britain keep left, so where there are two
@@ -37,9 +38,11 @@ from shapely.ops import nearest_points
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from terrain import Terrain
+from profiles import carry_profile, ease_grades
 
 STEP = 6.0           # metres between points along the track
-SMOOTH = 3           # points each side averaged for the track's height
+RAIL_SIGMA = 25.0    # metres along the line over which its height is evened out
+RAIL_GRADE = 0.02    # the steepest the line climbs (1 in 50: the main line through Bath is gentler still)
 ALONG = 6.0          # a track this near a platform runs alongside it
 RAMP = 150.0         # metres the track takes to come back to its own height either side of a station
 WANDER = 0.3         # a station's track that rises and falls less than this along it is left as it is
@@ -91,6 +94,8 @@ SERVICES = {
 }
 EDGE = 60            # a track end this near the circle's edge is where trains come and go
 SHORT_TUNNEL = 50    # metres: a tunnel shorter than this is something going over the line, and has no mouths
+ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
+             "living_street": 2.5, "service": 1.8, "unknown": 2}     # half a road's width (the rest are paths: 1.5)
 r1 = lambda v: round(float(v), 1)
 
 
@@ -132,29 +137,133 @@ def main():
             tracks.append(dict(n=name, p=pts))
     print(f"railways: {len(tracks)} pieces of track, {sum(LineString([q[:2] for q in t['p']]).length for t in tracks) / 1000:.1f} km")
 
-    # ---- heights: smoothed, and level across bridges and through tunnels ------------------------
+    # ---- heights: as a railway is built, not as the survey has the ground -----------------------
+    # Each bridge is carried straight from end to end, its ends taken from the line's own slope a
+    # little way out (the survey has the ground dipping into the gap a bridge leaves, which the
+    # track doesn't: tools/profiles.py); the rest is evened out along the line by distance, and each
+    # tunnel laid straight between the line at its portals; and nowhere does the line climb steeper
+    # than a railway can (RAIL_GRADE), the squares cutting and banking the ground to it (prep_map.py).
+    # The pieces of track are levelled as whole lines: pieces that carry straight on into each other
+    # are one line, and a piece meeting a line already levelled (at points, or end to end) takes its
+    # height where they meet, so two pieces of one track never disagree where they join.
+    key = lambda q: (round(q[0] * 2), round(q[1] * 2))
+    ends = {}
+    for ti, t in enumerate(tracks):
+        for e in (0, -1): ends.setdefault(key(t["p"][e]), []).append((ti, e))
+    def heading(ti, e):
+        p = tracks[ti]["p"]
+        a, b = (p[0], p[1]) if e == 0 else (p[-1], p[-2])
+        l = math.dist(a[:2], b[:2]) or 1
+        return ((b[0] - a[0]) / l, (b[1] - a[1]) / l)
+    partner = {}
+    for here in ends.values():
+        pairs = sorted(((-(heading(*x)[0] * heading(*y)[0] + heading(*x)[1] * heading(*y)[1]), x, y) for i, x in enumerate(here) for y in here[i + 1:] if x[0] != y[0]), reverse=True)
+        for straight, x, y in pairs:
+            if straight > 0.7 and x not in partner and y not in partner: partner[x] = y; partner[y] = x
+    seen, lines = set(), []
+    def walk(ti, enter):
+        line = []
+        while ti not in seen:
+            seen.add(ti)
+            p = tracks[ti]["p"]
+            line += [(ti, i) for i in (range(len(p)) if enter == 0 else range(len(p) - 1, -1, -1))]
+            nxt = partner.get((ti, -1 if enter == 0 else 0))
+            if not nxt: break
+            ti, enter = nxt[0], (0 if nxt[1] == 0 else -1)
+        return line
+    for ti in range(len(tracks)):
+        if ti in seen: continue
+        if (ti, 0) not in partner: lines.append(walk(ti, 0))
+        elif (ti, -1) not in partner: lines.append(walk(ti, -1))
+    for ti in range(len(tracks)):
+        if ti not in seen: lines.append(walk(ti, 0))
+    laid, laid_at = {}, []
+    for line in sorted(lines, key=len, reverse=True):
+        p = [tracks[ti]["p"][i] for ti, i in line]
+        n = len(p)
+        z = [q[2] for q in p]
+        d = [0.0]
+        for a, b in zip(p, p[1:]): d.append(d[-1] + math.dist(a[:2], b[:2]))
+        # where it meets a line laid already, it's held at that line's height (an end that joins one
+        # part way along, at a set of points, takes the height of the nearest of its points)
+        pinned = [laid.get(key(q)) for q in p]
+        for e in (0, n - 1):
+            if pinned[e] is None and laid_at:
+                best = min(laid_at, key=lambda r: (r[0] - p[e][0]) ** 2 + (r[1] - p[e][1]) ** 2)
+                if math.dist(best[:2], p[e][:2]) < STEP * 0.6: pinned[e] = best[2]
+        # the bridges first, carried from the line's slope either side; the survey over a tunnel is
+        # the hill above it, so the tunnels are left out of the evening and laid straight after it
+        bridge = [q[3] == 1 for q in p]
+        tunnel = [q[3] == 2 for q in p]
+        carry_profile(z, d, bridge, [True] * n)
+        even = list(z)
+        for i in range(n):
+            if bridge[i] or tunnel[i]: continue
+            ws = [(math.exp(-((d[m] - d[i]) ** 2) / (2 * RAIL_SIGMA ** 2)), z[m]) for m in range(max(0, i - 15), min(n, i + 16))
+                  if abs(d[m] - d[i]) < 3 * RAIL_SIGMA and not tunnel[m]]
+            even[i] = sum(w * v for w, v in ws) / sum(w for w, _ in ws)
+        def lay_tunnels():
+            k = 0
+            while k < n:
+                if not tunnel[k]: k += 1; continue
+                j = k
+                while j + 1 < n and tunnel[j + 1]: j += 1
+                a, b = max(0, k - 1), min(n - 1, j + 1)
+                za, zb = (even[a] if a < k else even[b]), (even[b] if b > j else even[a])
+                for i in range(k, j + 1): even[i] = za + (zb - za) * (d[i] - d[a]) / ((d[b] - d[a]) or 1)
+                k = j + 1
+        lay_tunnels()
+        lim = [RAIL_GRADE * (d[m + 1] - d[m]) for m in range(n - 1)]
+        for i, h in enumerate(pinned):
+            if h is not None: even[i] = h
+        ease_grades(even, d, lim, [bridge[i] or pinned[i] is not None for i in range(n)])
+        lay_tunnels()
+        for i, q in enumerate(p):
+            q[2] = even[i]
+            laid.setdefault(key(q), even[i])
+            laid_at.append((q[0], q[1], even[i]))
+    # Where the line crosses a road or a path well above it (more than 3 m) and the data marks no
+    # bridge, it's on one: the road or path passes under. And each bridge runs on to where the
+    # track meets the ground, not stopping short of it on a bank's edge.
+    ways = []
+    for f in json.load(open(os.path.join(src, "segment.geojson")))["features"]:
+        pr = f["properties"]
+        if pr.get("subtype") != "road": continue
+        g = proj(shape(f["geometry"]))
+        if g.intersects(circle): ways.append((g, ROAD_HALF.get(pr.get("class"), 1.5)))
+    wtree = shapely.STRtree([g for g, _ in ways]) if ways else None
     for t in tracks:
         p = t["p"]
-        ground = [q[2] for q in p]
+        n = len(p)
+        line = LineString([q[:2] for q in p])
+        if wtree is not None:
+            for j in wtree.query(line):
+                g, half = ways[int(j)]
+                x = line.intersection(g)
+                for pt in getattr(x, "geoms", [x]):
+                    if pt.geom_type != "Point": continue
+                    k = min(range(n), key=lambda k: math.dist(p[k][:2], (pt.x, pt.y)))
+                    # (the road's own lowest ground either side of the line: the survey right under
+                    # the track is the embankment's edge)
+                    s0 = g.project(pt)
+                    under = min(T.elev(q.x, q.y) for q in (g.interpolate(s0 + o) for o in (-6, -3, 0, 3, 6)))
+                    if p[k][3] != 0 or p[k][2] - under < 3.0: continue
+                    for i in range(n):
+                        if p[i][3] == 0 and math.dist(p[i][:2], (pt.x, pt.y)) < half + 2.5: p[i][3] = 1
+        for i in range(n):
+            if p[i][3] != 1: continue
+            for j, step in ((i - 1, -1), (i + 1, 1)):
+                while 0 <= j < n and p[j][3] == 0 and p[j][2] - T.elev(p[j][0], p[j][1]) > 1.0 and abs(j - i) <= 4:
+                    p[j][3] = 1; j += step
+        # a short "tunnel" is a bridge or an aqueduct going over: the track is in the open under it
         k = 0
-        while k < len(p):
-            if not p[k][3]: k += 1; continue
+        while k < n:
+            if p[k][3] != 2: k += 1; continue
             j = k
-            while j + 1 < len(p) and p[j + 1][3]: j += 1
-            za = ground[k - 1] if k > 0 else ground[min(len(p) - 1, j + 1)]
-            zb = ground[j + 1] if j + 1 < len(p) else za
-            for i in range(k, j + 1):
-                p[i][2] = za + (zb - za) * (i - k + 1) / (j - k + 2)
-                if p[i][3] == 1: p[i][2] = max(p[i][2], ground[i] + 0.05)     # a deck never dips into the ground
-            # a short "tunnel" is a bridge or an aqueduct going over: the track is in the open under it
-            if p[k][3] == 2 and (j - k + 1) * STEP < SHORT_TUNNEL:
-                for i in range(k, j + 1): p[i][3] = 0; ground[i] = p[i][2]
+            while j + 1 < n and p[j + 1][3] == 2: j += 1
+            if (j - k + 1) * STEP < SHORT_TUNNEL:
+                for i in range(k, j + 1): p[i][3] = 0
             k = j + 1
-        z = [q[2] for q in p]
-        for i, q in enumerate(p):
-            if q[3]: continue
-            w = [z[m] for m in range(max(0, i - SMOOTH), min(len(p), i + SMOOTH + 1)) if not p[m][3]]
-            q[2] = max(sum(w) / len(w), ground[i] + 0.05)
 
     # ---- stations: the track level along each one's platforms ------------------------------
     # The ground the track follows is the lidar's, smoothed, and it wanders up and down by a metre

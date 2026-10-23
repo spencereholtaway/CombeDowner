@@ -8,6 +8,7 @@ import { Post, resolutionButton } from "../post";
 import { DeliGame } from "./game";
 import { KitchenView } from "./view";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
+import * as Telemetry from "../telemetry";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -81,6 +82,8 @@ function start(code: string, net: Net, known: string[] = []) {
   SFX.unlock();
   party = code;
   game = new DeliGame(view, net, name, code, known);
+  Telemetry.play("deli");
+  Telemetry.begin("deli");
   game.voice.mute(!micOn);
   $("voiceopts").hidden = !game.voice.available;
   $("menu").hidden = true;

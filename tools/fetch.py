@@ -52,8 +52,8 @@ def os_square(e, n):
 def lidar_squares(A):
     """Every OS 5 km square under the full-detail squares (tools/prep_tiles.py) or within REACH
     of them: what their buildings and trees are measured over."""
-    from rasterio.warp import transform
     from shapely.geometry import Point, box
+    from lidar import bng_transformer
     from prep_tiles import CELLS
     lon0, lat0 = A.centre
     kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
@@ -69,7 +69,7 @@ def lidar_squares(A):
                 f = k / 40 * (size + 2 * REACH) - REACH
                 for x, y in ((x0 + f, y0 - REACH), (x0 + f, y0 + size + REACH), (x0 - REACH, y0 + f), (x0 + size + REACH, y0 + f)):
                     xs.append(x / kx + lon0); ys.append(y / ky + lat0)
-    e, n = transform("EPSG:4326", "EPSG:27700", xs, ys)
+    e, n = bng_transformer().transform(xs, ys)
     return sorted({os_square(a, b) for a, b in zip(e, n)})
 
 
@@ -107,7 +107,12 @@ def main():
     want = lambda s: only is None or s in only
     A = area(map_id, wide=True)
     os.makedirs(raw, exist_ok=True)
-    run = lambda *a: subprocess.run([sys.executable, "-I", *a], check=True)
+    def run(script, map_id, kind, path, *more):
+        """A tool that writes path, run to a temporary name and renamed when it finishes, so a download
+        that dies half way is never mistaken for a finished one."""
+        part = path + ".part"
+        subprocess.run([sys.executable, "-I", script, map_id, *([kind] if kind else []), part, *more], check=True)
+        os.replace(part, path)
     if want("overture"):
         for t in LAYERS:
             path = os.path.join(raw, f"{t}.geojson")
@@ -136,12 +141,12 @@ def main():
         path = os.path.join(raw, "canopy", f"{q}.tif")
         if not os.path.exists(path): fetch(CANOPY.format(q=q), path); print(f"canopy: {q}")
     if want("osm") and not os.path.exists(os.path.join(raw, "osm.geojson")):
-        run(os.path.join(TOOLS, "osm.py"), map_id, os.path.join(raw, "osm.geojson"), "wide")
+        run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm.geojson"), "wide")
     if want("osm") and not os.path.exists(os.path.join(raw, "osm-roads.geojson")):
         # the streets' widths, lanes and pavements, for fitting the streets (tools/roadwidth.py)
-        run(os.path.join(TOOLS, "osm.py"), map_id, os.path.join(raw, "osm-roads.geojson"), "wide", "roads")
+        run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-roads.geojson"), "wide", "roads")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
-        run(os.path.join(TOOLS, "fsa.py"), map_id, os.path.join(raw, "fsa.geojson"), "wide")
+        run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
         print(f"epc: download the energy certificates and OS Open UPRN by hand into {os.path.join(raw, 'epc')} (see docs/new-area.md)")
 

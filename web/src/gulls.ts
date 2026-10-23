@@ -130,6 +130,7 @@ interface State {
 
 registerJob({
   id: "gulls", glyph: "G", colour: COLOUR, label: "Seagull Attack", again: true,
+  goal: () => `Keep the sandwiches out of the gulls' beaks for ${WAVES} waves`,
   offer(r: Rng, spot: PostSpot) {
     const mod = dayNumber() % MODS.length, stars = 1 + Math.floor(r() * 3);
     const o: Offer = {
@@ -968,7 +969,7 @@ class Seagulls implements Job {
       case FX_DIVE: SFX.gullCry(...hear(x, y, z), true); SFX.flap(...hear(x, y, z), true); if (near) this.w.toast("Big Lad's diving for a sandwich! Shoot him!", 2.2); break;
       case FX_PULL: if (near) this.w.toast("He's pulled out!", 1.6); SFX.gullCry(...hear(x, y, z), true); break;
       case FX_GRAB: if (near) this.w.toast("Big Lad's had a whole sandwich!", 2.2); SFX.gullCry(...hear(x, y, z), true); break;
-      case FX_WAVE: SFX.jobStep(); if (near) this.w.toast(`Wave ${x} of ${WAVES}: ${WAVE_SAY[x] ?? ""}`, 3); if (x === WAVES) SFX.alarm(); break;
+      case FX_WAVE: SFX.jobStep(); if (x === WAVES) SFX.alarm(); break;
       case FX_CLEAN: if (near) this.w.toast(`Wave ${x} without a bite lost! +50`, 2.5); break;
       case FX_PICK: if (near) this.w.toast(`${UP_NAME[x]}: ${UP_SAY[x]}`, 3); SFX.pickup("ammo"); break;
     }
@@ -1235,7 +1236,7 @@ class Seagulls implements Job {
       if (!this.stats.bossPoo) wear.push("brolly");
     }
     this.done = S.won
-      ? { won: true, text: `Seagulls seen off! ${left} of ${total} bites saved ${starText(stars)}, score ${S.sc}`, x: S.cx, z: S.cz, wear }
+      ? { won: true, text: `Seagulls seen off! ${left} of ${total} bites saved ${starText(stars)}, score ${S.sc}`, x: S.cx, z: S.cz, wear, grade: { tier: stars === 3 ? (this.offer.stars === 3 ? 3 : 2) : 1, best: { v: stars, text: `${stars} star${stars > 1 ? "s" : ""}` } } }
       : { won: false, text: `The gulls got every sandwich. Score ${S.sc}`, wear };
   }
 
@@ -1252,7 +1253,11 @@ class Seagulls implements Job {
     } else line = S.won ? "Seen off!" : "Every sandwich gone";
     const staring = [...this.view.values()].some((v) => v.stare > 0.2 && !v.stared);
     const sub = `${left} of ${total} bites left · score ${S.sc}${S.ch ? ` · chips ×${S.ch}` : ""}${staring ? " · <b>staring it out...</b>" : ""}${far}`;
-    return { line, sub, bar: left / total };
+    const wave = Math.min(WAVES, S.ph === 0 ? S.w + 1 : Math.max(1, S.w));
+    const stage = S.ph === 1 && S.w > 0
+      ? { key: `w${S.w}`, title: S.w === WAVES ? "Wave 5 of 5: Big Lad!" : `Wave ${S.w} of ${WAVES}`, sub: WAVE_SAY[S.w], colour: S.w === WAVES ? "#ff5a4e" : undefined, life: S.w === WAVES ? 4 : 2.8 }
+      : undefined;
+    return { line, sub, bar: left / total, progress: `Wave ${wave} / ${WAVES}`, stage };
   }
 
   hint(): string {
@@ -1359,6 +1364,9 @@ class Seagulls implements Job {
     if (!b || !b.g.visible || b.ph === B_DEAD || Math.hypot(b.x - me.x, b.z - me.z) > 160) return null;
     return { name: "Big Lad", fill: b.hp / Math.max(1, b.top) };
   }
+
+  /** The gulls' mess goes where the benches were. */
+  scarAt() { return { x: this.S.cx, z: this.S.cz }; }
 
   end() {
     this.w.mark("@gulls", null);

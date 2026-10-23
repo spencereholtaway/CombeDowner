@@ -4,7 +4,9 @@
 // where you look (or with A and D), speeding up downhill, slowing uphill and bogging down on grass.
 // Each ride's verb is on Space, its trick is Space again in the air, and Shift grinds a kerb or a
 // low wall alongside or rides a manual; what you pull off goes out as events for the score
-// (ridetricks.ts). And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
+// (ridetricks.ts). While you grind, the way you hold the stick picks the grind (none, forward, back,
+// left, right: rides.ts names them), Space pops you off it, Shift in the air catches the next one, and
+// a long grind starts to tip, which a tap of the opposite direction puts right. And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
 // coming down, facing away from the wall), off at the top onto the roof, Space to let go.
 // And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives.
 // Jumping is forgiving and exact: a press just before you land or just after you step off an edge
@@ -35,7 +37,7 @@ export type RideEvent =
   | { k: "air"; t: number; h: number; spin: number }   // down after t seconds up, h metres at the highest, having turned spin radians
   | { k: "land"; clean: boolean }                      // and lined up by yourself after a spin or a trick
   | { k: "trick"; name: string }                       // the ride's trick, done (or a perfect pogo bounce)
-  | { k: "grind"; on: boolean; name: string; len: number; kerb: boolean }   // on to a kerb or wall, or off it after len metres
+  | { k: "grind"; on: boolean; name: string; len: number; kerb: boolean; style: number }   // on to a kerb or wall, or off it after len metres
   | { k: "manual"; on: boolean; name: string; t: number }                   // on to the back wheels, or down after t seconds
   | { k: "bail" };                                     // off
 
@@ -54,7 +56,15 @@ export function onRungs(L: Rungs, y: number): [number, number] {
 }
 
 /** A grind under way: along the wall from (ax, az), or along a kerb, the way (dx, dz). */
-export interface Grind { kerb: boolean; ax: number; az: number; dx: number; dz: number; len: number; at: number; side: number; hi: number; dist: number }
+export interface Grind {
+  kerb: boolean; ax: number; az: number; dx: number; dz: number; len: number; at: number; side: number; hi: number; dist: number;
+  style: number;                       // which of the ride's five grinds (rides.ts), by the stick
+  seg: number;                         // metres along when this style began
+  want: number; wantT: number;         // the style the stick is asking for, and for how long
+  t: number; bal: number; balV: number;   // seconds on it, and how far it's tipped, -1..1: past either end and you're off
+}
+
+const GRIND_NEW = () => ({ style: 0, seg: 0, want: 0, wantT: 0, t: 0, bal: (Math.random() - 0.5) * 0.3, balV: 0 });
 
 export const EYE = 1.65;
 export const CROUCH_EYE = 1.1;
@@ -88,6 +98,8 @@ export class Player {
   sensitivity = 0.0022;
   /** Multiplies walking speed (the mines' boots, or crawling when you're down). */
   speedMul = 1;
+  /** A race's lift to every ride's top speed, push and downhill limit (1 outside one), and a one-off shove to the speed. */
+  rideMul = 1; rideKick = 0;
   /** How well your feet hold: 1 normally, much less on ice (the mines). */
   grip = 1;
   keys = new Set<string>();
@@ -131,6 +143,10 @@ export class Player {
   tumble = 0;
   /** The kerb or wall you're grinding, if you are. */
   grind: Grind | null = null;
+  /** Eased lean of the view into a grind, for the camera. */
+  grindLean = 0;
+  /** The name of the grind you're on. */
+  get grindName() { return this.grind && this.ride ? this.ride.grinds[this.grind.style] ?? this.ride.grind : ""; }
   /** Seconds into a manual (0: not on one), and its balance, -1..1: past either end and you're off. */
   manual = 0;
   balance = 0;
@@ -152,6 +168,8 @@ export class Player {
   /** How far the camera still lags below your eyes after stepping up onto something, eased away. */
   private stepUp = 0;
   private prevHeld = false; private prevShift = false;
+  /** Off a grind with Space, you only catch another with Shift; off the end of one, a moment before any. */
+  private autoGrab = true; private noGrab = 0; private grabBuf = 0; private prevGSide = 0;
   private kickT = 0; private bounceT = 0;
   private air = 0; private airH = 0; private airSpin = 0; private balV = 0;
   private tumbleSide = 1; private tumbleHard = false;
@@ -466,7 +484,7 @@ export class Player {
     this.heading = this.yaw;
     this.rideV = 0;
     this.proneLatch = false; this.crouchLatch = false;
-    this.tumble = 0; this.grind = null; this.manual = 0; this.balance = 0; this.charge = 0;
+    this.tumble = 0; this.grind = null; this.autoGrab = true; this.noGrab = 0; this.manual = 0; this.balance = 0; this.charge = 0;
     this.verbOn = false; this.trick = 0; this.airBig = false; this.dip = 0;
     this.jumpBuf = 0; this.coyote = 0; this.jumpRise = false;
   }
@@ -503,6 +521,8 @@ export class Player {
     const shift = control && (k.has("ShiftLeft") || k.has("ShiftRight") || this.trickHeld);
     const shiftPress = shift && !this.prevShift;
     this.prevShift = shift;
+    this.grabBuf = shiftPress ? 0.25 : Math.max(0, this.grabBuf - dt);
+    this.noGrab = Math.max(0, this.noGrab - dt);
     this.kickT -= dt; this.bounceT -= dt;
     const sx = this.pos.x, sz = this.pos.z, wasGround = this.onGround;
     if (s.pogo) {
@@ -510,7 +530,7 @@ export class Player {
       if (!this.onGround) this.airSpin += wrap(this.yaw - this.heading);
       this.heading = this.yaw;
       const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw), len = Math.hypot(fwd, side) || 1;
-      const wx = ((side * cos - fwd * sin) / len) * s.top, wz = ((-side * sin - fwd * cos) / len) * s.top;
+      const wx = ((side * cos - fwd * sin) / len) * s.top * this.rideMul, wz = ((-side * sin - fwd * cos) / len) * s.top * this.rideMul;
       this.vel.x += (wx - this.vel.x) * Math.min(1, dt * (this.tumble > 0 ? 3 : 5));
       this.vel.z += (wz - this.vel.z) * Math.min(1, dt * (this.tumble > 0 ? 3 : 5));
       // pressed just before you land: a perfect bounce, higher than holding it down
@@ -530,7 +550,7 @@ export class Player {
       this.map.collide(p, this.pos.y, RADIUS);
       this.slideTo(p, dt);
     } else if (this.grind) {
-      this.grindUpdate(dt, press, s);
+      this.grindUpdate(dt, press, s, fwd, side);
       if (this.grind) { this.rideDone(sx, sz, dt, s); return; }
     } else {
       const air = !this.onGround;
@@ -591,8 +611,9 @@ export class Player {
         // pushing on (not on a manual, tucked or holding on), and harder going uphill
         const push = this.manual || (this.verbOn && fwd > 0) ? 0 : fwd;
         const climb = Math.max(0, grade);
-        const top = (hard ? s.top : s.rough) * Math.max(0.35, 1 - climb * 3);
-        if (push > 0 && v < top) v = Math.min(top, v + s.accel * Math.max(0.35, 1 - climb * 4) * push * dt);
+        const top = (hard ? s.top : s.rough) * this.rideMul * Math.max(0.35, 1 - climb * 3);
+        if (this.rideKick) { v = Math.max(0, v + this.rideKick); this.rideKick = 0; }
+        if (push > 0 && v < top) v = Math.min(top, v + s.accel * this.rideMul * Math.max(0.35, 1 - climb * 4) * push * dt);
         else if (push < 0) v = v > 0 ? Math.max(0, v - s.brake * -push * dt) : Math.max(-s.back, v - s.accel * dt);
         // the road and the wind hold it back, less tucked in or holding on, and grass bogs it down
         const tuck = this.verbOn ? 0.5 : 1;
@@ -604,7 +625,7 @@ export class Player {
         // (pushing on up a steep hill you still crawl up it: the hill only tells as you get going)
         const fight = push > 0 && grade > 0 ? Math.min(1, Math.max(0, v) / (top + 0.1)) : 1;
         v -= 9.8 * grade * s.downhill * boost * fight * dt;
-        v = Math.max(-Math.max(s.back, 2), Math.min(s.maxDown + (this.verbOn ? 5 : 0), v));
+        v = Math.max(-Math.max(s.back, 2), Math.min(s.maxDown * this.rideMul + (this.verbOn ? 5 : 0), v));
         if (this.tumble > 0) v *= Math.exp(-4 * dt);
         if (Math.abs(v) < 0.05 && !push) v = 0;
         this.vel.x = hx * v; this.vel.z = hz * v;
@@ -616,7 +637,7 @@ export class Player {
         // the ride's trick: Space again in the air
         if (press && s.trick && !this.trick && this.air > 0.08 && this.tumble <= 0) this.trick = 1e-3;
         // a kerb or a wall to come down on and grind
-        if (s.grind && this.tumble <= 0 && this.air > 0.06 && this.startGrind(true, s)) { this.rideDone(sx, sz, dt, s); return; }
+        if (s.grind && this.tumble <= 0 && this.air > 0.06 && this.noGrab <= 0 && (this.autoGrab || shift || this.grabBuf > 0) && this.startGrind(true, s)) { this.rideDone(sx, sz, dt, s); return; }
       }
       if (this.trick && (this.trick += dt / TRICK_TIME) >= 1) {
         this.trick = 0;
@@ -669,6 +690,7 @@ export class Player {
    * yourself after a spin or a trick is a clean landing.
    */
   private touchDown(s: RideSpec) {
+    this.autoGrab = true;
     const big = this.airBig || this.air > 0.45;
     this.airBig = false;
     if (this.tumble > 0) return;
@@ -699,11 +721,14 @@ export class Player {
     this.events.push({ k: "land", clean: off < 10 * DEG && (Math.abs(this.airSpin) > 2.6 || this.air > 0.6) });
   }
 
+  /** Knocked off by another racer: a full tumble, as from a hard crash. */
+  knock() { this.bail(8, false); }
+
   /** Coming off: a quick tumble, and back on in under two seconds. wall: into something (which hurts). */
-  private bail(speed: number, wall: boolean) {
+  private bail(speed: number, wall: boolean, small = false) {
     if (this.tumble > 0) return;
-    this.tumble = TUMBLE;
-    this.tumbleHard = speed > 6;
+    this.tumble = small ? TUMBLE * 0.55 : TUMBLE;
+    this.tumbleHard = speed > 6 && !small;
     this.tumbleSide = Math.random() < 0.5 ? -1 : 1;
     this.crashed = Math.max(0.1, speed);
     this.crashWall = wall;
@@ -723,7 +748,8 @@ export class Player {
     const g = this.grind;
     if (!g) return;
     this.grind = null;
-    this.events.push({ k: "grind", on: false, name: this.ride?.grind ?? "", len: g.dist, kerb: g.kerb });
+    this.noGrab = Math.max(this.noGrab, 0.25);
+    this.events.push({ k: "grind", on: false, name: this.ride?.grinds[g.style] ?? "", len: g.dist - g.seg, kerb: g.kerb, style: g.style });
   }
 
   /**
@@ -742,7 +768,7 @@ export class Player {
     if (e) {
       const ux = e.bx - e.ax, uz = e.bz - e.az, len = Math.hypot(ux, uz) || 1;
       const at = Math.max(0, Math.min(len, ((x - e.ax) * ux + (z - e.az) * uz) / len));
-      g = { kerb: false, ax: e.ax, az: e.az, dx: ux / len, dz: uz / len, len, at, side: 0, hi: e.top, dist: 0 };
+      g = { kerb: false, ax: e.ax, az: e.az, dx: ux / len, dz: uz / len, len, at, side: 0, hi: e.top, dist: 0, ...GRIND_NEW() };
       this.pos.set(e.ax + (ux / len) * at, e.top, e.az + (uz / len) * at);
     } else {
       // a kerb: low down near the ground, and on the way down if you're in the air
@@ -755,7 +781,7 @@ export class Player {
       let kx = dx - dz * (on.t - here.t), kz = dz + dx * (on.t - here.t);
       const kl = Math.hypot(kx, kz);
       kx /= kl; kz /= kl;
-      g = { kerb: true, ax: 0, az: 0, dx: kx, dz: kz, len: 0, at: 0, side: here.side, hi: here.hi, dist: 0 };
+      g = { kerb: true, ax: 0, az: 0, dx: kx, dz: kz, len: 0, at: 0, side: here.side, hi: here.hi, dist: 0, ...GRIND_NEW() };
       const t = here.t + here.side * KERB_IN;
       this.pos.x = x - dz * t; this.pos.z = z + dx * t;
       this.pos.y = this.under(this.pos.x, this.pos.z) + here.hi;
@@ -768,14 +794,38 @@ export class Player {
     this.vel.set(g.dx * going, 0, g.dz * going);
     this.onGround = true;
     this.airBig = false;
-    this.events.push({ k: "grind", on: true, name: s.grind, len: 0, kerb: g.kerb });
+    this.autoGrab = true;
+    this.prevGSide = 0;
+    this.events.push({ k: "grind", on: true, name: s.grinds[0], len: 0, kerb: g.kerb, style: 0 });
     return true;
   }
 
   /** Sliding along a kerb or a wall: on to the next length of it, off the end, or off with Space. */
-  private grindUpdate(dt: number, press: boolean, s: RideSpec) {
+  private grindUpdate(dt: number, press: boolean, s: RideSpec, fwd: number, side: number) {
     const g = this.grind!;
     let v = this.rideV;
+    g.t += dt;
+    // the stick picks the grind, once it has settled on one (a tap to steady it isn't a change)
+    const want = Math.max(Math.abs(fwd), Math.abs(side)) < 0.4 ? 0 : Math.abs(fwd) >= Math.abs(side) ? (fwd > 0 ? 1 : 2) : side < 0 ? 3 : 4;
+    if (want !== g.want) { g.want = want; g.wantT = 0; } else g.wantT += dt;
+    if (want !== g.style && g.wantT >= 0.12) {
+      const old = g.style;
+      this.events.push({ k: "grind", on: false, name: s.grinds[old], len: g.dist - g.seg, kerb: g.kerb, style: old });
+      g.style = want; g.seg = g.dist;
+      this.events.push({ k: "grind", on: true, name: s.grinds[want], len: 0, kerb: g.kerb, style: want });
+    }
+    // a long grind starts to tip; a tap of the other direction puts it right
+    const tap = Math.abs(side) > 0.4 ? Math.sign(side) : 0;
+    if (tap && tap !== this.prevGSide && tap * g.bal < -0.2) g.balV += tap * 1.6;
+    this.prevGSide = tap;
+    const tip = (this.assist ? 0.5 : 1) * Math.min(1, Math.max(0, g.t - 0.9) * 0.5);
+    g.balV += (g.bal * 3 + (Math.random() - 0.5) * 5) * tip * dt;
+    g.balV *= Math.max(0, 1 - dt * 1.5);
+    g.bal += g.balV * dt;
+    if (Math.abs(g.bal) > 1) {
+      if (this.assist) g.bal = Math.sign(g.bal) * 0.95;
+      else { this.bail(v, false, true); return; }
+    }
     // it slows a little as it scrapes along, and runs on down a hill
     const ahead = this.map.ground(this.pos.x + g.dx * 0.6, this.pos.z + g.dz * 0.6) - this.map.ground(this.pos.x - g.dx * 0.6, this.pos.z - g.dz * 0.6);
     v -= (0.5 + 9.8 * Math.max(-0.5, Math.min(0.5, ahead / 1.2)) * s.downhill * 0.8) * dt;
@@ -786,7 +836,7 @@ export class Player {
       this.vel.set(g.dx * v, pop, g.dz * v);
       if (pop > 0) { this.onGround = false; this.jumped = true; this.airBig = true; }
     };
-    if (press) { off(Math.max(s.jump, 4.5) * 0.9); return; }   // jump off it
+    if (press) { this.autoGrab = false; off(Math.max(s.jump, 5) * 1.05 + Math.min(1.2, v * 0.08)); return; }   // jump off it
     if (v < 1.5) { off(0); return; }                            // too slow to stay on
     const step = v * dt;
     let nx = this.pos.x + g.dx * step, nz = this.pos.z + g.dz * step, ny = this.pos.y;
@@ -874,7 +924,9 @@ export class Player {
       if (this.tumbleHard && t < 0.45) { nod = -Math.PI * 2 * ease(t / 0.45); drop -= Math.sin((Math.PI * t) / 0.45) * 0.5; }
     }
     cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick - drop - this.stepUp, this.pos.z);
-    cam.rotation.set(this.pitch + nod, this.yaw, roll, "YXZ");
+    const g = this.grind, lean = g ? (g.style === 3 ? 0.05 : g.style === 4 ? -0.05 : 0) + g.bal * 0.07 : 0;
+    this.grindLean += (lean - this.grindLean) * 0.15;
+    cam.rotation.set(this.pitch + nod, this.yaw, roll + this.grindLean, "YXZ");
   }
 }
 

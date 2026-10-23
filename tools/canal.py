@@ -21,14 +21,17 @@ Writes {"runs", "locks", "tunnels", "moor"}, positions in metres east (x) and no
 centre and heights in metres above sea level:
 - runs: the stretches of water between locks, junctions and ends, each {"lv": its water level,
   "p": [[x, y, half its width, ground in the middle, ground beyond the left bank, beyond the right
-  bank, flags], ...]}, points about 4 m apart. Flags: 1 in a tunnel, 2 on an aqueduct, 4 a pier
-  under the aqueduct here. A run's ends are where it meets a
-  lock's gates, another run, or nothing.
+  bank, flags, left bank's width, right bank's, left verge's, right verge's], ...]}, points about
+  4 m apart. Flags: 1 in a tunnel, 2 on an aqueduct, 4 a pier under the aqueduct here. A run's
+  ends are where it meets a lock's gates, another run, or nothing. Each bank is level, just above
+  the water, from the water's edge out to its width (the towpath's side wider; in a tunnel, the
+  towpath's ledge through it, or nothing), then its verge reaches the ground (web/src/works.ts).
 - locks: {"n": name, "no": its number, "lo": [x, y] the lower gates, "hi": [x, y] the upper,
   "zl", "zh": the water below and above, "tl": how far its wing walls run on below the lower gates,
   with the towpath coming down beside them from the top of the lock to the bank of the pound below
   (the water between them is the lock's own width)}.
-- tunnels: {"n": name, "a": [x, y], "b": [x, y]} portal to portal.
+- tunnels: {"n": name, "a": [x, y], "b": [x, y], "tw": the towpath's side through it, 1 left
+  (looking from the run's start), -1 right, 0 none} portal to portal.
 - moor: boats moored along the bank, [x, y, angle (radians, east is 0, north a quarter turn), length, paint].
 """
 import json, math, os, random, sys
@@ -83,6 +86,15 @@ TAIL = 2.2                 # how far a lock's walls run past each pair of gates 
 WING = 6.0                 # below a lock, its wing walls and the towpath beside them come down a metre in this many
 WIDEN = 0.25               # how fast the water may narrow or widen along the canal, metres each side a metre
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
+TOW_REACH = 14.0           # a path this close to the water's edge, running along it, is the towpath
+SIDE_RUN = 8               # points (of 4 m) each side looked at to say which side the towpath is on
+TOW_WIDE = 3.0             # the towpath's bank, from the water's edge (its coping) to its far side
+BANK_WIDE = 1.4            # the bank on the other side
+COPE_W = 0.45              # the stone coping along the water's edge: all the bank there is where it's squeezed
+VERGE = 2.0                # from the bank's edge to the ground: a grass slope, or a wall and a slope
+TUNNEL_LEDGE = 1.3         # the towpath's ledge through a tunnel
+ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
+             "living_street": 2.5, "service": 1.8, "unknown": 2}
 PAINTS = 7                 # boat liveries the game knows (canal.ts)
 r1 = lambda v: round(float(v), 1)
 wing = lambda lk: TAIL + (lk["zh"] - lk["zl"]) * WING     # how far a lock's wing walls run below its bottom gates
@@ -271,6 +283,110 @@ def main():
                 print(f"  aqueduct at {p[(a + b) // 2][:2]}: {(b - a) * STEP:.0f} m, {sum(1 for q in p[a:b + 1] if q[6] & 4)} piers, {lv - min(q[3] for q in p[a:b + 1]):.1f} m up")
             i = j + 1
 
+    # ---- the banks: which side the towpath is on, and how wide each bank is ---------------------
+    # The canal is laid as it was built, not as the survey's ground happens to lie: each side of the
+    # water has a level bank at the coping's height (canal.ts, works.ts), the towpath on one side
+    # (wherever a mapped path runs along the water there) and a narrower bank on the other, then a
+    # verge down or up to the ground. A building or a street running beside the water squeezes the
+    # bank on that side down to its coping. Decided here, once for the whole canal, so every square
+    # of the map lays the same banks where they meet.
+    tow_lines, side_obstacles = [], []
+    for f in json.load(open(os.path.join(src, "segment.geojson")))["features"]:
+        p = f["properties"]
+        if p.get("subtype") != "road": continue
+        g = proj(shape(f["geometry"]))
+        if not g.intersects(circle): continue
+        c = p.get("class")
+        flags = {v for fl in p.get("road_flags") or [] for v in fl.get("values") or []}
+        if c in PATHS and c not in ("steps", "track"): tow_lines.append(g)
+        elif c not in PATHS and "is_bridge" not in flags and "is_tunnel" not in flags:
+            side_obstacles.append((g, ROAD_HALF.get(c, 3.0)))
+    bfeats = [proj(shape(f["geometry"])) for f in json.load(open(os.path.join(src, "building.geojson")))["features"]]
+    canal_zone = unary_union([LineString([q[:2] for q in r["p"]]) for r in runs if len(r["p"]) > 1]).buffer(30)
+    blds = [b if b.is_valid else shapely.make_valid(b) for b in bfeats if b.intersects(canal_zone)]
+    btree = shapely.STRtree(blds) if blds else None
+    tow_segs = []
+    for g in tow_lines:
+        if not g.intersects(canal_zone): continue
+        for ln in getattr(g, "geoms", [g]):
+            c = list(ln.coords)
+            tow_segs += [LineString([c[i], c[i + 1]]) for i in range(len(c) - 1) if math.dist(c[i], c[i + 1]) > 0.3]
+    ttree = shapely.STRtree(tow_segs) if tow_segs else None
+    obs_segs = []
+    for g, rh in side_obstacles:
+        if not g.intersects(canal_zone): continue
+        for ln in getattr(g, "geoms", [g]):
+            c = list(ln.coords)
+            obs_segs += [(LineString([c[i], c[i + 1]]), rh) for i in range(len(c) - 1) if math.dist(c[i], c[i + 1]) > 0.3]
+    otree = shapely.STRtree([s for s, _ in obs_segs]) if obs_segs else None
+    gate_pts = [Point(lk[e]) for lk in locks for e in ("lo", "hi")]
+    for r in runs:
+        p = r["p"]
+        n = len(p)
+        normals = []
+        for k in range(n):
+            a, b = p[max(0, k - 1)], p[min(n - 1, k + 1)]
+            tx, ty = b[0] - a[0], b[1] - a[1]; tl = math.hypot(tx, ty) or 1
+            normals.append((tx / tl, ty / tl, -ty / tl, tx / tl))
+        # which side the towpath runs on: the mapped paths along the water, either side, near each point
+        vote = [0.0] * n
+        for k, q in enumerate(p):
+            if ttree is None: break
+            tx, ty, nx, ny = normals[k]
+            here = Point(q[0], q[1])
+            for j in ttree.query(here.buffer(q[2] + TOW_REACH)):
+                s = tow_segs[int(j)]
+                (ax, ay), (bx, by) = s.coords
+                L = math.hypot(bx - ax, by - ay)
+                if abs((bx - ax) * tx + (by - ay) * ty) / L < 0.8: continue      # crossing the canal: a bridge
+                m = s.interpolate(s.project(here))
+                off = (m.x - q[0]) * nx + (m.y - q[1]) * ny
+                if q[2] - 1.0 < abs(off) < q[2] + TOW_REACH: vote[k] += math.copysign(1.0 / (1 + abs(off) - q[2]), off)
+        # evened out along the canal (a towpath doesn't swap sides from one point to the next) and
+        # carried on to points with no path mapped beside them from the nearest that has one
+        side = []
+        for k in range(n):
+            v = sum(vote[max(0, k - SIDE_RUN):k + SIDE_RUN + 1])
+            side.append(0 if abs(v) < 0.05 else (1 if v > 0 else -1))
+        known = [k for k in range(n) if side[k]]
+        if known:
+            for k in range(n):
+                if not side[k]: side[k] = side[min(known, key=lambda j: abs(j - k))]
+        for k, q in enumerate(p):
+            tx, ty, nx, ny = normals[k]
+            here = Point(q[0], q[1])
+            widths, verges = [], []
+            for s in (1, -1):
+                if q[6] & 1:            # in a tunnel: a ledge for the towpath through it on its side
+                    widths.append(TUNNEL_LEDGE if s == side[k] else 0.0); verges.append(0.0); continue
+                want = TOW_WIDE if s == side[k] else BANK_WIDE
+                # how much room there is before a building, or a street alongside the water
+                ray = LineString([(q[0] + nx * s * q[2], q[1] + ny * s * q[2]), (q[0] + nx * s * (q[2] + want + VERGE + 1), q[1] + ny * s * (q[2] + want + VERGE + 1))])
+                room = want + VERGE + 1
+                if btree is not None:
+                    for j in btree.query(ray):
+                        hit = blds[int(j)].intersection(ray)
+                        if not hit.is_empty: room = min(room, Point(ray.coords[0]).distance(hit))
+                if otree is not None:
+                    for j in otree.query(ray.buffer(8)):
+                        sg, rh = obs_segs[int(j)]
+                        (ax, ay), (bx, by) = sg.coords
+                        L = math.hypot(bx - ax, by - ay)
+                        if abs((bx - ax) * tx + (by - ay) * ty) / L < 0.7: continue    # crossing over it
+                        d = sg.distance(Point(ray.coords[0])) - rh
+                        if sg.distance(ray) < rh: room = min(room, max(0.0, d))
+                w = max(COPE_W, min(want, room - 0.3))
+                widths.append(round(w, 2))
+                verges.append(round(max(0.3, min(VERGE, room - w - 0.2)), 2))
+            q += [widths[0], widths[1], verges[0], verges[1]]
+        r["tw"] = side[0] if len(set(side)) == 1 else None
+    # each tunnel's towpath side, for the ledge through it (canal.ts)
+    for t in tunnels:
+        r = runs[index[t["run"]]]
+        k = min(range(len(r["p"])), key=lambda i: math.dist(r["p"][i][:2], ((t["a"][0] + t["b"][0]) / 2, (t["a"][1] + t["b"][1]) / 2)))
+        t["tw"] = 1 if r["p"][k][7] > 0 else -1 if r["p"][k][8] > 0 else 0
+    for r in runs: r.pop("tw", None)
+
     # ---- boats moored along the bank: in rows here and there on the long pound ------------------
     canal_all = unary_union([chains[k] for k in keep])
     crossings = unary_union(roads).intersection(canal_all) if roads else None
@@ -313,7 +429,7 @@ def main():
         runs=runs,
         locks=[dict(n=lk["n"], no=lk["no"], lo=[r1(v) for v in lk["lo"]], hi=[r1(v) for v in lk["hi"]],
                     zl=round(lk["zl"], 2), zh=round(lk["zh"], 2), tl=r1(wing(lk))) for lk in locks],
-        tunnels=[dict(n=t["n"], a=[r1(v) for v in t["a"]], b=[r1(v) for v in t["b"]]) for t in tunnels],
+        tunnels=[dict(n=t["n"], a=[r1(v) for v in t["a"]], b=[r1(v) for v in t["b"]], tw=t["tw"]) for t in tunnels],
         moor=moor,
     )
     json.dump(out_d, open(out, "w"), separators=(",", ":"))

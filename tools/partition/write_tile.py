@@ -1490,20 +1490,25 @@ def _without_lone_stubs(runs, gaps, square):
     the square, and shifting a wall off the pavement, can cut a few tens of centimetres of wall
     loose from the rest; it stands in the open and means nothing. A stub beside a gate is held by the
     gate's end, and one on the square's edge continues in the next square."""
-    if not runs:
-        return runs
-    lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
-    holders = lines + [Point(g[0], g[1]) for g in gaps] + [Point(g[2], g[3]) for g in gaps]
-    tree = STRtree(holders)
     inner = square.buffer(-STUB_HOLD)
+    gate_ends = [Point(g[0], g[1]) for g in gaps] + [Point(g[2], g[3]) for g in gaps]
+    # again until none is left, as a stub can be all that held up another
+    while runs:
+        lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+        holders = lines + gate_ends
+        tree = STRtree(holders)
 
-    def held(i, pt):
-        if not inner.contains(pt):
-            return True
-        return any(int(k) != i and holders[int(k)].distance(pt) < STUB_HOLD
-                   for k in tree.query(pt.buffer(STUB_HOLD)))
-    return [r for i, (r, ln) in enumerate(zip(runs, lines))
-            if ln.length >= LONE_STUB or held(i, Point(ln.coords[0])) or held(i, Point(ln.coords[-1]))]
+        def held(i, pt):
+            if not inner.contains(pt):
+                return True
+            return any(int(k) != i and holders[int(k)].distance(pt) < STUB_HOLD
+                       for k in tree.query(pt.buffer(STUB_HOLD)))
+        kept = [r for i, (r, ln) in enumerate(zip(runs, lines))
+                if ln.length >= LONE_STUB or held(i, Point(ln.coords[0])) or held(i, Point(ln.coords[-1]))]
+        if len(kept) == len(runs):
+            break
+        runs = kept
+    return runs
 
 
 def drop_edge_stubs(out_dir, squares):

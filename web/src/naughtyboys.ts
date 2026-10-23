@@ -20,10 +20,12 @@
 // and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
 // boss with a megaphone, built heavier and dressed his own way (as are his right-hand man and his cousin). Jobs (quests.ts) can also
-// bring a gang of their own anywhere, with a ringleader bigger and tougher than the rest. A Wanted
-// ringleader can wear one loud thing (a rosette, a hi-vis tabard, a big hat) so you can pick him out
-// of a crowd, and can be made to give up with his hands in the air instead of going down, to be
-// cuffed and led off.
+// bring a gang of their own anywhere. A Wanted ringleader is dressed like his lookalikes, who wear a
+// hat, a coloured jacket, a bag, a dog or a limp in different mixes (they ride on the look number,
+// so every screen draws the same men), and any of them can be made to give up with his hands in the
+// air instead of going down, to be cuffed and led off. A ringleader can also wear one loud thing (a
+// rosette, a hi-vis tabard, a big hat), which only the characters page uses now. The Gaffer on the
+// run is drawn on a mobility scooter or in his van, which also rides on his look.
 //
 // On Friday and Saturday nights (daylight.ts, nightOut) there's a night out at the top of Milsom
 // Street, where it meets George Street: a crowd of naughty boys and naughty girls (in short skirts
@@ -116,6 +118,20 @@ export const look = (kind: number, kit: number) => kind * 16 + kit;
 export const LOUD = ["", "a red rosette", "a hi-vis tabard", "a big purple hat"] as const;
 export const wearing = (lk: number) => Math.round((lk % 1) * 8) % LOUD.length;
 export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
+/**
+ * What a Wanted lookalike has on him: a hat, a jacket (0 his own clothes, 1 to 3 a colour), a bag, a
+ * dog and a limp, packed into six bits that ride on his look in 1024ths after the loud thing's
+ * eighths. Too small a step for a page that reads only the loud thing to see, so older pages just
+ * draw a lad in his own clothes.
+ */
+export const FEAT_ARITY = [2, 4, 2, 2, 2] as const;
+export const packFeats = (f: readonly number[]) => f[0] | (f[1] << 1) | (f[2] << 3) | (f[3] << 4) | (f[4] << 5);
+export const withFeats = (lk: number, f: readonly number[]) => Math.floor(lk) + wearing(lk) / 8 + packFeats(f) / 1024;
+const featBits = (lk: number) => Math.max(0, Math.round(((lk % 1) - wearing(lk) / 8) * 1024)) & 63;
+export const featsOf = (lk: number): number[] => { const b = featBits(lk); return [b & 1, (b >> 1) & 3, (b >> 3) & 1, (b >> 4) & 1, (b >> 5) & 1]; };
+/** The Gaffer on the run: how he's travelling (0 on foot, 1 a mobility scooter, 2 his van), carried in his look. */
+export const MOUNTS = ["on foot", "on a mobility scooter", "in his van"] as const;
+export const mountOf = (lk: number) => (lk >> 4 === CHAIR ? featBits(lk) & 3 : 0);
 /** How much bigger than a naughty boy someone in this look is drawn (and hit). */
 const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : lk >> 4 === GIRL ? 0.95 : 1);
 const STRIDE = 9;                          // numbers per naughty boy in a snapshot
@@ -194,6 +210,29 @@ const GEO = {
   arm: box(0.09, 0.56, 0.1).translate(0, -0.28, 0),
   locks: box(0.3, 0.42, 0.08),
   bag: box(0.07, 0.15, 0.2).translate(0, -0.42, 0),
+  // a Wanted lookalike's features: a hat, a jacket over his own clothes, a shoulder bag, a dog, a stick
+  trilby: new THREE.CylinderGeometry(0.135, 0.16, 0.2, 12).translate(0, 0.1, 0),
+  trilbyBrim: new THREE.CylinderGeometry(0.25, 0.25, 0.025, 14),
+  coat: box(0.5, 0.58, 0.29),
+  coatSleeve: box(0.145, 0.5, 0.155).translate(0, -0.25, 0),
+  satchel: box(0.3, 0.28, 0.15),
+  satchelStrap: box(0.045, 0.75, 0.02),
+  dogBody: box(0.22, 0.22, 0.55),
+  dogHead: box(0.15, 0.15, 0.2),
+  dogLeg: box(0.06, 0.2, 0.06),
+  dogTail: box(0.04, 0.04, 0.22),
+  walkStick: box(0.03, 0.85, 0.03).translate(0, -0.45, -0.05),
+  // the Gaffer on the run: a mobility scooter, or his van
+  scooterBase: box(0.55, 0.12, 1.25),
+  scooterSeat: box(0.4, 0.1, 0.4),
+  scooterBack: box(0.4, 0.4, 0.07),
+  scooterPost: box(0.06, 0.8, 0.06),
+  scooterBar: box(0.55, 0.05, 0.05),
+  scooterWheel: new THREE.CylinderGeometry(0.17, 0.17, 0.1, 10).rotateZ(Math.PI / 2),
+  vanBox: box(2.0, 1.95, 3.0),
+  vanCab: box(2.0, 1.2, 1.3),
+  vanGlass: box(1.8, 0.5, 0.05),
+  vanWheel: new THREE.CylinderGeometry(0.4, 0.4, 0.3, 12).rotateZ(Math.PI / 2),
 };
 const SKIN = ["#efcdb4", "#e6bd9f", "#d4a283", "#b57d5c"].map(lambert);
 const TRACKIES = ["#ecebe8", "#252a3e", "#8a8d93", "#1d1d20", "#33478c", "#5b6b4a"].map(lambert);
@@ -207,6 +246,8 @@ const GOLD = new THREE.MeshLambertMaterial({ color: "#d9b143", emissive: "#4a3a1
 const ROSETTE = new THREE.MeshLambertMaterial({ color: "#e0262e", emissive: "#5a0a0a" });
 const HIVIS = new THREE.MeshLambertMaterial({ color: "#d6ff2a", emissive: "#4a5a00" });
 const PURPLE = new THREE.MeshLambertMaterial({ color: "#7a2fc0", emissive: "#2a0a4a" });
+const COATS = ["", "#b8232b", "#2f7a3e", "#c9a227"].map((c) => (c ? lambert(c) : WHITE));
+const HAT = lambert("#4a3b2c"), LEATHER = lambert("#8a5a2b"), DOG = lambert("#c8a06a"), VAN = lambert("#f0eee6"), GLASS = lambert("#3b4a5a"), TYRE = lambert("#1b1b1d"), MOTOR = lambert("#a3202a");
 /** Rugby kits: jersey, hoops, shorts. */
 const RUGBY_KITS = [
   ["#1d2a5c", "#f2f0e8", "#f2f0e8"], ["#7a1f2b", "#d9a400", "#1d1d20"], ["#14532d", "#f2f0e8", "#f2f0e8"],
@@ -295,6 +336,8 @@ export class Figure {
   look = -1;
   /** 1: hands up (he's given up); 2: hands behind his back (cuffed). */
   hands = 0;
+  private limp = false;
+  private mount = 0;
   // what he's shouting, over his head
   private bubble: THREE.Sprite | null = null;
   private bubbleT = 0;
@@ -315,6 +358,9 @@ export class Figure {
     this.fade(1);
     this.look = look;
     this.hands = 0;
+    this.limp = false;
+    this.mount = 0;
+    this.legL.visible = this.legR.visible = true;
     this.body.clear();
     const kind = look >> 4, kit = look & 15, skin = pick(SKIN);
     // only the big parts cast shadows, to keep the draw calls down on tablets
@@ -334,6 +380,29 @@ export class Figure {
       this.body.add(this.legL, this.legR, this.armL, this.armR, mesh(GEO.head, skin, 0, 1.62, 0));
     };
     this.body.scale.setScalar(1);
+    // a Wanted lookalike's features, over whatever he's wearing
+    const extras = () => {
+      const [hat, coat, bag, dog, limp] = featsOf(look);
+      if (coat) {
+        this.body.add(mesh(GEO.coat, COATS[coat], 0, 1.17, 0));
+        for (const arm of [this.armL, this.armR]) arm.add(mesh(GEO.coatSleeve, COATS[coat]));
+      }
+      if (hat) this.body.add(mesh(GEO.trilby, HAT, 0, 1.7, 0), mesh(GEO.trilbyBrim, HAT, 0, 1.71, 0));
+      if (bag) {
+        this.body.add(mesh(GEO.satchel, LEATHER, -0.3, 0.95, 0.02));
+        const strap = mesh(GEO.satchelStrap, LEATHER, -0.04, 1.2, -0.16);
+        strap.rotation.z = -0.55;
+        this.body.add(strap);
+      }
+      if (dog) {
+        const d = new THREE.Group();
+        d.add(mesh(GEO.dogBody, DOG, 0, 0.38, 0), mesh(GEO.dogHead, DOG, 0, 0.5, -0.38), mesh(GEO.dogTail, DOG, 0, 0.5, 0.36));
+        for (const [x, z] of [[-0.08, -0.2], [0.08, -0.2], [-0.08, 0.2], [0.08, 0.2]]) d.add(mesh(GEO.dogLeg, DOG, x, 0.1, z));
+        d.position.set(0.75, 0, -0.35);
+        this.body.add(d);
+      }
+      if (limp) { this.limp = true; this.armL.add(mesh(GEO.walkStick, WOOD)); }
+    };
     if (kind === GIRL) {
       // a going-out tan, the clothes, and long hair down her back
       const [top, skirt, bag] = (GIRL_KITS[kit & 7] ?? GIRL_KITS[0]).map(lambert), tan = pick(TAN), hair = pick(GIRL_HAIR);
@@ -374,6 +443,19 @@ export class Figure {
       } else if (hat === "flatcap") {
         this.body.add(mesh(GEO.cap, TWEED, 0, 1.64, 0.01), mesh(GEO.brim, TWEED, 0, 1.69, -0.14));
       }
+      this.mount = mountOf(look);
+      if (this.mount === 1) {
+        // sat on a mobility scooter, legs out in front
+        this.body.add(mesh(GEO.scooterBase, MOTOR, 0, 0.3, 0.1), mesh(GEO.scooterSeat, WOOD, 0, 0.6, 0.35), mesh(GEO.scooterBack, WOOD, 0, 0.85, 0.55),
+          mesh(GEO.scooterPost, ALU, 0, 0.8, -0.38), mesh(GEO.scooterBar, ALU, 0, 1.2, -0.38));
+        for (const [x, z] of [[-0.3, -0.45], [0.3, -0.45], [-0.3, 0.65], [0.3, 0.65]]) this.body.add(mesh(GEO.scooterWheel, TYRE, x, 0.17, z));
+        this.legL.rotation.x = this.legR.rotation.x = -1.2;
+      } else if (this.mount === 2) {
+        // driving off in his van: the cab round him, the box behind
+        this.legL.visible = this.legR.visible = false;
+        this.body.add(mesh(GEO.vanBox, VAN, 0, 1.2, 1.7), mesh(GEO.vanCab, VAN, 0, 0.8, -0.4), mesh(GEO.vanGlass, GLASS, 0, 1.4, -1.06));
+        for (const [x, z] of [[-1.0, -0.6], [1.0, -0.6], [-1.0, 1.9], [1.0, 1.9]]) this.body.add(mesh(GEO.vanWheel, TYRE, x, 0.4, z));
+      }
       this.body.scale.setScalar(sizeOf(look));
       return;
     }
@@ -401,6 +483,7 @@ export class Figure {
         ladder.rotation.z = -1.2;
         this.body.add(ladder);
       }
+      extras();
       return;
     }
     if (kind === RUGBY) {
@@ -431,6 +514,7 @@ export class Figure {
       chain.scale.set(1, 1.3, 1);
       this.body.add(mesh(GEO.torso, suit, 0, 1.16, 0), mesh(GEO.cap, cap, 0, 1.65, 0), mesh(GEO.brim, cap, 0, 1.67, -0.15), chain);
     }
+    extras();
     // a ringleader: a size bigger, with a chunky gold chain
     if (look & BOSS) {
       const chain = mesh(GEO.chain, GOLD, 0, 1.3, -0.15);
@@ -510,8 +594,10 @@ export class Figure {
     const run = Math.min(1, speed / RUN);
     const stride = Math.floor(this.phase / Math.PI);
     this.phase += dt * speed * 2.1;
-    const swing = Math.sin(this.phase) * Math.min(0.95, speed * 0.17);
-    this.legL.rotation.x = swing; this.legR.rotation.x = -swing;
+    const swing = this.mount ? 0 : Math.sin(this.phase) * Math.min(0.95, speed * 0.17);
+    this.legL.rotation.x = this.mount === 1 ? -1.2 : swing; this.legR.rotation.x = this.mount === 1 ? -1.2 : -swing;
+    // a limp: the bad leg hardly moves, and he dips and sways onto the good one
+    if (this.limp) this.legR.rotation.x *= 0.25;
     this.armL.rotation.x = -swing * 0.8; this.armR.rotation.x = swing * 0.8;
     this.armR.rotation.z = 0;
     if (this.kind === CRICKET || this.kind === CHAIR) {
@@ -531,7 +617,8 @@ export class Figure {
       this.armL.rotation.x = this.armR.rotation.x = up ? Math.PI * 0.92 : -0.45;
       this.armL.rotation.z = up ? -0.2 : 0.25; this.armR.rotation.z = up ? 0.2 : -0.25;
     } else this.armL.rotation.z = 0;
-    this.body.position.y = Math.abs(Math.sin(this.phase)) * 0.05 * run;
+    this.body.position.y = this.mount ? 0 : Math.abs(Math.sin(this.phase)) * 0.05 * run - (this.limp ? Math.max(0, Math.sin(this.phase)) * 0.07 * run : 0);
+    this.body.rotation.z = this.limp ? Math.sin(this.phase) * 0.12 * run : 0;
     // lean into the run; knocked flat on his back, then up again
     const flat = dead <= 0 ? 0 : dead < DOWN_SECS ? Math.min(1, dead * 3.2) : Math.max(0, 1 - (dead - DOWN_SECS) / UP_SECS);
     this.body.rotation.x = flat * (Math.PI / 2) - (1 - flat) * 0.22 * run;
@@ -556,6 +643,9 @@ class NaughtyBoy {
   top = 0;                                     // his health when he turned up, for the boss bar
   armour = 0;                                  // host: how much of each hit he shrugs off (0 to 1)
   keep = false;                                // brought by a job or the Flag Lads: stays put even with nobody near
+  pace = 1;                                    // host: how much faster than his kind he runs when sent (the Gaffer on a scooter)
+  bolt = false;                                // host: on the run, and nobody picks a fight with him or draws him in to one
+  stay = false;                                // host: a ladder lad who holds his ground at the pub
   spare = false;                               // a job wants him to give up rather than go down
   meek = false;                                // he's given up: doesn't fight back, stays put or goes where he's sent
   rush = false;                                // running (not strolling) back to his spot
@@ -647,6 +737,7 @@ export class NaughtyBoys {
   private think(c: NaughtyBoy, dt: number, alive: Target[]) {
     if (c.kind === LADDER) return;   // they don't pick fights
     if (c.meek) { c.target = ""; c.foe = -1; return; }
+    if (c.bolt) return;   // on the run: he never stops to pick a fight
     c.calmT -= dt;
     // squaring up to one of the others: till one of them's had enough, or it fizzles out
     if (c.foe >= 0 && !c.target) {
@@ -685,7 +776,7 @@ export class NaughtyBoys {
     // he shouts, and his mates join in (in the crowd on a night out, only the few nearest him)
     const mates = c.crowd ? CROWD_MATES : 18;
     for (const o of this.list) {
-      if (o.state !== ALIVE || o.meek || (o !== c && (o.target || o.foe >= 0 || o.calmT > 0 || o.leaving || Math.hypot(o.x - c.x, o.z - c.z) > mates))) continue;
+      if (o.state !== ALIVE || o.meek || o.bolt || (o !== c && (o.target || o.foe >= 0 || o.calmT > 0 || o.leaving || Math.hypot(o.x - c.x, o.z - c.z) > mates))) continue;
       o.target = best.id; o.blindT = 0; o.chaseT = 0; o.lastX = best.x; o.lastZ = best.z; o.foe = -1;
     }
   }
@@ -695,7 +786,7 @@ export class NaughtyBoys {
     let dirX = 0, dirZ = 0, spd = 0, face: number | null = null;
     const t = c.target ? alive.find((p) => p.id === c.target) : undefined;
     // a ladder crew legs it from anyone close, and otherwise gets on with putting flags up
-    const scared = c.kind === LADDER ? alive.find((p) => Math.hypot(p.x - c.x, p.z - c.z) < c.team.spot) : undefined;
+    const scared = c.kind === LADDER && !c.stay ? alive.find((p) => Math.hypot(p.x - c.x, p.z - c.z) < c.team.spot) : undefined;
     if (scared) {
       const ax = c.x - scared.x, az = c.z - scared.z, al = Math.hypot(ax, az) || 1;
       dirX = ax / al; dirZ = az / al; spd = c.team.run;
@@ -727,7 +818,7 @@ export class NaughtyBoys {
       c.wanderT -= dt;
       const hx = c.homeX - c.x, hz = c.homeZ - c.z, hd = Math.hypot(hx, hz);
       if (c.rush && hd < 2) c.rush = false;
-      if (hd > (c.kind === LADDER || c.rush ? 0.8 : c.crowd ? 2 : HOME_RANGE)) { dirX = hx / hd; dirZ = hz / hd; spd = c.rush ? c.team.run : STROLL * (hd > 15 ? 1.6 : 1); }   // back to his spot
+      if (hd > (c.kind === LADDER || c.rush ? 0.8 : c.crowd ? 2 : HOME_RANGE)) { dirX = hx / hd; dirZ = hz / hd; spd = c.rush ? c.team.run * c.pace : STROLL * (hd > 15 ? 1.6 : 1); }   // back to his spot
       else if (c.kind === LADDER) { /* up the ladder */ }
       else {
         if (c.wanderT <= 0) { c.wanderT = 2 + Math.random() * 4; c.wanderGo = Math.random() < (c.crowd ? 0.12 : 0.35); c.wanderYaw = Math.random() * Math.PI * 2; }
@@ -1015,9 +1106,10 @@ export class NaughtyBoys {
   /**
    * Host: n of them in look lk turn up round (x, z) and stay there till they're let go (release),
    * even with nobody about. hp: each one's health (their kind's own if not given). If every place is
-   * taken, whoever's hanging about furthest from anyone makes way. Returns who they are.
+   * taken, whoever's hanging about furthest from anyone makes way. face: which way they stand
+   * (random if not given). Returns who they are.
    */
-  bring(x: number, z: number, lk: number, n: number, targets: Target[], hp?: number, spread = 3): { i: number; gen: number }[] {
+  bring(x: number, z: number, lk: number, n: number, targets: Target[], hp?: number, spread = 3, face?: number): { i: number; gen: number }[] {
     const out: { i: number; gen: number }[] = [];
     const away = (c: NaughtyBoy) => Math.min(...targets.map((t) => Math.hypot(t.x - c.x, t.z - c.z)), 1e9);
     for (let k = 0; k < n; k++) {
@@ -1031,9 +1123,9 @@ export class NaughtyBoys {
       const at = clearSpot(this.map, x + Math.cos(a) * r, z + Math.sin(a) * r, 6) ?? [x, z];
       Object.assign(c, {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: hp ?? TEAM[lk >> 4]?.hp ?? 60, top: hp ?? TEAM[lk >> 4]?.hp ?? 60, target: "", look: lk,
-        x: at[0], z: at[1], homeX: at[0], homeZ: at[1], baseX: at[0], baseZ: at[1], y: this.map.ground(at[0], at[1]), yaw: Math.random() * Math.PI * 2,
+        x: at[0], z: at[1], homeX: at[0], homeZ: at[1], baseX: at[0], baseZ: at[1], y: this.map.ground(at[0], at[1]), yaw: face ?? Math.random() * Math.PI * 2,
         vx: 0, vz: 0, hop: 0, hopV: 0, deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: true, rush: false, armour: 0,
-        spare: false, meek: false, crowd: false, leaving: false, foe: -1, fightT: 0,
+        spare: false, meek: false, pace: 1, bolt: false, stay: false, crowd: false, leaving: false, foe: -1, fightT: 0,
       });
       c.fig.dress(lk);
       out.push({ i: c.i, gen: c.gen });
@@ -1073,6 +1165,33 @@ export class NaughtyBoys {
   setArmour(i: number, gen: number, a: number) {
     const c = this.list[i];
     if (c?.gen === gen) c.armour = Math.max(0, Math.min(0.9, a));
+  }
+
+  /** Host: on the run at this much of his kind's pace (and never turning to fight), or back to normal. */
+  flee(i: number, gen: number, pace: number, on = true) {
+    const c = this.list[i];
+    if (c?.gen === gen) { c.pace = on ? pace : 1; c.bolt = on; if (on) { c.target = ""; c.foe = -1; c.keep = true; } }
+  }
+
+  /** Host: a ladder lad who stands his ground at his ladder instead of running from anyone close. */
+  hold(i: number, gen: number, on = true) {
+    const c = this.list[i];
+    if (c?.gen === gen) c.stay = on;
+  }
+
+  /** Host: he's had enough: hands up, and he stays put. */
+  surrender(i: number, gen: number) {
+    const c = this.list[i];
+    if (c?.gen !== gen || c.state !== ALIVE) return;
+    c.meek = true; c.target = ""; c.rush = false; c.homeX = c.x; c.homeZ = c.z;
+  }
+
+  /** Host: how the Gaffer is travelling (MOUNTS): it rides on his look, so everyone sees it. */
+  setMount(i: number, gen: number, m: number) {
+    const c = this.list[i];
+    if (c?.gen !== gen || c.kind !== CHAIR) return;
+    c.look = Math.floor(c.look) + wearing(c.look) / 8 + (m & 3) / 1024;
+    c.fig.dress(c.look);
   }
 
   /** Host: go for player id, wherever they are. */
@@ -1121,7 +1240,7 @@ export class NaughtyBoys {
     const c = this.list[i];
     if (c?.state !== ALIVE) return;
     if (c.target !== id) c.chaseT = 0;
-    if (c.kind === LADDER || c.meek) return;
+    if (c.kind === LADDER || c.meek || c.bolt) return;
     c.rush = false; c.foe = -1;
     c.target = id; c.blindT = 0; c.calmT = 0; c.lastX = x; c.lastZ = z;
   }
@@ -1152,7 +1271,7 @@ export class NaughtyBoys {
         c.snaps = []; c.seenPunches = punches; if (state === ALIVE) c.fig.dress(look);
         // if we become host he should loiter where he stands, not march to the map centre
         c.homeX = c.baseX = c.lastX = x; c.homeZ = c.baseZ = c.lastZ = z;
-      }
+      } else if (state === ALIVE && look !== c.look) c.fig.dress(look);
       // a kill event can beat the update that says so
       if (!(c.state === DEAD && gen === c.gen && state === ALIVE)) {
         if (state === DEAD && c.state !== DEAD) { c.deadAnim = 0; c.fleeX = c.fleeZ = 0; }

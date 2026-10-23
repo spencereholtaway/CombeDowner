@@ -726,6 +726,15 @@ export class Effects {
     this.ball(at, thick ? 0.5 : 0.3, thick ? "#2a2826" : "#6a6662", thick ? 2.4 : 1.8, drift, 0, thick ? 0.9 : 0.6, thick ? 0.7 : 0.35);
   }
 
+  /** A puff of dust and a few falling bits of grit from a spot on a wall, spreading out along normal. */
+  dust(at: THREE.Vector3, normal: THREE.Vector3) {
+    for (let k = 0; k < 3; k++) {
+      const v = normal.clone().multiplyScalar(0.4 + Math.random() * 0.5).add(new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.2 + Math.random() * 0.3, (Math.random() - 0.5) * 0.5));
+      this.ball(at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.6)), 0.25, "#c9bfa6", 1.3 + Math.random() * 0.6, v, 0, 0.7, 0.5);
+    }
+    this.impact(at, normal.clone().multiplyScalar(0.3).setY(-0.5), "#a79c82", 6);
+  }
+
   update(dt: number) {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];

@@ -32,6 +32,8 @@
 // standing), the lab coats, the fire and the fireworks (lit when the host says it's burning).
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { award } from "./trophies";
+import { missionActive, missionClear, missionEnd, missionProgress, missionStart } from "./missionscreens";
 import { nightNow, timeOfDay } from "./daylight";
 import { model, type Part } from "./furniture";
 import type { GameMap, MapData } from "./map";
@@ -42,6 +44,7 @@ import { hash, rng, shuffled } from "./quests";
 
 /** Bundles it takes to build the bonfire. */
 export const NEED = 25;
+const FIRE = "#ff9a3c";
 /** The middle of the court: longitude and latitude. */
 const COURT: [number, number] = [-2.3734979, 51.3997079];
 /** The level the court is laid at, metres above sea level. */
@@ -588,9 +591,13 @@ export class Bonfire {
       const [d0, pan] = this.hear(this.x, this.y + 1, this.z);
       SFX.woodStack(d0, pan);
       if (had && !has) {
-        this.toast(this.s.n >= NEED ? `The bonfire's built! It's lit at dark` : `On the bonfire: ${this.s.n} of ${NEED} bundles`, 3);
+        award("bonfire");
         if (this.s.n < NEED) this.nag(ADDED);
-      } else if (this.s.n >= NEED && near < 600) this.toast("The bonfire's built! It's lit at dark", 3.5);
+      }
+      if (this.s.n >= NEED && was.n < NEED && (near < 600 || (had && !has))) {
+        missionClear("bonfire");
+        missionEnd({ result: "complete", title: "Bonfire built!", colour: FIRE, lines: ["Kingswood's bonfire is ready", "It's lit at dark"] });
+      }
       if (this.s.n >= NEED) this.nag(BUILT);
     }
     if (this.s.b && !was.b) {
@@ -598,8 +605,26 @@ export class Bonfire {
       if (this.known && near < 3000) this.toast("Kingswood's bonfire is lit! Fireworks on the court by Fonthill Road", 4);
     }
     this.known = true;
+    this.mission(has, near);
     this.seen = { n: this.s.n, b: this.s.b, carrying: has };
     this.paint();
+  }
+
+  private told = false;                          // the title card has been up for this pile
+
+  /** The mission screens: a card when you first pick up wood, and the pile's count while you're at it. */
+  private mission(carrying: boolean, near: number) {
+    if (this.s.n >= NEED) { this.told = false; missionClear("bonfire"); return; }
+    const busy = missionActive() && missionActive() !== "bonfire";
+    if (busy || (!carrying && near > 500)) { missionClear("bonfire"); return; }
+    if (!this.told && carrying) {
+      this.told = true;
+      missionStart({ title: "Get Wood", goal: `Build Kingswood's bonfire: ${NEED} bundles on the pile`, detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: FIRE });
+    }
+    missionProgress({
+      id: "bonfire", label: "Bonfire", colour: FIRE, goal: "Build the bonfire", progress: `${this.s.n} / ${NEED}`, bar: this.s.n / NEED,
+      hint: carrying ? "Carrying wood: take it to the pile" : "Fetch bundles from the woods (E)",
+    });
   }
 
   private me: Player | null = null;

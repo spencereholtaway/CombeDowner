@@ -36,6 +36,8 @@ export class TouchControls {
       el.addEventListener("pointercancel", end);
     };
     hold("t-fire", () => { g().firing = true; g().shootOnce = true; }, () => (g().firing = false));
+    hold("t-dl", () => (g().diveReq = -1));
+    hold("t-dr", () => (g().diveReq = 1));
     hold("t-jump", () => g().jump(), () => g().jumpEnd());
     hold("t-reload", () => g().reload());
     hold("t-swap", () => g().cycleWeapon(1));

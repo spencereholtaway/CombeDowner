@@ -18,7 +18,7 @@
 // - Made to be climbed (abbeyclimb.ts, climb.ts), if you know how: the carved ladder of angels on
 //   the north turret is a real one, reached off a mounting stone at its foot, up to the turret's
 //   crown, an open ring of pinnacles you can stand in; the tower's lower string course is a ledge
-//   to stand on, with a gap in it on the west side and none over the ridges of the choir and the
+//   to stand on (it and the stones grow out of the tower when someone's up on the roofs, climb.ts), with a gap in it on the west side and none over the ridges of the choir and the
 //   transepts; and stones jut from the tower in a stair (they grow out of its walls when someone's near,
 //   climb.ts, and are solid either way), each a jump above the last, along the
 //   north face, round a balcony at the corner, along the east face and round onto the south, up to
@@ -65,22 +65,56 @@ const STEPS: number[][] = (() => {
   for (let k = 0; k < 4; k++) { const x = nb - 0.1 - HALF - PITCH * k; stone(x - HALF, x + HALF, z, z + OUT); }
   return out;
 })();
+/** How far round the ledge a spot is, in metres, from the gap in the west side (the shorter way). */
+const RING_LEN = 2 * (TOWER.x1 - TOWER.x0) + 4 * TOWER.z;
+export function ringDist(x: number, z: number): number {
+  const { x0, x1, z: tz } = TOWER, gz = (LEDGE.gap[0] + LEDGE.gap[1]) / 2, nl = x1 - x0, a = gz + tz;
+  const cl = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const out = [x0 - x, x - x1, -tz - z, z - tz], side = out.indexOf(Math.max(...out));
+  const u = side === 0 ? (z >= gz ? RING_LEN - (cl(z, -tz, tz) - gz) : gz - cl(z, -tz, tz))
+    : side === 2 ? a + cl(x, x0, x1) - x0
+    : side === 1 ? a + nl + cl(z, -tz, tz) + tz
+    : a + nl + 2 * tz + x1 - cl(x, x0, x1);
+  return Math.min(u, RING_LEN - u);
+}
+/** The ledge as pieces: x0, x1, z0, z1, and how far round the route each begins. */
+const LEDGE_PIECES: number[][] = (() => {
+  const { x0, x1, z } = TOWER, { out, gap, ridge: r } = LEDGE, mid = (x0 + x1) / 2, o: number[][] = [];
+  const add = (a0: number, a1: number, b0: number, b1: number) => {
+    let near = Infinity;
+    for (const x of [a0, (a0 + a1) / 2, a1]) for (const zz of [b0, (b0 + b1) / 2, b1]) near = Math.min(near, ringDist(x, zz));
+    o.push([a0, a1, b0, b1, Math.max(0, near - 1.5)]);
+  };
+  add(x0 - out, x0 + 0.1, -z - out, gap[0]); add(x0 - out, x0 + 0.1, gap[1], z + out);   // west, over the nave
+  add(x1 - 0.1, x1 + out, -z - out, -r); add(x1 - 0.1, x1 + out, r, z + out);             // east
+  for (const s of [1, -1]) {
+    const b0 = s > 0 ? z - 0.1 : -z - out, b1 = s > 0 ? z + out : -z + 0.1;
+    add(x0, mid - r, b0, b1); add(mid + r, x1, b0, b1);                                    // north and south
+  }
+  return o;
+})();
 /** The climbable bits, in the Abbey's frame, for abbeyclimb.ts. */
 export const CLIMB = {
   /** The ladder of angels up the north turret (z = -turret.z): where its rungs meet the turret, the way in (+x), and its foot and top. */
   ladder: { x: TURRET.x - TURRET.r + 0.03, z: -TURRET.z, y0: RUNGS0, y1: CROWN },
   turret: TURRET, crown: CROWN,
   ledge: LEDGE.top,
+  /** The ledge's pieces (x0, x1, z0, z1, order along the route), how long the route round is, and where the stones start along it. */
+  ledgePieces: LEDGE_PIECES, ringLen: RING_LEN, stonesAt: ringDist(3.9, -TOWER.z),
+  /** Where the Abbey's roofs begin, in its frame: inside this, and this high, someone is up on them. */
+  roofs: { x0: WX, x1: EX, z: TZ, y: RIDGE - 1.5 },
   /** The stones up the tower, in order: x0, x1, z0, z1 and top of each (a balcony is two). */
   steps: STEPS,
   tower: TOWER,
 };
+/** Metres of reach over which a stone slides out. */
+export const STONE_SLIDE = 1.2;
 const PEWS = Array.from({ length: 21 }, (_, k) => -31 + k * 1.15);
 const DOOR = 1.8;                     // half the west door's width
 
 export function abbey(): THREE.Object3D {
-  const k = new Kit(), ks = new Kit();
-  const stepStone = stone("#cdb88c");
+  const k = new Kit(), ks = new Kit(), kl = new Kit();
+  const stepStone = stone("#cdb88c"), ledgeStone = stone("#cdb88c");
   const S = stone(), S2 = stone("#cdb88c"), lead = plain("#727a82"), wood = plain("#5b3d25"), gold = plain("#c49a3c");
   const cloth = plain("#7c1f26"), fig = plain("#efe3c4");
   const out5 = gothicGlass(false, false, 5), in5 = gothicGlass(true, false, 5);
@@ -190,17 +224,8 @@ export function abbey(): THREE.Object3D {
     k.slab(S2, x0 - 0.15, x1 + 0.15, top - 1.6, top - 1.25, -z - 0.15, z + 0.15);
     // the lower string course, a ledge to stand on all round, but for a gap to jump on the west
     // side, and none over the ridges of the choir and the transepts, so it's reached only from the
-    // nave's, and the way round to the stones up the tower is over the gap
-    {
-      const { top: y, out, gap, ridge: r } = LEDGE, mid = (x0 + x1) / 2;
-      const ledge = (a0: number, a1: number, b0: number, b1: number) => k.slab(S2, a0, a1, y - 1.2, y, b0, b1);
-      ledge(x0 - out, x0 + 0.1, -z - out, gap[0]); ledge(x0 - out, x0 + 0.1, gap[1], z + out);   // west, over the nave
-      ledge(x1 - 0.1, x1 + out, -z - out, -r); ledge(x1 - 0.1, x1 + out, r, z + out);             // east
-      for (const s of sides) {
-        const b0 = s > 0 ? z - 0.1 : -z - out, b1 = s > 0 ? z + out : -z + 0.1;
-        ledge(x0, mid - r, b0, b1); ledge(mid + r, x1, b0, b1);                                  // north and south
-      }
-    }
+    // nave's, and the way round to the stones up the tower is over the gap (growingPieces draws it)
+    for (const [a0, a1, b0, b1] of LEDGE_PIECES) kl.slab(ledgeStone, a0, a1, LEDGE.top - 1.2, LEDGE.top, b0, b1, 1);
     // the stones jutting from the tower, a stair to jump up, each a block on a smaller one under it
     for (const [a, b, c, d, y] of STEPS) {
       ks.slab(stepStone, a, b, y - 0.45, y, c, d, 1);
@@ -319,32 +344,45 @@ export function abbey(): THREE.Object3D {
   }
 
   const grp = k.build();
-  grp.add(growingSteps(ks, stepStone));
+  grp.add(growingPieces(ks, STEPS.map(([a, b, c, d, t], i) => [a, b, c, d, t - 0.9, t, t, i ? 0 : 1]), "steps"));
+  grp.add(growingPieces(kl, LEDGE_PIECES.map(([a, b, c, d, o]) => [a, b, c, d, LEDGE.top - 1.2, LEDGE.top, o, o ? 0 : 1]), "ledge"));
   for (const m of [out5, out7, outSq]) glow(grp, m, 0, 0.9);
   for (const m of [in5, in7, inSq]) glow(grp, m, 0.75, 0.15);
   return grp;
 }
 
-/** The stones up the tower as one mesh that can grow out of the tower's walls (userData.steps; climb.ts
- *  sets the material's uGrow from 0 to 1). The stones are solid whether or not they're out. */
-function growingSteps(ks: Kit, mat: THREE.MeshLambertMaterial): THREE.Mesh {
-  const mesh = ks.build().children[0] as THREE.Mesh, g = mesh.geometry, p = g.attributes.position;
-  const { x0, x1, z } = TOWER, eps = 0.01, anchor = new Float32Array(p.count * 3);
+/** The stones, or the ledge, as one mesh that can grow out of the tower's walls (userData[key]).
+ *  Pieces are [x0, x1, z0, z1, y0, y1, lift, marked]. climb.ts sets uReach (how far the route may
+ *  be out) and uGlow (a gold shimmer on the tops of marked pieces, to show where to go next): a
+ *  piece slides out over a metre and a bit as the reach passes its lift. They're solid whether or
+ *  not they're out. */
+function growingPieces(kit: Kit, pieces: number[][], key: "steps" | "ledge"): THREE.Mesh {
+  // the material that build() hands back is the merged copy, so the shader goes on that one
+  const mesh = kit.build().children[0] as THREE.Mesh, mat = mesh.material as THREE.MeshLambertMaterial, g = mesh.geometry, p = g.attributes.position, nm = g.attributes.normal;
+  const { x0, x1, z } = TOWER, eps = 0.01, anchor = new Float32Array(p.count * 3), lift = new Float32Array(p.count), mark = new Float32Array(p.count);
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), zz = p.getZ(i);
-    const st = STEPS.find(([a, b, c, d, t]) => x >= a - eps && x <= b + eps && zz >= c - eps && zz <= d + eps && y >= t - 0.9 - eps && y <= t + eps);
-    if (!st) { anchor.set([x, y, zz], i * 3); continue; }
+    const st = pieces.find(([a, b, c, d, lo, hi]) => x >= a - eps && x <= b + eps && zz >= c - eps && zz <= d + eps && y >= lo - eps && y <= hi + eps);
+    if (!st) { anchor.set([x, y, zz], i * 3); lift[i] = -1e4; continue; }
     anchor.set([clamp((st[0] + st[1]) / 2, x0, x1), y, clamp((st[2] + st[3]) / 2, -z, z)], i * 3);
+    lift[i] = st[6];
+    mark[i] = st[7] && nm.getY(i) > 0.5 ? 1 : 0;
   }
   g.setAttribute("anchor", new THREE.BufferAttribute(anchor, 3));
-  const grow = { value: 0 };
-  mat.userData.grow = grow;
+  g.setAttribute("lift", new THREE.BufferAttribute(lift, 1));
+  g.setAttribute("mark", new THREE.BufferAttribute(mark, 1));
+  const reach = { value: -1e4 }, glow = { value: 0 };
+  mat.userData.grow = { reach, glow };
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uGrow = grow;
-    sh.vertexShader = "attribute vec3 anchor;\nuniform float uGrow;\n" + sh.vertexShader.replace("#include <begin_vertex>", "vec3 transformed = anchor + (position - anchor) * uGrow;");
+    sh.uniforms.uReach = reach; sh.uniforms.uGlow = glow;
+    sh.vertexShader = "attribute vec3 anchor;\nattribute float lift;\nattribute float mark;\nvarying float vMark;\nuniform float uReach;\n" + sh.vertexShader.replace("#include <begin_vertex>",
+      `vMark = mark;\nvec3 transformed = anchor + (position - anchor) * clamp((uReach - lift) / ${STONE_SLIDE.toFixed(1)}, 0., 1.);`);
+    sh.fragmentShader = "varying float vMark;\nuniform float uGlow;\n" + sh.fragmentShader
+      .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.62, 0.08), 0.85 * vMark * uGlow);")
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.6, 0.38, 0.04) * vMark * uGlow;");
   };
-  mesh.userData.steps = true;
+  mesh.userData[key] = true;
   return mesh;
 }
 

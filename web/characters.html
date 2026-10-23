@@ -19,8 +19,8 @@
     header a { color: var(--accent); }
     main { flex: 1; display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
     #list { overflow-y: auto; padding: 8px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-    .tabs { display: flex; gap: 4px; margin-bottom: 4px; }
-    .tabs button { flex: 1; text-align: center; font-weight: 600; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+    .tabs button { flex: 1 1 auto; text-align: center; font-weight: 600; white-space: nowrap; }
     #list h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin: 10px 4px 2px; font-weight: 600; }
     button, select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 16px; text-align: left; cursor: pointer; }
     button:hover, select:hover { border-color: var(--accent); }
@@ -90,7 +90,7 @@
   </style>
 </head>
 <body>
-  <header><h1>Combe Downer: who's who</h1><button type="button" class="help" aria-label="How to use this page" onclick="this.closest('header').classList.toggle('open')">?</button><p>Everyone on the streets of Bath, players and all. Drag to turn round them, scroll to zoom, arrow keys to step through. The address always shows exactly what you are looking at, to share. The monsters and bosses of the mines are on the Under Combe Down tab. <a href="./whatswhat.html">What's what</a> · <a href="./">Play the game</a></p></header>
+  <header><h1>Combe Downer: who's who</h1><button type="button" class="help" aria-label="How to use this page" onclick="this.closest('header').classList.toggle('open')">?</button><p>Everyone on the streets of Bath, players and all. Drag to turn round them, scroll to zoom, arrow keys to step through. The address always shows exactly what you are looking at, to share. The monsters and bosses of the mines are on the Under Combe Down tab, and every car, bus, train and ride on the Vehicles tab. <a href="./whatswhat.html">What's what</a> · <a href="./">Play the game</a></p></header>
   <main>
     <nav id="list"></nav>
     <section class="stage">

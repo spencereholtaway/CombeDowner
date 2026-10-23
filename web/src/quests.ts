@@ -17,6 +17,14 @@
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
+// A job lost leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
+// so stopping or swapping jobs costs nothing.
+// A Gaffer who got away from a pub takeover (invasion.ts, gaffer.ts) is the next game day's Wanted
+// poster: the host keeps the list and every player puts up the same poster from it.
+// A job well done can lead on to another (nightout.ts): the host sends a link (a kind, a seed and a
+// place), every player builds the same poster from it, and it stands on the spot for a minute or
+// so. Any job taken by hand, or the follow-up itself, takes those posters down again.
+//
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
 import * as THREE from "three";
@@ -28,8 +36,12 @@ import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
+import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
+import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
+import * as Telemetry from "./telemetry";
+import * as Paper from "./paper";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -94,7 +106,7 @@ export interface QuestWorld {
   pubs(): { name: string; x: number; z: number; rating: number | null }[];
   /** Named places (parks, squares, gardens, churchyards...): their middles, scene coordinates. */
   places(): { n: string; x: number; z: number }[];
-  send(type: "qe", data: unknown, to?: string): void;
+  send(type: "qe" | "no", data: unknown, to?: string): void;
   toast(text: string, secs?: number): void;
   feed(html: string): void;
   /** A marker column, compass pip and map pin for a job (id like "@job"), or null to take it down. */
@@ -117,10 +129,22 @@ export interface QuestWorld {
   riding(): RideKind | null;
   /** Seconds into a manual on your ride (0: not on one). */
   manual(): number;
+  /** A race's speed-up for your ride, to be said every frame it holds (mul on top speed and push), with a one-off shove to your speed. */
+  rideBoost?(mul: number, kick?: number): void;
+  /** Knocked off your ride by another racer. */
+  knock?(): void;
   /** Slow you down for a while (wading through seagull muck). */
   slow?(secs: number): void;
   /** How far away a sound at (x, y, z) is from you, and how far left or right (-1..1). */
   hear?(x: number, y: number, z: number): [number, number];
+  /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */
+  dust?(x: number, y: number, z: number, nx: number, nz: number): void;
+  /** A line pencilled onto your own big map (scene x, z pairs), by key, or null to rub it out (signals.ts). */
+  pencil?(key: string, pts: number[] | null): void;
+  /** Rub out every pencil line on the map, everyone's. */
+  wipe?(): void;
+  /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
+  flares?(n: number | null): void;
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
@@ -128,7 +152,16 @@ export interface QuestWorld {
 export interface Quarry { dist: number; head: boolean; ref: number; follow?: Follow }
 
 /** What a job puts on the card at the top left of the screen. bar: 0..1 for a progress bar. */
-export interface Card { line: string; sub?: string; bar?: number }
+export interface Card {
+  line: string; sub?: string; bar?: number;
+  /** How far you've got in a few characters ("2 / 5"), and the clock if the job has one. */
+  progress?: string; timer?: string;
+  /** Where the job has got to (a wave, a clue): when key changes everyone gets a banner. */
+  stage?: { key: string; title: string; sub?: string; colour?: string; life?: number };
+}
+
+/** A Gaffer who got away from a pub takeover (invasion.ts) and is the next game day's Wanted poster. how: how he left (naughtyboys.ts MOUNTS). */
+export interface Fugitive { id: number; day: number; name: string; pub: string; x: number; z: number; how: number }
 
 /** A job's poster: everything about it that goes round when someone takes it. */
 export interface Offer {
@@ -136,7 +169,12 @@ export interface Offer {
   title: string; blurb: string; reward: string;
   x: number; z: number; where: string;     // the noticeboard, and the place it's at
   mode?: number;                            // anything else the kind needs, as a number
+  /** A follow-up job's own shape (nightout.ts): how many legs a trail has, where a race finishes, and a line to open the poster (html). */
+  legs?: number; to?: { n: string; x: number; z: number }; say?: string;
 }
+
+/** What goes round for a follow-up job: everything about it that the seed doesn't give. */
+export type Link = Pick<Offer, "kind" | "seed" | "stars" | "title" | "x" | "z" | "where" | "mode" | "legs" | "to" | "say">;
 
 /** A job someone's taken, running on every player's screen. */
 export interface Job {
@@ -159,8 +197,8 @@ export interface Job {
   /** What to call the job's boss (a Wanted ringleader) on the boss bar. */
   boss?(): string;
   /** Set once the job's over: won or not, what to say, where the prizes go, and anything you've
-   *  earned for your wardrobe (wardrobe.ts). */
-  done: { won: boolean; text: string; x?: number; z?: number; wear?: string[] } | null;
+   *  earned for your wardrobe (wardrobe.ts). screen: the job has put up its own end card. */
+  done: { won: boolean; text: string; x?: number; z?: number; wear?: string[]; screen?: boolean; grade?: Grade } | null;
   /** A shot from o along d (a unit vector), up to max metres: did it hit anything of the job's? */
   hit?(o: THREE.Vector3, d: THREE.Vector3, max: number): Quarry | null;
   /** And you hit it, this hard (a sniper round counts for more). */
@@ -173,6 +211,8 @@ export interface Job {
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number } | null;
+  /** Where losing or giving up the job leaves its mark on the town (scars.ts), if not its noticeboard. */
+  scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
   route?(): RouteLine | null;
 }
@@ -181,6 +221,8 @@ export interface JobKind {
   id: string;
   /** The letter on its badge, its colour, and what the poster calls it ("Wanted"). */
   glyph: string; colour: string; label: string;
+  /** What the title card says to do, from the poster. */
+  goal?(o: Offer): string;
   /** Can be done again the same day (a race, to beat your time). */
   again?: boolean;
   /** Today's job of this kind on the noticeboard at spot, from r. Null if it can't make one there. */
@@ -192,6 +234,10 @@ export interface JobKind {
   daily?(r: Rng, spots: PostSpot[], w: QuestWorld): Offer | null;
   /** Anything more for the poster, worked out as you read it (the daily race's board). */
   poster?(o: Offer): string;
+  /** Fill in the poster of a follow-up job from its link (the same on every screen); null if it can't be done here. */
+  build?(o: Offer, w: QuestWorld): Offer | null;
+  /** The poster for a Gaffer who got away, from the host's record of him; the same for everyone. */
+  fugitive?(f: Fugitive, w: QuestWorld): Offer | null;
 }
 
 const kinds = new Map<string, JobKind>();
@@ -213,7 +259,7 @@ export function registerFree(f: FreePlay) { free.push(f); }
 
 /** Somewhere a noticeboard can go: a pub or a named place, scene coordinates. */
 export interface PostSpot { x: number; z: number; name: string; pub: boolean }
-interface Post { i: number; offer: Offer; kind: JobKind; x: number; z: number; y: number; view?: THREE.Group; placed?: boolean }
+interface Post { i: number; offer: Offer; kind: JobKind; x: number; z: number; y: number; view?: THREE.Group; placed?: boolean; until?: number }
 
 const NEAR_VILLAGE = 4;        // of today's jobs, this many are round Combe Down, where everyone starts
 const IN_BATH = 9;             // and this many anywhere else in the force field
@@ -341,7 +387,7 @@ export class Quests {
   private by = "";
   private finishT = 0;            // seconds the "job done" card stays up
   private doneSeeds = new Set<number>();   // jobs finished today, by their seed
-  private cardLine = "";          // the card's main line, to flash the card when it changes
+  private stageKey: string | null = null;   // the stage banner last shown for the job; null before the first look
   private circles = new Map<string, Circle>();
   private local = false;          // the running job is a go of your own (Backspace), not the room's
   private last: Offer | null = null;   // the last job that can be run again, and when it ended
@@ -351,6 +397,13 @@ export class Quests {
   private ready: () => boolean;
   /** A job's step or end, for the quips. */
   onDone: (won: boolean) => void = () => {};
+  /** A job for the room lost, and where it leaves its mark (scars.ts). */
+  onScar: (o: Offer, x: number, z: number) => void = () => {};
+  /** The Gaffers who got away (invasion.ts), each the next game day's Wanted poster. */
+  fugitives: () => Fugitive[] = () => [];
+  /** A job for the room ended (not a go of your own): the follow-ups' cue (nightout.ts). */
+  onEnd: (o: Offer, d: NonNullable<Job["done"]>) => void = () => {};
+  private fugT = 0;
 
   constructor(private w: QuestWorld, ready: () => boolean) {
     this.ready = ready;
@@ -387,9 +440,47 @@ export class Quests {
     if (!this.doneSeeds.size || ![...this.doneSeeds].some((s) => this.posts.some((p) => p.offer.seed === s))) this.doneSeeds.clear();
   }
 
+  /** A Gaffer who got away yesterday is today's Wanted poster, put up where he was last seen. */
+  private putUpFugitives() {
+    for (const f of this.fugitives()) {
+      if (f.day + 1 !== this.day) continue;
+      const seed = hash("gaffer", f.id);
+      if (this.posts.some((p) => p.offer.seed === seed)) continue;
+      const offer = kinds.get("wanted")?.fugitive?.(f, this.w);
+      if (offer) this.posts.push({ i: this.posts.length, offer, kind: kinds.get("wanted")!, x: offer.x, z: offer.z, y: this.w.map.ground(offer.x, offer.z) });
+    }
+  }
+
+  /** A follow-up job's poster goes up where it is, for secs seconds, if it can be built here. */
+  putUp(l: Link, secs: number): boolean {
+    const kind = kinds.get(l.kind);
+    if (!kind?.build || this.posts.some((p) => p.offer.seed === l.seed)) return false;
+    const offer = kind.build({ ...l, blurb: "", reward: "" }, this.w);
+    if (!offer) return false;
+    this.posts.push({ i: this.posts.length, offer, kind, x: offer.x, z: offer.z, y: this.w.map.ground(offer.x, offer.z), until: Date.now() + secs * 1000 });
+    return true;
+  }
+  /** Is a follow-up's poster still up? */
+  chained(): boolean { return this.posts.some((p) => p.until !== undefined); }
+  /** Take down the follow-up posters (all of them, or one by its seed). */
+  private takeDown(seed?: number) {
+    for (let k = this.posts.length - 1; k >= 0; k--) {
+      const p = this.posts[k];
+      if (p.until === undefined || (seed !== undefined && p.offer.seed !== seed)) continue;
+      if (p.view) this.w.scene.remove(p.view);
+      this.posts.splice(k, 1);
+    }
+  }
+
   /** Every frame. */
   update(dt: number, t: number) {
     this.refresh();
+    const now = Date.now();
+    for (let k = this.posts.length - 1; k >= 0; k--) {
+      const u = this.posts[k].until;
+      if (u !== undefined && now > u) { const v = this.posts[k].view; if (v) this.w.scene.remove(v); this.posts.splice(k, 1); }
+    }
+    if (this.day >= 0 && (this.fugT -= dt) <= 0) { this.fugT = 2; this.putUpFugitives(); }
     const me = this.w.me();
     // build the noticeboards round you, and take down the ones you've left behind
     for (const p of this.posts) {
@@ -423,6 +514,12 @@ export class Quests {
     if (this.ready()) for (const f of free) f.update(dt, this.w);
     this.hud(me);
     this.againButton();
+  }
+
+  /** Stood reading a noticeboard (the Chronicle's pinned up on every one). */
+  atBoard(): boolean {
+    const me = this.w.me();
+    return me.alive && !!this.postAt(me.x, me.z, READ);
   }
 
   /** The noticeboard you're stood at, if any. */
@@ -471,37 +568,55 @@ export class Quests {
     const kind = kinds.get(o.kind);
     if (!kind) return;
     if (this.job) this.clear();
+    this.takeDown();
     this.started = t; this.by = by; this.finishT = 0;
     this.local = local;
     this.job = kind.start(o, this.w, t, by, local);
+    Telemetry.begin("job:" + o.kind);
     if (p !== undefined) this.job.restore?.(p);
     if (kind.again) this.last = o;
-    if (local) return;
+    if (local) { this.startCard(o, kind); return; }
     SFX.jobTaken();
+    this.startCard(o, kind);
     const who = by === this.w.selfId ? "You" : this.w.nameOf(by);
     this.w.feed(`<b style="color:${this.w.colourOf(by)}">${esc(who)}</b> took on a job: <b style="color:${kind.colour}">${esc(o.title)}</b>`);
+  }
+
+  private startCard(o: Offer, kind: JobKind) {
+    missionStart({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour, best: bestFor(o.kind) });
   }
 
   /** Call the job off (the pause menu), for everyone. */
   callOff() {
     if (!this.job) return;
-    if (!this.local) this.w.send("qe", { k: "stop", s: this.job.offer.seed });
-    this.w.toast("Job called off", 2);
+    if (!this.local) { this.w.send("qe", { k: "stop", s: this.job.offer.seed }); }
+    const o = this.job.offer;
+    Paper.job(kinds.get(o.kind)?.label ?? "Job", o.title, o.where, false, true);
+    this.endCard(false, "Job called off", "");
     this.clear();
+  }
+
+  private endCard(won: boolean, title: string, line: string) {
+    missionEnd({ result: won ? "complete" : "failed", title, lines: line ? [line] : [], colour: this.job ? kinds.get(this.job.offer.kind)?.colour : undefined });
   }
 
   private finish() {
     const job = this.job!, d = job.done!;
+    missionClear("job");
+    if (!d.screen) this.endCard(d.won, d.won ? "Job done!" : "Job failed", d.text);
     // anything earned for your wardrobe, a go of your own included; any job at all gets you the joke glasses
     for (const id of d.wear ?? []) earn(id);
+    if (d.won) { jobWon(); missionResult(job.offer.kind, d.grade ?? { tier: 1 }); }
+    Paper.job(kinds.get(job.offer.kind)?.label ?? "Job", job.offer.title, job.offer.where, d.won);
     if (d.won && !this.local) earn("specs");
     if (this.local) { this.clear(); return; }   // a go of your own: it just ends
+    this.onEnd(job.offer, d);
     this.finishT = 6;
     if (!kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
     try { localStorage.setItem(DONE_KEY, JSON.stringify({ day: this.day, seeds: [...this.doneSeeds] })); } catch { /* ignore */ }
     SFX.jobDone(d.won);
-    this.w.toast(d.text, 4);
     this.onDone(d.won);
+    if (!d.won) this.scar();
     if (d.won && this.w.isHost && !this.local) {
       const at = d.x !== undefined && d.z !== undefined ? { x: d.x, z: d.z } : this.w.me();
       for (let k = 0; k < job.offer.stars; k++) {
@@ -511,10 +626,20 @@ export class Quests {
     }
   }
 
+  private scar() {
+    const job = this.job;
+    if (!job) return;
+    const at = job.scarAt?.() ?? (job.done?.x !== undefined && job.done?.z !== undefined ? { x: job.done.x, z: job.done.z } : { x: job.offer.x, z: job.offer.z });
+    this.onScar(job.offer, at.x, at.z);
+  }
+
   private clear() {
     this.job?.end();
+    if (this.job) Telemetry.end("job:" + this.job.offer.kind);
     if (this.job && kinds.get(this.job.offer.kind)?.again) this.lastT = Date.now();
     this.job = null;
+    this.stageKey = null;
+    missionClear("job");
     this.local = false;
     this.finishT = 0;
     this.circles.clear();
@@ -532,7 +657,7 @@ export class Quests {
       return;
     }
     if (d.k === "stop") {
-      if (this.job && this.job.offer.seed === d.s) { this.w.toast(`${this.w.nameOf(from)} called the job off`, 2.5); this.clear(); }
+      if (this.job && this.job.offer.seed === d.s) { this.endCard(false, "Job called off", `${this.w.nameOf(from)} called it off`); this.clear(); }
       return;
     }
     if (this.job && d.s === this.job.offer.seed) this.job.event?.(d, from);
@@ -590,23 +715,19 @@ export class Quests {
 
   /** The card at the top left while a job's on, and a poster when you're stood at a noticeboard. */
   private hud(me: { x: number; z: number }) {
-    let html = "";
     const job = this.job;
-    if (job) {
-      const kind = kinds.get(job.offer.kind)!;
-      const c = job.done ? { line: job.done.text } as Card : job.card();
-      html = `<div class="label" style="color:${kind.colour}">${esc(kind.label)} · ${starText(job.offer.stars)}</div>`
-        + `<div class="jobtitle">${esc(job.offer.title)}</div><div class="jobline">${c.line}</div>`
-        + (c.bar !== undefined ? `<div class="bar"><div style="width:${Math.round(Math.max(0, Math.min(1, c.bar)) * 100)}%;background:${kind.colour}"></div></div>` : "")
-        + (c.sub ? `<em>${c.sub}</em>` : "");
-    }
-    show($("jobcard"), html, !!html);
-    // a new clue (or step) on the card: flash it, so you know where to look
-    const line = job && !job.done ? job.card().line.replace(/\d+ s to/, "") : "";
-    if (line !== this.cardLine) {
-      if (line) { const el = $("jobcard"); el.classList.remove("fresh"); void el.offsetWidth; el.classList.add("fresh"); }
-      this.cardLine = line;
-    }
+    if (job && !job.done) {
+      const kind = kinds.get(job.offer.kind)!, c = job.card();
+      missionProgress({
+        id: "job", label: `${esc(kind.label)} · ${starText(job.offer.stars)}`, colour: kind.colour, goal: job.offer.title,
+        progress: c.progress, bar: c.bar, timer: c.timer, hint: c.line, sub: c.sub, flash: c.line.replace(/\d+ s to/, ""),
+      });
+      const st = c.stage;
+      if (st && st.key !== this.stageKey) {
+        if (this.stageKey !== null) { missionStage({ title: st.title, sub: st.sub, colour: st.colour ?? kind.colour, life: st.life }); }
+        this.stageKey = st.key;
+      } else if (!st && this.stageKey === null) this.stageKey = "";
+    } else missionClear("job");
     const p = this.postAt(me.x, me.z, READ);
     let poster = "";
     if (p && this.job?.offer.seed !== p.offer.seed) {

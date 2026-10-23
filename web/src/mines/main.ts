@@ -9,6 +9,7 @@ import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
+import * as Telemetry from "../telemetry";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -81,6 +82,8 @@ function start(code: string, net: Net, known: string[] = []) {
   const seed = parseSeed($<HTMLInputElement>("seed").value) ?? undefined;
   party = code;
   game = new MineGame(camera, net, name, code, { depth: DEPTH, seed, known });
+  Telemetry.play("mines");
+  Telemetry.begin("mines");
   game.player.sensitivity = 0.0022 * sens;
   $("menu").hidden = true;
   $("hud").hidden = false;

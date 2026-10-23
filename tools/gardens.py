@@ -190,7 +190,8 @@ def _rows(plot_of, polys, info, keys, facing_name, gtree, gap=6.0):
     maps to the row's first house, by key."""
     key = lambda i: keys[i] if keys is not None else i
     ids = list(plot_of)
-    street = {i: facing_name[int(gtree.nearest(polys[i]))] for i in ids}
+    # (a square with no street any house faces has only a stand-in far away, with no name)
+    street = {i: facing_name[int(gtree.nearest(polys[i]))] if facing_name else None for i in ids}
     up = {i: i for i in ids}
     def find(i):
         while up[i] != i: up[i] = up[up[i]]; i = up[i]

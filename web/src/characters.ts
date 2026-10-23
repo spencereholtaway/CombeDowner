@@ -4,7 +4,8 @@
 // kit, with the ringleaders and the Flag Lads' bosses; the cats (cats.ts) in every breed and coat;
 // the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts), and by day (daybendy.ts); Jamie Mair
 // (jamie.ts); the prefects, lab coats and guy from Get Wood (bonfire.ts); and everyone else about Bath. A second tab, Under Combe Down, has every monster and boss in the mines (mines/mobviews.ts),
-// in the dark with a lamp, as champions and mini-bosses, and the bosses doing each of their moves.
+// in the dark with a lamp, as champions and mini-bosses, and the bosses doing each of their moves. A third, Vehicles, has everything you can
+// drive or ride (vehicles.ts, rides.ts), the trains, the cable car, the balloons and the narrowboats, in their colours.
 //
 // Who decides what: nothing here goes over the network or touches what you've earned. It draws
 // the game's own models, built by the same code the game uses, so what you see is what's in the game.
@@ -24,11 +25,21 @@ import { MobView, type MobKind } from "./mines/mobviews";
 import { KINDS, MOBS, MINI } from "./mines/mobs";
 import { BOSSES, MINI_NAMES, MOVE, WEAK_HINT } from "./mines/bosses";
 import { WEAKNESS } from "./mines/gen";
+import { Vehicle, SPECS, MAKES, type VKind } from "./vehicles";
+import { CAR_PAINT } from "./furniture";
+import { GOLF, LAND_ROVER, PARAMOUNT, ALIZEE, XR3I } from "./makes";
+import { trainModels } from "./railway";
+import { cabinModel } from "./cableway";
+import { BALLOON_DESIGNS, balloonModel } from "./balloons";
+import { BOAT_PAINTS, boatGeometry } from "./canal";
+import { RIDES, rideModel, rideSpecs } from "./rides";
 
-type Kind = "player" | "gang" | "cat" | "gull" | "tourist" | "bendy" | "owner" | "still" | "mob";
+type Kind = "player" | "gang" | "cat" | "gull" | "tourist" | "bendy" | "owner" | "still" | "mob" | "vehicle";
 /** size: roughly how tall it stands, to frame it (a person is 1.8). */
 /** mines: on the Under Combe Down tab. mob, mini: which monster, and whether it's the mini-boss. moves: a boss's special moves. */
-interface Entry { name: string; blurb: string; kind: Kind; group: string; mines?: boolean; mob?: MobKind; mini?: boolean; moves?: number[]; look?: number; kits?: string[]; loud?: number; size?: number; head?: string; scale?: number; build?: () => THREE.Object3D }
+interface Entry { name: string; blurb: string; kind: Kind; group: string; mines?: boolean; mob?: MobKind; mini?: boolean; moves?: number[]; look?: number; kits?: string[]; loud?: number; size?: number; head?: string; scale?: number; build?: () => THREE.Object3D;
+  /** A vehicle: the paints it comes in (colours), or how many looks it has, and the everyday cars' makes (numbers into MAKES). Its build is given the paint and the make. */
+  paints?: string[]; looks?: number; makes?: number[]; fresh?: boolean; make?: (paint: string, look: number, make: number) => THREE.Object3D }
 
 const kits = (names: string[]) => names;
 const ENTRIES: Entry[] = [
@@ -78,7 +89,69 @@ const ENTRIES: Entry[] = [
   { group: "Animals", kind: "cat", name: "Cat", blurb: "Bath's cats: most just sit about, but cross a swarm and they'll have you.", look: 0, size: 0.5,
     kits: ["Tabby", "Plain", "Tuxedo", "Siamese", "Calico and tortoiseshell", "Maine Coon", "Sphynx", "Persian", "Bengal", "Dyed"] },
   ...mineEntries(),
+  ...vehicleEntries(),
 ];
+
+type Tab = "streets" | "mines" | "vehicles";
+const TAB_NAMES: Record<Tab, string> = { streets: "Bath", mines: "Under Combe Down", vehicles: "Vehicles" };
+const tabOf = (e: Entry): Tab => (e.mines ? "mines" : e.kind === "vehicle" ? "vehicles" : "streets");
+
+/** Everything you can drive, ride or travel in: the game's own models, and the colours each comes in. */
+function vehicleEntries(): Entry[] {
+  const vertexMesh = (g: THREE.BufferGeometry, extra: THREE.MeshLambertMaterialParameters = {}) => new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, ...extra }));
+  // a vehicle that's going nowhere needs no map or ground
+  const car = (kind: VKind, paint: string, label = "") => new Vehicle(0, kind, paint, null as never, () => 0, label).root;
+  let trains: THREE.BufferGeometry[] | null = null;
+  const trainCar = (k: number) => vertexMesh((trains ??= trainModels())[k]);
+  const drive = (kind: VKind, blurb: string): Entry => ({ group: "You can drive", kind: "vehicle", name: SPECS[kind].name, blurb, paints: SPECS[kind].paint, make: (p) => car(kind, p) });
+  const special = [LAND_ROVER, GOLF, XR3I, PARAMOUNT, ALIZEE];
+  const rides: Record<string, string> = {
+    bike: "Picked up off the street: the quickest thing on the roads, and hopeless on grass. Tuck down the hills.",
+    bmx: "Hop kerbs and low walls, and tailwhip in the air. Picked up off the street.",
+    blades: "Quick on the pavements, and they'll grind anything. Put them on with X.",
+    board: "Picks up speed downhill; ollie, kickflip and grind the rails.",
+    scooter: "A kick scooter: off the mark in no time, and it turns on a sixpence.",
+    pogo: "Bounce over walls with it; time the bounce as you land for a bigger one.",
+    trolley: "Push it about, hop on the back to hold on downhill, and a mate can ride in it.",
+  };
+  const unique = (list: string[]) => list.filter((c, k) => list.indexOf(c) === k);
+  const list: Entry[] = [
+    drive("bus", "Badgerline's number 2 to Combe Down, with a top deck. Get in with E; call one from a stop."),
+    drive("minibus", "A Badgerline minibus, the smaller one on the back routes. Drive it, or ride in the back."),
+    drive("school", "Kingswood School's own minibus, in white and navy, out on a school trip."),
+    drive("paramount", "One of Arleen's coaches: long and heavy, slow off the mark and happy on the open road. Seats a crowd."),
+    drive("alizee", "Arleen's other coach, the Van Hool: the same size, a different front end."),
+    drive("xr3i", "The boy racer's Escort: quick and light. Get in with E."),
+    drive("robin", "Three wheels and a lean: take a corner too hard and it goes over."),
+    drive("nova", "A little Vauxhall. Light, quick, and everywhere in the traffic."),
+    drive("metro", "An old Austin Metro, tinny and slow, in a very 1980s colour."),
+    drive("sierra", "A big Sierra, the quickest of the ordinary cars."),
+    drive("police", "A Sierra in police livery. Press H for the siren."),
+    drive("transit", "A Ford Transit with room for your mates in the back."),
+    drive("icecream", "The Mr Whippy van. Press H and it plays its chimes."),
+    drive("chipvan", "Mr D's chip van, with its fryers in the back."),
+    drive("milkfloat", "A milk float, whirring along at seven metres a second, with crates of bottles that smash."),
+    drive("c5", "A Sinclair C5: one seat, almost on the road, and not much faster than a jog."),
+    drive("roller", "A heavy roller, as slow as a walk, and it runs people over."),
+    drive("landrover", "An old Land Rover, parked out in the country: as good on grass and fields as on the road."),
+    drive("golf", "A Golf GTI, very nearly an XR3i. Every Golf about town is one."),
+    { group: "Everyday cars", kind: "vehicle", name: "Everyday car", blurb: "Parked all over Bath and running in the traffic: pick a make and a colour. Every one can be driven off.",
+      makes: MAKES.map((_, k) => k).filter((k) => !special.includes(k)), paints: CAR_PAINT, make: (p, _k, m) => car("car", p, MAKES[m]) },
+    { group: "Trains", kind: "vehicle", name: "InterCity 125 power car", blurb: "On the main line through Bath Spa and Oldfield Park. Board at the station.", make: () => trainCar(0) },
+    { group: "Trains", kind: "vehicle", name: "InterCity 125 coach", blurb: "A Mk3 coach: five of them between the two power cars.", make: () => trainCar(1) },
+    { group: "Trains", kind: "vehicle", name: "Sprinter", blurb: "Two of these down the Limpley Stoke valley line, stopping everywhere.", make: () => trainCar(2) },
+    { group: "Other ways about", kind: "vehicle", name: "Cable car cabin", blurb: "From Mulberry Park over Lyncombe Vale and Beechen Cliff to the river. Ride it, with its doors open at each end.", fresh: true,
+      make: () => { const g = new THREE.Group(), geo = cabinModel();
+        g.add(vertexMesh(geo.body), vertexMesh(geo.glass, { transparent: true, opacity: 0.28, depthWrite: false }));
+        return g; } },
+    { group: "Other ways about", kind: "vehicle", name: "Hot air balloon", blurb: "Up from Royal Victoria Park at dawn. Climb in with E: W for the burner, S for the vent.", fresh: true, looks: BALLOON_DESIGNS,
+      make: (_p, k) => balloonModel(k) },
+    { group: "Other ways about", kind: "vehicle", name: "Narrowboat", blurb: "Chugging along the Kennet and Avon, through the locks. Take the tiller.", fresh: true, looks: BOAT_PAINTS,
+      make: (_p, k) => vertexMesh(boatGeometry(k)) },
+    ...RIDES.map((k): Entry => ({ group: "Rides", kind: "vehicle", name: rideSpecs[k].name.replace(/^an? /, "").replace(/^./, (c) => c.toUpperCase()), blurb: rides[k], fresh: true, make: () => rideModel(k) })),
+  ];
+  return list.map((e) => (e.paints ? { ...e, paints: unique(e.paints) } : e));
+}
 
 /** Under Combe Down: every monster in the mines, the mini-bosses and the bosses at the bottom of each run. */
 function mineEntries(): Entry[] {
@@ -147,7 +220,7 @@ scene.add(sun);
 const ground = new THREE.Mesh(new THREE.CircleGeometry(2.2, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: "#59606a" }));
 ground.receiveShadow = true;
 scene.add(ground);
-const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
+const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 400);
 const turntable = new THREE.Group();
 scene.add(turntable);
 
@@ -163,16 +236,43 @@ let avatar: Avatar | null = null, gang: Figure | null = null, cat: CatFigure | n
 let gull: ReturnType<typeof gullFigure> | null = null, bendy: BendyFigure | null = null, owner: Owner | null = null, flap = 0;
 let punch = 0, deadT = 0;
 let mob: MobView | null = null, champ = false, move = 0, moveClock = 0;
-let tab: "streets" | "mines" = "streets";
+let tab: Tab = "streets";
+/** A vehicle's paint or look, and the make of an everyday car. */
+let vlook = 0, vmake = 0;
+/** How big the thing on the turntable is and how high its middle is, to frame it. */
+let fitSize = 1.8, fitMid = 1;
+
+/** Let go of a model's own geometry and materials; the vehicles', trains' and cars' are shared and stay. */
+function dispose(o: THREE.Object3D, geometry: boolean) {
+  o.traverse((m) => {
+    const mesh = m as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (geometry) mesh.geometry.dispose();
+    for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) if (!(mat as THREE.Material & { map?: unknown }).map) mat.dispose();
+  });
+}
+let shown: { o: THREE.Object3D; geometry: boolean } | null = null;
+
+/** Size the floor and the sun's shadow to what's on the turntable. */
+function fitStage(size: number) {
+  const k = Math.max(1, size / 1.8);
+  ground.scale.setScalar(k);
+  sun.position.set(2.5 * k, 5 * k, -3 * k);
+  Object.assign(sun.shadow.camera, { left: -2 * k, right: 2 * k, top: 3 * k, bottom: -1 * k, far: 40 * k });
+  sun.shadow.camera.updateProjectionMatrix();
+}
 
 function build() {
   turntable.clear();
+  if (shown) { dispose(shown.o, shown.geometry); shown = null; }
   // Bendy puts himself, his beam and its pool of light straight into the scene
   if (bendy) scene.remove(...scene.children.filter((o) => o !== ground && o !== turntable && !(o as THREE.Light).isLight));
   if (mob) { mob.dispose(); mob = null; }
   turntable.position.y = 0;
   avatar = null; gang = null; cat = null; gull = null; bendy = null; owner = null;
   const e = ENTRIES[current];
+  fitSize = e.size ?? 1.8; fitMid = fitSize * 0.55;
+  fitStage(1.8);
   if (e.kind === "player") {
     avatar = new Avatar("", colour, `who${seed}`);
     avatar.preview();
@@ -203,6 +303,11 @@ function build() {
     const o = e.build!();
     o.traverse((m) => { m.castShadow = true; });
     turntable.add(o);
+  } else if (e.kind === "vehicle") {
+    const o = e.make!(e.paints?.[vlook] ?? "#ffffff", vlook, e.makes?.[vmake] ?? 0);
+    o.traverse((m) => { m.castShadow = true; });
+    turntable.add(o);
+    shown = { o, geometry: !!e.fresh };
   } else if (e.kind === "mob") {
     mob = new MobView(e.mob!, { champion: champ, mini: e.mini });
     turntable.add(mob.group);
@@ -225,6 +330,14 @@ function build() {
   turntable.traverseVisible((o) => { if ((o as THREE.Mesh).isMesh) box.expandByObject(o); });
   const low = box.isEmpty() ? 0 : box.min.y;
   if (low < 0) turntable.position.y = -low + (mob && MOBS[mob.kind].fly ? 0.3 : 0);
+  if (e.kind === "vehicle" && !box.isEmpty()) {
+    // a vehicle is framed by its longest side, and looked at from its middle
+    const dim = box.getSize(new THREE.Vector3());
+    turntable.position.y = -box.min.y;
+    fitSize = Math.max(dim.x, dim.z, dim.y) * 0.8;
+    fitMid = dim.y / 2;
+    fitStage(fitSize);
+  }
 }
 
 const STATES: Record<Kind, string[]> = {
@@ -237,6 +350,7 @@ const STATES: Record<Kind, string[]> = {
   owner: ["Pacing", "On the phone", "Despairing", "Pointing", "Head in hands"],
   still: ["Standing"],
   mob: ["Idle", "Moving", "Winding up", "Attacking", "Dead"],
+  vehicle: ["Standing"],
 };
 const MOODS: Record<string, Mood> = { "Pacing": "pace", "On the phone": "phone", "Despairing": "despair", "Pointing": "point", "Head in hands": "head" };
 
@@ -292,6 +406,14 @@ function drawBar() {
     bar.append(group("Build", ...([["", "Any"], ["kitten", "Kitten"], ["fat", "Fat"], ["long", "Long-haired"]] as const).map(([v, n]) =>
       button(n, v === catBuild, () => { catBuild = v; again(); }))));
     bar.append(button("Another cat", false, () => { seed++; again(); }));
+  } else if (e.kind === "vehicle") {
+    const n = e.paints?.length ?? e.looks ?? 0;
+    if (n > 1) bar.append(group(e.looks ? "Look" : "Colour", ...Array.from({ length: n }, (_, k) => {
+      const b = button(e.looks ? String(k + 1) : "", k === vlook, () => { vlook = k; again(); }, e.looks ? "" : "swatch");
+      if (e.paints) { b.style.background = e.paints[k]; b.title = e.paints[k]; }
+      return b;
+    })));
+    if (e.makes) bar.append(group("Make", select(e.makes.map((m, k): [string, string] => [String(k), MAKES[m]]), String(vmake), (v) => { vmake = +v; again(); })));
   } else if (e.kind === "tourist") {
     bar.append(button("Another tourist", false, () => { seed++; again(); }));
   } else if (e.kind === "mob") {
@@ -306,17 +428,17 @@ function drawBar() {
 
 /** The next or last one on the same tab, round and round. */
 function step(by: number) {
-  const same = ENTRIES.map((e, k) => [e, k] as const).filter(([e]) => !!e.mines === (tab === "mines")).map(([, k]) => k);
+  const same = ENTRIES.map((e, k) => [e, k] as const).filter(([e]) => tabOf(e) === tab).map(([, k]) => k);
   const at = same.indexOf(current);
   show(same[(at + by + same.length) % same.length]);
 }
 
 function show(i: number) {
   current = (i + ENTRIES.length) % ENTRIES.length;
-  kit = 0; coat = 0; loud = 0; move = 0;
+  kit = 0; coat = 0; loud = 0; move = 0; vlook = 0; vmake = 0;
   state = STATES[ENTRIES[current].kind][0];
   const e = ENTRIES[current];
-  setTab(e.mines ? "mines" : "streets");
+  setTab(tabOf(e));
   $("name").textContent = e.name;
   $("blurb").textContent = e.blurb;
   list.querySelectorAll<HTMLButtonElement>("button[data-i]").forEach((b) => b.classList.toggle("on", +b.dataset.i! === current));
@@ -342,6 +464,7 @@ function writeUrl() {
   if (e.kind === "gang" && e.kits && kit) q.set("kit", String(kit));
   if (e.kind === "gang" && e.loud && loud) q.set("loud", String(loud));
   if (e.kind === "cat") { q.set("breed", String(kit)); if (coat) q.set("coat", String(coat)); if (catBuild) q.set("build", catBuild); }
+  if (e.kind === "vehicle") { if (vlook) q.set("look", String(vlook)); if (vmake) q.set("make", String(vmake)); }
   if (e.kind === "mob") { if (champ) q.set("champion", "1"); if (move) q.set("move", String(move)); }
   if (seed !== 1) q.set("seed", String(seed));
   q.set("view", [yaw % (Math.PI * 2), pitch, dist].map((v) => v.toFixed(2)).join(","));
@@ -367,6 +490,10 @@ function readUrl() {
   loud = num("loud", 1, LOUD.length - 1) ?? 0;
   const b = q.get("build");
   catBuild = b === "kitten" || b === "fat" || b === "long" ? b : "";
+  if (e.kind === "vehicle") {
+    vlook = num("look", 0, Math.max(0, (e.paints?.length ?? e.looks ?? 1) - 1)) ?? 0;
+    vmake = num("make", 0, Math.max(0, (e.makes?.length ?? 1) - 1)) ?? 0;
+  }
   seed = num("seed", 1, 1e6) ?? 1;
   champ = q.get("champion") === "1";
   const mv = num("move", 0, 99) ?? 0;
@@ -379,12 +506,12 @@ function readUrl() {
   writeUrl();
 }
 
-// the list down the side, by group, under two tabs: the streets and the mines
+// the list down the side, by group, under three tabs: the streets, the mines and the vehicles
 const tabs = document.createElement("div");
 tabs.className = "tabs";
-const TAB_NAMES = { streets: "Bath", mines: "Under Combe Down" } as const;
-const tabButtons = (Object.keys(TAB_NAMES) as (keyof typeof TAB_NAMES)[]).map((t) =>
-  button(TAB_NAMES[t], false, () => { if (tab !== t) show(ENTRIES.findIndex((e) => !!e.mines === (t === "mines"))); }));
+const TABS = Object.keys(TAB_NAMES) as Tab[];
+const tabButtons = TABS.map((t) =>
+  button(TAB_NAMES[t], false, () => { if (tab !== t) show(ENTRIES.findIndex((e) => tabOf(e) === t)); }));
 tabs.append(...tabButtons);
 list.append(tabs);
 // on a phone the list is a drop-down between the arrows instead (the page's CSS)
@@ -399,7 +526,7 @@ function fillPicker() {
   pick.innerHTML = "";
   let og: HTMLOptGroupElement | null = null;
   ENTRIES.forEach((e, k) => {
-    if (!!e.mines !== (tab === "mines")) return;
+    if (tabOf(e) !== tab) return;
     if (!og || og.label !== e.group) { og = document.createElement("optgroup"); og.label = e.group; pick.append(og); }
     const o = document.createElement("option");
     o.value = String(k); o.textContent = e.name;
@@ -407,10 +534,10 @@ function fillPicker() {
   });
   pick.value = String(current);
 }
-const groups: Record<string, HTMLElement[]> = { streets: [], mines: [] };
+const groups: Record<Tab, HTMLElement[]> = { streets: [], mines: [], vehicles: [] };
 let lastGroup = "";
 ENTRIES.forEach((e, k) => {
-  const into = groups[e.mines ? "mines" : "streets"];
+  const into = groups[tabOf(e)];
   if (e.group !== lastGroup) {
     const h = document.createElement("h2"); h.textContent = lastGroup = e.group; into.push(h);
   }
@@ -418,13 +545,12 @@ ENTRIES.forEach((e, k) => {
   b.dataset.i = String(k);
   into.push(b);
 });
-list.append(...groups.streets, ...groups.mines);
+list.append(...groups.streets, ...groups.mines, ...groups.vehicles);
 /** Show one tab's list, and light the stage for it: daylight for Bath, a lamp in the dark for the mines. */
-function setTab(t: "streets" | "mines") {
+function setTab(t: Tab) {
   tab = t;
-  tabButtons.forEach((b, k) => b.classList.toggle("on", (k === 1) === (t === "mines")));
-  for (const el of groups.streets) el.hidden = t !== "streets";
-  for (const el of groups.mines) el.hidden = t !== "mines";
+  tabButtons.forEach((b, k) => b.classList.toggle("on", TABS[k] === t));
+  for (const k of TABS) for (const el of groups[k]) el.hidden = t !== k;
   fillPicker();
   const dark = t === "mines";
   scene.background = new THREE.Color(dark ? "#0b0806" : "#2a3038");
@@ -469,9 +595,9 @@ function frame(now: number) {
   if (spin) yaw += dt * 0.5;
   // keep the address up to date, but not every frame
   if (urlDue || camMoved) { urlDue += dt; if (urlDue > 0.3) { urlDue = 0; camMoved = false; writeUrl(); } }
-  const size = ENTRIES[current].size ?? 1.8;
+  const size = fitSize;
   // a little further back on a tall, narrow screen, so it fits across it
-  const lookY = size * 0.55, d = dist * Math.max(0.35, size / 1.8) * Math.max(1, 0.75 / camera.aspect);
+  const lookY = fitMid, d = dist * Math.max(0.35, size / 1.8) * Math.max(1, (ENTRIES[current].kind === "vehicle" ? 1.15 : 0.75) / camera.aspect);
   camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, lookY + Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d);
   camera.lookAt(0, lookY, 0);
   if (avatar) {

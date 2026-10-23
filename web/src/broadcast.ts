@@ -63,8 +63,11 @@ export class Broadcast {
     }
     const b = shot.pos, along = shot.along;
     const togo = this.v.subVectors(shot.goal, b).dot(along);   // metres still to go to the line of the posts or stumps
-    if (this.hold < 0 && (togo < 0 || shot.rest > 0)) this.hold = 0;
-    if (this.hold >= 0 && (this.hold += dt) > (shot.scored ? HOLD.scored : HOLD.miss)) { this.skip(); return; }
+    if (this.hold < 0 && (togo < 0 || shot.rest > 0 || shot.saved)) {
+      this.hold = 0;
+      if (shot.saved) this.caption = "Saved!";
+    }
+    if (this.hold >= 0 && (this.hold += dt) > (shot.scored || shot.saved ? HOLD.scored : HOLD.miss)) { this.skip(); return; }
     const side = new THREE.Vector3().crossVectors(along, UP).normalize();
     const want = new THREE.Vector3();
     let cut: string, follow = 0;
