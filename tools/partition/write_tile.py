@@ -372,12 +372,25 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None):
     gs = [ground(x, y) for x, y in seg]
     if any(g is None for g in gs):
         return None
+    if prof and prof.get("gone"):
+        # the stretches in one of the canal's tunnels are left out: the tunnel's ledge is the towpath
+        steps = len(prof["z"]) - 1
+        gone = set(prof["gone"])
+        keep = [int(round(whole.project(Point(x, y)) / (whole.length or 1) * steps)) not in gone for x, y in seg]
+        if not all(keep):
+            rest = dict(prof, gone=[])
+            out = []
+            for st in stretches({i for i, k in enumerate(keep) if k}):
+                if len(st) >= 2:
+                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others) or []
+            return out
     if not prof:
         zs = ease_bends(seg, gs, gs, set())
         return [([[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)], set())]
-    spans, decks, deep, dipped, zs = set(), set(), set(), set(), []
+    spans, decks, deep, dipped, tow, zs = set(), set(), set(), set(), set(), []
     steps = len(prof["z"]) - 1
     under = set(prof.get("dip") or ())
+    towpath = set(prof.get("tow") or ())
     for i, (x, y) in enumerate(seg):
         f = whole.project(Point(x, y)) / (whole.length or 1) * steps
         lo = max(0, min(steps - 1, int(f)))
@@ -389,6 +402,8 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None):
             decks.add(i)
         elif near in under:
             dipped.add(i)
+        elif near in towpath:
+            tow.add(i)
         if any(i0 < near < i1 for i0, i1 in prof["bored"]):
             deep.add(i)
     if crossings:
@@ -396,10 +411,13 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None):
     # a path that passes under a bridge was dipped to leave headroom, below the ground the tile has
     # there (the ground is cut for streets, not paths): it keeps its dip instead of being held to the
     # ground. A street under a bridge stays on the ground the tile has cut for it.
-    grow_marks(zs, gs, spans, decks, forbid=_over_other_streets(seg, others) if others and (spans or decks) else ())
+    grow_marks(zs, gs, spans, decks, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow)
     # (but not beside its own deck, whose ends must meet the ground)
     beside = {j for i in spans | decks for j in range(i - 2, i + 3)}
-    held = decks | (dipped - beside if others is not None else set())
+    # the towpath is level with the canal's banks, which the game builds, whatever the ground under it;
+    # but where a bridge starts off the towpath, its first point meets the ground the deck starts from
+    tow -= {j for i in spans | decks for j in (i - 1, i + 1)}
+    held = decks | tow | (dipped - beside if others is not None else set())
     zs = ease_bends(seg, follow_ground(zs, gs, spans, held), gs, spans | held, deck_ends(spans | decks))
     # a deck carried straight over a rise in the ground would sink into it
     for i in spans:
@@ -456,7 +474,7 @@ def _outside_buildings(pts, btree, inner):
             if g.geom_type == "LineString" and g.length >= 3]
 
 
-def no_span_over_tunnels(rd, canal, water, rails):
+def no_span_over_tunnels(rd, canal, water, rails, ground=None):
     """A street over the canal where the canal runs in a tunnel, and nothing else passes under it,
     stands on the ground: there is nothing open under it to bridge. Marked as a span, its deck was
     cut out of the street's faces and left a slot in the pavement down to the ground beside the
@@ -486,7 +504,10 @@ def no_span_over_tunnels(rd, canal, water, rails):
                    for o in rd for a, b in zip(o["p"], o["p"][1:]) if len(a) == 3 and len(b) == 3):
                 continue                    # a path on the ground under it, beside the canal's tunnel
             for i in st:
-                r["p"][i] = r["p"][i][:3]
+                x, y, z = r["p"][i][:3]
+                g = ground(x, y) if ground else None
+                # (its profile carried it straight over, clear of the ground it now lies on)
+                r["p"][i] = [x, y, z if g is None else round(min(max(z, g - 0.4), g + 0.4), 1)]
 
 
 def even_bridge_pavements(rd, houses=()):
@@ -506,6 +527,102 @@ def even_bridge_pavements(rd, houses=()):
         if htree is not None and any(houses[int(k)].intersection(reach).area > 1.0 for k in htree.query(reach)):
             continue
         r["pv"] = [max(pv), max(pv)]
+
+
+BURIED = 0.5        # metres a way may lie under the drawn ground before the ground is cut to it
+
+
+def cut_under_bridges(T, rd):
+    """Cut the tile's ground down to every path that lies buried in it under a bridge, where it was
+    dipped for its headroom. The survey carries the ground up to the deck under many bridges (the bridge
+    left in it), and the base tile's ground was laid for the old build's roads, which kept paths on
+    the ground as it lay; so the path went under the deck through solid ground with no gap above
+    it. Its own width is dug to its height, and the sides of the cutting rise one in one. The
+    square's outermost ring of the grid is left alone, so the ground still meets the next square's."""
+    dx, dy, x0, y0, z0, nx, ny, h = T["dx"], T["dy"], T["x0"], T["y0"], T["z0"], T["nx"], T["ny"], T["h"]
+    decks = []
+    for r in rd:
+        p = r["p"]
+        for m in range(len(p) - 1):
+            if len(p[m]) > 3 and len(p[m + 1]) > 3 and p[m][3] == 1 and p[m + 1][3] == 1:
+                decks.append(LineString([p[m][:2], p[m + 1][:2]]).buffer(r.get("w", 2.0) / 2 + max(r.get("pv") or [0]) + 2.0))
+    if not decks:
+        return 0
+    overhead = unary_union(decks)
+    shapely.prepare(overhead)
+    buried = {}
+    for n, r in enumerate(rd):
+        if r["c"] in GAME_PATHS and len(r["p"]) > 1:
+            under = [len(q) < 4 and (g := ground_at(T, q[0], q[1], split=False)) is not None and q[2] < g - BURIED
+                     and shapely.contains_xy(overhead, q[0], q[1]) for q in r["p"]]
+            if any(under):
+                buried[n] = under
+    if not buried:
+        return 0
+    # (and never under another way where it lies on the ground: the street at the bridge's end)
+    keep, corners = [], set()
+    for n, r in enumerate(rd):
+        p, under = r["p"], buried.get(n)
+        reach = r.get("w", 2.0) / 2 + max(r.get("pv") or [0]) + 0.5
+        on = [len(q) < 4 and not (under and under[m]) for m, q in enumerate(p)]
+        for m in range(len(p) - 1):
+            if on[m] and on[m + 1]:
+                keep.append(LineString([p[m][:2], p[m + 1][:2]]).buffer(reach, cap_style="flat"))
+        # (and the corners of the grid cell each point on the ground reads its height from)
+        for m, q in enumerate(p):
+            if on[m]:
+                i, j = int(math.floor((q[0] - x0) / dx)), int(math.floor((q[1] - y0) / dy))
+                corners.update((i + a, j + b) for a in (0, 1) for b in (0, 1))
+    kept = unary_union(keep) if keep else Polygon()
+    shapely.prepare(kept)
+    cut = 0
+    for n, under in buried.items():
+        r = rd[n]
+        p = r["p"]
+        half = r.get("w", 2.0) / 2 + 0.3
+        for a, b, ua, ub in zip(p, p[1:], under, under[1:]):
+            if not (ua or ub):
+                continue
+            far = half + 3.0
+            i0, i1 = max(1, int((min(a[0], b[0]) - far - x0) / dx)), min(nx - 2, int((max(a[0], b[0]) + far - x0) / dx) + 1)
+            j0, j1 = max(1, int((min(a[1], b[1]) - far - y0) / dy)), min(ny - 2, int((max(a[1], b[1]) + far - y0) / dy) + 1)
+            vx, vy = b[0] - a[0], b[1] - a[1]
+            L2 = vx * vx + vy * vy or 1
+            for j in range(j0, j1 + 1):
+                for i in range(i0, i1 + 1):
+                    px, py = x0 + i * dx, y0 + j * dy
+                    t = min(1, max(0, ((px - a[0]) * vx + (py - a[1]) * vy) / L2))
+                    d = math.hypot(px - a[0] - t * vx, py - a[1] - t * vy)
+                    if d >= far or (i, j) in corners or shapely.contains_xy(kept, px, py):
+                        continue
+                    want = a[2] + (b[2] - a[2]) * t - 0.1 + max(0.0, d - half)
+                    k = j * nx + i
+                    v = int(math.floor((want - z0) * 10))
+                    if v < h[k]:
+                        h[k] = v
+                        cut += 1
+    return cut
+
+
+def deck_reach(rd):
+    """`dk` on each street with a bridge: how far its deck reaches each side, so the game builds it
+    to the street's own faces rather than to a default street's, which can stand over the plots
+    beside a narrower one. It still takes in any path riding on the deck beside it."""
+    riders = [(Point(q[:2]), r["w"] / 2) for r in rd if r["c"] in GAME_PATHS
+              for q in r["p"] if len(q) > 3 and q[3] == 2]
+    rtree = STRtree([pt for pt, _ in riders]) if riders else None
+    for r in rd:
+        if r["c"] in GAME_PATHS or len(r["p"]) < 2 or not any(len(q) > 3 and q[3] == 1 for q in r["p"]):
+            continue
+        own = r["w"] / 2 + (max(r.get("pv") or [0]) if r["c"] in KERBED else 0)
+        dk = own
+        if rtree is not None:
+            on = [i for i, q in enumerate(r["p"]) if len(q) > 3 and q[3] in (1, 2)]
+            line = LineString([q[:2] for q in r["p"][max(0, on[0] - 1):on[-1] + 2]])
+            for k in rtree.query(line.buffer(own + 6.0)):
+                pt, half = riders[int(k)]
+                dk = max(dk, line.distance(pt) + half)
+        r["dk"] = round(dk, 2)
 
 
 def bridge_decks(rd):
@@ -2367,8 +2484,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
     rd, _ = drop_paths_along_streets(rd)
     no_span_over_tunnels(rd, canal, [Polygon(w["r"][0]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]
-                         + water[sum(1 for w in tile["wp"] if len(w["r"][0]) >= 3):], rails)
+                         + water[sum(1 for w in tile["wp"] if len(w["r"][0]) >= 3):], rails, road_ground)
     even_bridge_pavements(rd, houses)
+    deck_reach(rd)
+    cut_under_bridges(T, rd)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [face_shape(f) for f in part["faces"]
