@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shapely.geometry import LineString, box
 
-from partition.settle import INFERRED_CAP, Evidence, _intervals, settle
+from partition.settle import INFERRED_CAP, Evidence, _intervals, drop_unstood, settle
 
 
 def edge(xy, kind, source, sides):
@@ -65,6 +65,50 @@ class Settle(unittest.TestCase):
     def test_short_gaps_close_and_short_stubs_go(self):
         flags = [True] * 10 + [False] + [True] * 10 + [False] * 20 + [True] * 2 + [False] * 10
         self.assertEqual(_intervals(flags, 52.0, 52), [(20.5, 52.0)])
+
+    def test_a_guess_along_a_mapped_wall_is_a_wall(self):
+        wall = LineString([(5005, 11), (5005, 31)])
+        part = dict(edges=[edge([(5005.5, 11), (5005.5, 31)], "fence", "parcel", [["plot", 7], ["plot", 8]])])
+        settle(part, self.owners, {7: "detached"}, Evidence([wall], [(wall, "wall")]))
+        self.assertEqual(part["edges"][0]["kind"], "wall")
+
+    def test_a_guess_partly_along_a_mapped_hedge_is_a_hedge_only_there(self):
+        hedge = LineString([(5005, 21), (5005, 31)])
+        part = dict(edges=[edge([(5005.5, 11), (5005.5, 41)], "fence", "parcel", [["plot", 7], ["plot", 8]])])
+        settle(part, self.owners, {7: "detached"}, Evidence([hedge], [(hedge, "hedge")]))
+        e = part["edges"][0]
+        self.assertEqual(e["kind"], "fence")
+        (a, b, kind), = e["restyle"]
+        self.assertEqual(kind, "hedge")
+        self.assertAlmostEqual(a, 10.0, delta=2.0)
+        self.assertAlmostEqual(b, 20.0, delta=2.0)
+
+
+class NothingStanding:
+    def __init__(self, at=()):
+        self.at = at
+
+    def near(self, p, reach):
+        return any(p.distance(q) <= reach for q in self.at)
+
+
+class Unstood(unittest.TestCase):
+    def test_a_guessed_wall_with_nothing_standing_goes_but_a_fence_stays(self):
+        part = dict(edges=[edge([(0, 0), (30, 0)], "garden_wall", "inferred", []),
+                           edge([(0, 10), (30, 10)], "fence", "inferred", []),
+                           edge([(0, 20), (30, 20)], "garden_wall", "parcel", [])])
+        drop_unstood(part, Evidence([]), NothingStanding())
+        self.assertEqual(part["edges"][0]["drop"], [(0.0, 30.0)])
+        self.assertNotIn("drop", part["edges"][1])
+        self.assertNotIn("drop", part["edges"][2])
+
+    def test_a_guessed_hedge_stands_where_something_does(self):
+        from shapely.geometry import Point
+        part = dict(edges=[edge([(0, 0), (30, 0)], "hedge", "front", [])])
+        drop_unstood(part, Evidence([]), NothingStanding([Point(x, 2) for x in range(0, 16)]))
+        (a, b), = part["edges"][0]["drop"]
+        self.assertAlmostEqual(a, 19.0, delta=1.0)
+        self.assertEqual(b, 30.0)
 
 
 if __name__ == "__main__":
