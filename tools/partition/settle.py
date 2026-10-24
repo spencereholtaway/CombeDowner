@@ -16,7 +16,9 @@ barrier or a lidar run) stands along it, and left out elsewhere. Nothing real is
 a stretch with a mapped or lidar barrier along it always stands, and a guess along a mapped barrier
 takes its kind there, so a garden's fence is not drawn beside the hedge the map has on its line.
 A guessed wall or hedge with nothing at all standing near it in the lidar goes too (`standing.py`).
-A house Historic England lists railings or a wall in front of keeps them, wherever it stands.
+A house Historic England lists railings or a wall in front of keeps them, wherever it stands, but
+for one on a pedestrian street: a shopping street is paved to its shopfronts, so nothing guessed or
+listed stands between the two, and only what is really there does.
 
 Decided at write time because the partition's edges already say which plot lies either side, and the
 squares can be written again in minutes where the plots take far longer; the rules belong in
@@ -27,6 +29,7 @@ import os
 import random
 
 import numpy as np
+import shapely
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import substring
 from shapely.strtree import STRtree
@@ -53,12 +56,16 @@ STREET_CLEAR = 3.0      # metres from a street within which a guessed boundary i
 LOOSE_HOLD = 0.3        # metres: a boundary's end this near another, or a building, is held by it
 STEP = 1.0              # metres between the points a boundary is judged at
 MIN_RUN = 3.0           # metres: a kept stretch shorter than this, between dropped ones, goes too
+PEDESTRIAN_SHARE = 0.5  # of a boundary's length on a pedestrian street that makes it that street's edge
 STANDING_REACH = 4.0    # metres: a guessed wall or hedge with nothing standing this near goes
 UNSTOOD_SOURCES = {"front", "inferred"}     # a registered parcel's edge is evidence enough
 MIN_GAP = 2.0           # metres: a dropped stretch shorter than this, between kept ones, stays
 
 
 LISTED_REACH = 4.0      # metres from a listed entry's point to the house whose front it is
+LISTED_EDGE = 5.0       # metres from a listed entry's point to the street's edge it stands on
+LISTED_HOUSE = 15.0     # metres from such an entry to the building whose front it is
+LISTED_RUN = 8.0        # metres from the entry that its railings or wall stand along the edge, unmeasured
 LISTED_WALL = "stone_wall"
 MAPPED_GROUP = {"wall": "wall", "retaining_wall": "wall", "hedge": "hedge", "fence": "fence"}
 WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall"}
@@ -244,10 +251,11 @@ def front_roll(zone, x, y, row=None):
     return pick(GARDEN_STYLE["suburb"][0], random.Random(f"{zone}:{key}").random())
 
 
-def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None):
+def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, pedestrian=None):
     """Mark each drawn edge of `part` with what of it stands: `kind` 'none' where nothing does, or
     `drop`, a list of arc-length intervals left out. `owners` is bi -> footprint, `kinds` bi -> the
-    game's building class, `streets` the street faces. Returns metres left out, by reason."""
+    game's building class, `streets` the street faces, `pedestrian` the ground of the pedestrian
+    streets. Returns metres left out, by reason."""
     shop_pts = [Point(s[0], s[1]) for s in shops]
     shop_tree = STRtree(shop_pts) if shop_pts else None
 
@@ -261,7 +269,7 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None):
         return any(g.distance(shop_pts[int(k)]) <= SHOP_REACH
                    for k in np.atleast_1d(shop_tree.query(g.buffer(SHOP_REACH))))
 
-    gone = dict(front=0.0, lane=0.0, far=0.0)
+    gone = dict(front=0.0, lane=0.0, far=0.0, pedestrian=0.0)
     guessed = []
     for e in part["edges"]:
         if e["kind"] == "none" or len(e["xy"]) < 2:
@@ -276,6 +284,13 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None):
         pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
         real = [evidence.near(p) for p in pts]
         real_share = sum(real) / len(real)
+        if (e.get("source") in GUESSED and pedestrian is not None
+                and line.intersection(pedestrian).length >= PEDESTRIAN_SHARE * L):
+            take_mapped(e, evidence.mapped_at(pts), L, n)
+            if not all(real):
+                e["drop"] = _intervals(real, L, n)
+                gone["pedestrian"] += sum(b - a for a, b in e["drop"])
+            continue
         listed = None
         if e.get("source") in GUESSED:
             if "corridor" in sides and plots and plots[0] in owners and e["kind"] in FRONT_GUESSES:
@@ -343,7 +358,41 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None):
         if not all(real):
             guessed.append(e)
     gone["far"] += _drop_loose(part["edges"], guessed, list(owners.values()))
+    listed_open_fronts(part, owners, evidence, pedestrian)
     return gone
+
+
+def listed_open_fronts(part, owners, evidence, pedestrian=None):
+    """Listed railings standing on a street's edge in front of a building set back behind
+    open ground (Cleveland House's plinth and railings on Sydney Road, over the canal's tunnel): the
+    entry's point is on the railings, not by the house, and the edge there divides the street from
+    open ground the partition guessed nothing along. That edge stands as railings within
+    `LISTED_RUN` of the entry, about a house's front."""
+    if evidence.listed_tree is None or not owners:
+        return
+    houses = list(owners.values())
+    house_tree = STRtree(houses)
+    for e in part["edges"]:
+        sides = [s[0] for s in e.get("sides") or []]
+        if e["kind"] != "none" or len(e["xy"]) < 2 or sorted(sides) != ["corridor", "open"]:
+            continue
+        line = LineString([q[:2] for q in e["xy"]])
+        if line.length <= 0 or (pedestrian is not None and line.intersects(pedestrian)):
+            continue
+        for k in np.atleast_1d(evidence.listed_tree.query(line.buffer(LISTED_EDGE))):
+            point, kind = evidence.listed[int(k)]
+            # (a listed wall's point is often in the middle of an estate's wall, nowhere near a street)
+            if kind != "railing" or line.distance(point) > LISTED_EDGE:
+                continue
+            if houses[int(house_tree.nearest(point))].distance(point) > LISTED_HOUSE:
+                continue
+            n = max(2, int(math.ceil(line.length / STEP)))
+            near = [line.interpolate(i / n, normalized=True).distance(point) <= LISTED_RUN for i in range(n + 1)]
+            if sum(near) * line.length / n < MIN_RUN:
+                continue
+            e["kind"] = "railing"
+            e["drop"] = _intervals(near, line.length, n)
+            break
 
 
 def drop_unstood(part, evidence, standing, reach=STANDING_REACH, sources=UNSTOOD_SOURCES):
