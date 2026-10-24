@@ -1656,7 +1656,7 @@ def pedestrian_ground(rd):
     return g
 
 
-def pedestrian_frontage(part, peds, br=()):
+def pedestrian_frontage(part, peds, br=(), standing=None):
     """Open ground and plots between a pedestrian street and its buildings, with nothing standing
     between them and the street: the street's own paving, laid to the building line as a shopping
     street is. The partition fits the street's corridor narrower than the gap between its buildings
@@ -1666,7 +1666,8 @@ def pedestrian_frontage(part, peds, br=()):
     further back (a yard behind a row, a square, a plot running back past its house) is paved only to
     `PEDESTRIAN_HALF`, the width of a shopping street: with nothing standing along its front, the
     ground before the house is the street's. A face walled, fenced or hedged off from the street is
-    left whole."""
+    left whole, and so is one reaching back whose front the lidar (`standing`) sees something stand
+    along: a hedge or wall nobody mapped round a real front garden."""
     if not peds:
         return Polygon()
     reach = unary_union([l.buffer(PEDESTRIAN_FRONTAGE) for l, _ in peds])
@@ -1692,10 +1693,18 @@ def pedestrian_frontage(part, peds, br=()):
         if g.intersection(reach).area >= 0.95 * g.area:
             out.append(g)
         else:
+            if standing is not None and f["cls"] == "plot" and _seen_along(front, standing) > WALLED_FRONT:
+                continue
             near_edge = edge.buffer(0.1)
             out += [q for q in getattr(g.intersection(band), "geoms", [g.intersection(band)])
                     if q.geom_type == "Polygon" and q.intersects(near_edge)]
     return unary_union(out) if out else Polygon()
+
+
+def _seen_along(line, standing, step=0.5):
+    """The share of `line` with something standing within half a metre of it, by the lidar."""
+    pts = [line.interpolate(t) for t in np.arange(0.0, line.length, step)] if line.length > 0 else []
+    return sum(standing.near(p, 0.5) for p in pts) / len(pts) if pts else 0.0
 
 
 def _minus(a, b):
@@ -1707,7 +1716,8 @@ def _minus(a, b):
         return shapely.set_precision(a, 1e-3).difference(shapely.set_precision(b.buffer(0), 1e-3))
 
 
-def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None):
+def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
+                    standing=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -1770,7 +1780,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                              for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
     plaza = pave.difference(kerbed.difference(walked.difference(on_street)))
     pave = pave.difference(plaza)
-    frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br)
+    frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br,
+                                   standing)
     if not frontage.is_empty:
         frontage = frontage.intersection(square).difference(unary_union([road, pave]))
         if T is not None:
@@ -3537,7 +3548,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
                      tile.get("sh") or [], row_at, streets, pedestrian_ground(rd))
     footprints = [Polygon(b["r"][0]).buffer(0) for b in tile.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
-    settled["unstood"] = drop_unstood(part, evidence, Standing(sq, footprints))
+    standing = Standing(sq, footprints)
+    settled["unstood"] = drop_unstood(part, evidence, standing)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [face_shape(f) for f in part["faces"]
@@ -3587,7 +3599,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         return ground(x, y)
 
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
-                                               canal_bores(canal)),
+                                               canal_bores(canal), standing),
                                sq[0], sq[1])
     tile["br"] = br
     tile["gt"] = gt
