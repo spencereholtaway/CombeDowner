@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shapely.geometry import LineString
 
-from partition.write_tile import (_profiled, deck_reach, follow_laid_ground, ground_at, lay_ground, no_span_over_tunnels,
+from partition.write_tile import (_profiled, deck_reach, whole_spans, follow_laid_ground, ground_at, lay_ground, no_span_over_tunnels,
                                   settle_on_laid_ground)
 from structures import canal_bores
 
@@ -57,7 +57,44 @@ class Decks(unittest.TestCase):
         self.assertAlmostEqual(street["dk"], 3.5)
         rider = dict(c="footway", n="", w=1.6, p=[[10, 4.5, 12, 2], [20, 4.5, 12, 2]])
         deck_reach([street, rider])
-        self.assertAlmostEqual(street["dk"], 5.3)
+        self.assertEqual(street["dk"], [5.3, 3.5])     # (the path rides on its left)
+
+    def test_a_deck_with_one_pavement_has_its_parapet_at_the_kerb_on_the_other_side(self):
+        street = dict(c="unclassified", n="", w=4.8, pv=[0, 2], p=[[0, 0, 10], [10, 0, 12, 1], [20, 0, 12, 1], [30, 0, 10]])
+        deck_reach([street])
+        self.assertEqual(street["dk"], [2.4, 4.4])
+
+    def test_a_path_crossing_past_the_deck_end_does_not_widen_it(self):
+        street = dict(c="residential", n="", w=5, pv=[1, 1], p=[[0, 0, 10], [10, 0, 12, 1], [20, 0, 12, 1], [30, 0, 10]])
+        rider = dict(c="footway", n="", w=1.6, p=[[-8, 6, 10, 2], [-9, 9, 10, 2]])
+        deck_reach([street, rider])
+        self.assertAlmostEqual(street["dk"], 3.5)
+
+    def test_a_bridge_split_between_two_records_is_one_span_from_bank_to_bank(self):
+        a = dict(c="unclassified", n="Mill Lane", w=4.5, pv=[0, 1.9],
+                 p=[[0, 0, 10], [10, 0, 12, 1], [20, 0, 12, 1]])
+        b = dict(c="unclassified", n="Mill Lane", w=4.8, pv=[2, 0],      # drawn the other way
+                 p=[[50, 0, 10], [40, 0, 10], [30, 0, 12, 2], [20, 0, 12, 1]])
+        rd = [a, b]
+        self.assertEqual(whole_spans(rd), 1)
+        spans = [r for r in rd if any(len(q) > 3 for q in r["p"])]
+        self.assertEqual(len(spans), 1)
+        p = spans[0]["p"]
+        self.assertEqual((len(p[0]), len(p[-1])), (3, 3))    # both ends on the ground
+        self.assertEqual([q[0] for q in p], [0, 10, 20, 30, 40, 50])
+        self.assertEqual((spans[0]["w"], spans[0]["pv"]), (4.5, [0, 1.9]))     # (the record on most of it)
+
+    def test_a_joined_bridge_is_cut_again_at_its_banks_once_the_ground_is_laid(self):
+        a = dict(c="residential", n="", w=5, pv=[1, 1], p=[[-8, 0, 10], [-4, 0, 10], [0, 0, 10], [4, 0, 12, 1], [8, 0, 12, 1]])
+        b = dict(c="residential", n="", w=6, pv=[2, 1], p=[[16, 0, 10], [12, 0, 10], [8, 0, 12, 1]])
+        rd = [a, b]
+        whole_spans(rd)
+        self.assertEqual(len(rd), 1)
+        rd[0]["dk"] = 3.5
+        whole_spans(rd, cut=True)
+        self.assertEqual([[q[0] for q in r["p"]] for r in rd], [[-8, -4, 0], [0, 4, 8, 12], [12, 16]])
+        self.assertEqual([(r["w"], r["pv"], r.get("dk")) for r in rd],
+                         [(5, [1, 1], None), (5, [1, 1], 3.5), (6, [1, 2], None)])   # (b turned round)
 
     def test_the_ground_is_dug_for_a_path_dipped_under_a_bridge(self):
         T = grid(20.0)

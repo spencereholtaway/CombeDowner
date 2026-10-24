@@ -13,7 +13,8 @@ case by case:
     railway, crossing at grade without a junction is wrong; a path crossing a road at grade is a
     pedestrian crossing and allowed.
  3. A bridge's span stands clear of the ground under it, its deck meets the road at each end
-    within a step, and it has something to cross: water, the railway, a road, or a drop.
+    within a step, and it has something to cross: water, the railway, a road, or a drop. A span
+    starts and ends on the ground inside its street's record, not at the record's own end.
  4. Nothing runs through the water: a road or path in a river or pond is on a span, and the
     water's bed is below its surface.
  5. Walls, fences and hedges don't cross roads or paths (the game cuts them at the kerb; here
@@ -165,6 +166,14 @@ def main():
                 for q in p[k + 1:e]:
                     c = q[2] - ground(q[0], q[1])
                     if c < -0.3: note("3 span sunk in the ground", -c, (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} {c:.1f} m")
+                # starts and ends on the ground, not where its record does: the game builds each
+                # record's span as a bridge of its own, with an abutment at a deck end left in the air
+                T = m["t"]
+                for end in (k, e):
+                    if mk[end] == 1 and end in (0, len(p) - 1) and not (
+                            min(p[end][0] - T["x0"], T["x0"] + (T["nx"] - 1) * T["dx"] - p[end][0],
+                                p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3):
+                        note("3 span ends where its record does", 1, (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # meets the road at each end
                 for end in (a, b):
                     if not mk[end] and abs(p[end][2] - ground(p[end][0], p[end][1])) > 0.6:

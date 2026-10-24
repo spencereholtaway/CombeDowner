@@ -599,6 +599,164 @@ def no_span_over_tunnels(rd, canal, water, rails, ground=None):
                 r["p"][i] = [x, y, z if g is None else round(min(max(z, g - 0.4), g + 0.4), 1)]
 
 
+def _flag(q):
+    return q[3] if len(q) > 3 else 0
+
+
+def whole_spans(rd, sq=None, ground=None, wet=None, cut=False, near=0.05):
+    """Each bridge as one record from the bank at one end to the bank at the other. The corridors fit
+    a street as a record per stretch of width, and a stretch can end halfway across a bridge; the
+    game builds every record's span as a bridge of its own, so each joint grew an abutment block in
+    the river, a break in the arches and parapet ends, and a record starting on its span had its
+    abutment at the deck's height instead of on the ground.
+
+    Records of the same street meeting alone at a point on a span are joined (not at a junction,
+    where the other ways meet the bridge at that point, at its height). Each keeps its own widths in
+    `_parts`, as the whole street runs on through the laying of the ground: a record's end can hold
+    no approach. With `cut`, once the ground is laid, each joined street is cut again at the points
+    on the ground either side of each span, the rest taking back their own widths, and the span the
+    widths of the street as it now stands (its pavements evened, its deck's reach). A span left
+    starting at its record's end, on the bank (within a step of the `ground`, and not in the water),
+    then starts on the ground at that point; not on the edge of the square `sq`, where the bridge
+    carries on into the next one. Returns how many joints were taken out."""
+    def key(q):
+        return (round(q[0] / near), round(q[1] / near))
+
+    def on_bank(q, tol=0.6):
+        g = ground(q[0], q[1]) if ground else None
+        return g is not None and abs(q[2] - g) <= tol and not (wet and wet(q[0], q[1]))
+    joined = _join_spans(rd, key)
+    if cut:
+        _cut_spans(rd)
+        _ends_on_the_bank(rd, sq, on_bank)
+    return joined
+
+
+def _pieces_of(r, turned=False):
+    """A record's pieces as [(x, y of its first point, w, pv)] looking along its points."""
+    parts = r.get("_parts") or [(r["p"][0][0], r["p"][0][1], r.get("w"), r.get("pv"))]
+    if not turned:
+        return [tuple(t) for t in parts]
+    # (looking the other way: each piece starts at its old end, and its pavements swap sides)
+    starts = [t[:2] for t in parts[1:]] + [tuple(r["p"][-1][:2])]
+    return [(x, y, w, None if pv is None else pv[::-1]) for (x, y), (_, _, w, pv) in zip(starts[::-1], parts[::-1])]
+
+
+def _join_spans(rd, key):
+    ends, meeting = collections.defaultdict(list), collections.Counter()
+    for i, r in enumerate(rd):
+        if len(r["p"]) >= 2:
+            for e in (0, -1):
+                meeting[key(r["p"][e])] += 1
+                ends[(r["c"], r.get("n", ""), key(r["p"][e]))].append((i, e))
+    link = {}
+    for (_, _, at), rs in ends.items():
+        if len(rs) == 2 and rs[0][0] != rs[1][0] and meeting[at] == 2 and any(_flag(rd[i]["p"][e]) for i, e in rs):
+            link[rs[0]], link[rs[1]] = rs[1], rs[0]
+    if not link:
+        return 0
+    done, out, joined = set(), [], 0
+    for i, r in enumerate(rd):
+        if i in done:
+            continue
+        if (i, 0) not in link and (i, -1) not in link:
+            out.append(r)
+            continue
+        # back to the chain's first record, whose free end the chain starts from (-1 - e: the other end)
+        start, enter, seen = i, 0, {i}
+        while (start, enter) in link:
+            nxt, e = link[(start, enter)]
+            if nxt in seen:
+                break
+            seen.add(nxt)
+            start, enter = nxt, -1 - e
+        chain, cur = [], start
+        while True:
+            chain.append((cur, enter))
+            done.add(cur)
+            nxt = link.get((cur, -1 - enter))
+            if nxt is None or nxt[0] in done:
+                break
+            cur, enter = nxt
+        if len(chain) == 1:
+            out.append(r)
+            continue
+        joined += len(chain) - 1
+        pts, parts, on = [], [], collections.Counter()
+        for k, (j, enter) in enumerate(chain):
+            p = [list(q) for q in (rd[j]["p"] if enter == 0 else rd[j]["p"][::-1])]
+            on[j] = sum(1 for q in p if _flag(q))
+            parts += _pieces_of(rd[j], enter != 0)
+            if k:
+                q = pts[-1]
+                f = 1 if 1 in (_flag(q), _flag(p[0])) else max(_flag(q), _flag(p[0]))
+                pts[-1] = q[:3] + ([f] if f else [])
+                p = p[1:]
+            pts += p
+        # (the street takes the widths of the record that was on most of the span)
+        base, enter = max(chain, key=lambda c: on[c[0]])
+        rec = {k: v for k, v in rd[base].items() if k not in ("p", "_lay", "_tow", "_parts")}
+        rec["p"] = pts
+        if rec.get("pv") and enter != 0:
+            rec["pv"] = rec["pv"][::-1]
+        rec["_parts"] = parts
+        for f in ("_lay", "_tow"):
+            got = set().union(*(rd[j].get(f) or set() for j, _ in chain))
+            if got:
+                rec[f] = got
+        out.append(rec)
+    rd[:] = out
+    return joined
+
+
+def _cut_spans(rd):
+    out = []
+    for r in rd:
+        parts = r.pop("_parts", None)
+        if not parts:
+            out.append(r)
+            continue
+        pts = r["p"]
+        starts = {(x, y): k for k, (x, y, _, _) in enumerate(parts)}
+        owner, cur, bounds = [], 0, set()
+        for i, q in enumerate(pts):
+            k = starts.get((q[0], q[1]))
+            if k is not None and k != cur and i:
+                bounds.add(i)
+                cur = k
+            owner.append(cur)
+        spans = stretches({k for k, q in enumerate(pts) if _flag(q)})
+        inside = [(max(0, st[0] - 1), min(len(pts) - 1, st[-1] + 1)) for st in spans]
+        cuts = {0, len(pts) - 1} | {b for b in bounds if not any(a < b < e for a, e in inside)}
+        cuts = sorted(cuts | {a for a, _ in inside} | {e for _, e in inside})
+        for a, b in zip(cuts, cuts[1:]):
+            rec = {k: v for k, v in r.items() if k not in ("p", "_lay", "_tow")}
+            rec["p"] = pts[a:b + 1]
+            if not any(_flag(q) for q in rec["p"]):
+                _, _, w, pv = parts[owner[a + 1]]
+                rec.pop("dk", None)
+                if w is not None:
+                    rec["w"] = w
+                if pv is not None:
+                    rec["pv"] = list(pv)
+            for f in ("_lay", "_tow"):
+                if r.get(f):
+                    rec[f] = r[f]
+            out.append(rec)
+    rd[:] = out
+
+
+def _ends_on_the_bank(rd, sq, on_bank, edge=3.0):
+    for r in rd:
+        p = r["p"]
+        if len(p) < 3:
+            continue
+        for e in (0, -1):
+            q = p[e]
+            if _flag(q) == 1 and on_bank(q) and not (sq and min(q[0] - sq[0], sq[2] - q[0], q[1] - sq[1], sq[3] - q[1]) < edge):
+                p[e] = q[:3]
+
+
 def even_bridge_pavements(rd, houses=()):
     """A bridge's pavements as wide as each other. The game stands both parapets at the wider
     pavement's edge, so a narrower one on the other side left a slot between the pavement and the
@@ -881,22 +1039,37 @@ def follow_laid_ground(tile, change):
 def deck_reach(rd):
     """`dk` on each street with a bridge: how far its deck reaches each side, so the game builds it
     to the street's own faces rather than to a default street's, which can stand over the plots
-    beside a narrower one. It still takes in any path riding on the deck beside it."""
+    beside a narrower one. Each side is its own: a parapet stands at the edge of that side's
+    pavement, or at the kerb where it has none, so a bridge with a pavement on one side has no slot
+    of open ground between the kerb and the parapet on the other. A side takes in any path riding on
+    the deck beside it, but not one whose nearest point is past the deck's end (a path crossing the
+    street on the ground there). Written as one number when both sides reach as far, else
+    [left, right]."""
     riders = [(Point(q[:2]), r["w"] / 2) for r in rd if r["c"] in GAME_PATHS
               for q in r["p"] if len(q) > 3 and q[3] == 2]
     rtree = STRtree([pt for pt, _ in riders]) if riders else None
     for r in rd:
         if r["c"] in GAME_PATHS or len(r["p"]) < 2 or not any(len(q) > 3 and q[3] == 1 for q in r["p"]):
             continue
-        own = r["w"] / 2 + (max(r.get("pv") or [0]) if r["c"] in KERBED else 0)
-        dk = own
+        pv = (r.get("pv") or [0, 0]) if r["c"] in KERBED else [0, 0]
+        side = [r["w"] / 2 + pv[0], r["w"] / 2 + pv[1]]
         if rtree is not None:
             on = [i for i, q in enumerate(r["p"]) if len(q) > 3 and q[3] in (1, 2)]
             line = LineString([q[:2] for q in r["p"][max(0, on[0] - 1):on[-1] + 2]])
-            for k in rtree.query(line.buffer(own + 6.0)):
+            for k in rtree.query(line.buffer(max(side) + 6.0)):
                 pt, half = riders[int(k)]
-                dk = max(dk, line.distance(pt) + half)
-        r["dk"] = round(dk, 2)
+                if 0 < line.project(pt) < line.length:
+                    s_ = _side(line, pt)
+                    side[s_] = max(side[s_], line.distance(pt) + half)
+        side = [round(v, 2) for v in side]
+        r["dk"] = side[0] if side[0] == side[1] else side
+
+
+def _side(line, pt):
+    """0 if pt lies left of the line (looking along it), 1 if right: the order of `pv` and `dk`."""
+    t = line.project(pt)
+    a, b = line.interpolate(max(0.0, t - 0.5)), line.interpolate(min(line.length, t + 0.5))
+    return 0 if (b.x - a.x) * (pt.y - a.y) - (b.y - a.y) * (pt.x - a.x) > 0 else 1
 
 
 def bridge_decks(rd):
@@ -2878,12 +3051,18 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     canal = json.load(open(canal_file)) if os.path.exists(canal_file) else None
     # a bridge over the canal keeps the headroom its profile gives it for a boat
     canal_lines = [LineString([q[:2] for q in run["p"]]) for run in (canal or {}).get("runs", []) if len(run["p"]) > 1]
+    wet_tree = STRtree([w for w in water if w.geom_type == "Polygon"]) if water else None
+
+    def wet(x, y):
+        pt = Point(x, y)
+        return wet_tree is not None and any(wet_tree.geometries[int(k)].contains(pt) for k in wet_tree.query(pt))
     rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir),
                               (water, rails + canal_lines))
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
     rd, _ = drop_paths_along_streets(rd)
+    whole_spans(rd, sq, road_ground, wet)
     drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
     carry_one_way(rd, tile.get("rd") or [])
@@ -2897,6 +3076,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # the ground is laid to these streets and paths before anything else stands on it
     laid = lay_ground(T, rd, houses, rail_tracks)
     settle_on_laid_ground(rd, laid, road_ground)
+    # (a span run on to the end of its record, there, carries on into the next)
+    whole_spans(rd, sq, road_ground, wet, cut=True)
     follow_laid_ground(tile, laid)
     # which boundaries stand is settled once the streets are known: a pedestrian street's edge is open
     settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,

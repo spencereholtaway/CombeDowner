@@ -3,7 +3,7 @@
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { BARRIER_HEIGHT, Building, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
+import { BARRIER_HEIGHT, Building, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -823,7 +823,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
-      const half = deckHalf(r), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
+      const [hl, hr] = deckSides(r), half = Math.max(hl, hr), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it
         const src = r.p.slice(a, b + 1), tops = src.map((q, i) => deckTop(q, flags[a + i], ground, Z0));
@@ -844,7 +844,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const A = P[Math.max(0, i - 1)], B = P[Math.min(P.length - 1, i + 1)], dx = B.x - A.x, dy = B.y - A.y, l = Math.hypot(dx, dy) || 1;
           P[i].nx = -dy / l; P[i].ny = dx / l;
         }
-        const W = half + 0.4;    // out to the parapet's outer face
+        const W = half + 0.4;    // out to the parapet's outer face, on the wider side
+        // (each side its own: a parapet at the edge of its pavement, or at the kerb where there is none)
+        const hs = (side: number) => (side > 0 ? hl : hr), Ws = (side: number) => hs(side) + 0.4;
         const at = (q: typeof P[number], o: number, h: number) => [q.x + q.nx * o, h, -(q.y + q.ny * o)];
         const out = (q: typeof P[number], side: number) => [q.nx * side, 0, -q.ny * side];
         const along = (q: typeof P[number]) => q.s / 2.5;
@@ -901,7 +903,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           return null;
         };
         // where another bridge's deck runs alongside at the same height (the other carriageway of a
-        // dual carriageway, each built as its own bridge), there's no parapet between the two
+        // dual carriageway, each built as its own bridge), there's no parapet between the two (looked
+        // for past the wider side's parapet, as this deck's own reach is the wider side's either way)
         const beside = (q: typeof P[number], side: number) => {
           const x = q.x + q.nx * side * (W + 1.2), y = q.y + q.ny * side * (W + 1.2), h = map.deck(x, -y, q.top + 0.5);
           return h !== null && Math.abs(h - q.top) < 1.2;
@@ -913,32 +916,33 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (const side of [1, -1]) {
             if (open[side > 0 ? 0 : 1]) continue;
             // the parapet: outer face, inner face and coping
-            facing(g, at(A, side * W, A.top), at(B, side * W, B.top), at(B, side * W, B.top + PARAPET), at(A, side * W, A.top + PARAPET), out(A, side),
+            const w = side * Ws(side), h = side * hs(side);
+            facing(g, at(A, w, A.top), at(B, w, B.top), at(B, w, B.top + PARAPET), at(A, w, A.top + PARAPET), out(A, side),
               [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
-            facing(g, at(A, side * half, A.top), at(B, side * half, B.top), at(B, side * half, B.top + PARAPET), at(A, side * half, A.top + PARAPET), out(A, -side),
+            facing(g, at(A, h, A.top), at(B, h, B.top), at(B, h, B.top + PARAPET), at(A, h, A.top + PARAPET), out(A, -side),
               [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
-            facing(g, at(A, side * half, A.top + PARAPET), at(B, side * half, B.top + PARAPET), at(B, side * W, B.top + PARAPET), at(A, side * W, A.top + PARAPET), [0, 1, 0],
+            facing(g, at(A, h, A.top + PARAPET), at(B, h, B.top + PARAPET), at(B, w, B.top + PARAPET), at(A, w, A.top + PARAPET), [0, 1, 0],
               [uA, 0], [uB, 0], [uB, 0.2], [uA, 0.2], COPING);
             // the deck's side, and the spandrel down to the arch where there is one
             const arA = archAt(A.s), arB = archAt(B.s);
             const footA = arA ?? (opened(A.s) ? underA : Math.min(underA, A.g - 0.5)), footB = arB ?? (opened(B.s) ? underB : Math.min(underB, B.g - 0.5));
             if (A.top - A.g > 0.3 || B.top - B.g > 0.3)
-              facing(g, at(A, side * W, footA), at(B, side * W, footB), at(B, side * W, B.top), at(A, side * W, A.top), out(A, side),
+              facing(g, at(A, w, footA), at(B, w, footB), at(B, w, B.top), at(A, w, A.top), out(A, side),
                 [uA, (footA - A.top) / 2.5], [uB, (footB - B.top) / 2.5], [uB, 0], [uA, 0], STONE);
           }
           // the underside: the arch's barrel, or the flat soffit of the deck
           const arA = archAt(A.s), arB = archAt(B.s);
           if (arA !== null && arB !== null)
-            facing(g, at(A, -W, arA), at(B, -W, arB), at(B, W, arB), at(A, W, arA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
+            facing(g, at(A, -Ws(-1), arA), at(B, -Ws(-1), arB), at(B, Ws(1), arB), at(A, Ws(1), arA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
           else if (A.top - A.g > 0.6 || B.top - B.g > 0.6)
-            facing(g, at(A, -W, underA), at(B, -W, underB), at(B, W, underB), at(A, W, underA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
+            facing(g, at(A, -Ws(-1), underA), at(B, -Ws(-1), underB), at(B, Ws(1), underB), at(A, Ws(1), underA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
         }
         // the parapets' ends
         for (const [q, dir] of [[P[0], -1], [P[P.length - 1], 1]] as const) {
           if (seam(q)) continue;
           const fwd = [-q.ny * dir, 0, -q.nx * dir];
           for (const side of [1, -1])
-            facing(g, at(q, side * half, q.top), at(q, side * W, q.top), at(q, side * W, q.top + PARAPET), at(q, side * half, q.top + PARAPET), fwd,
+            facing(g, at(q, side * hs(side), q.top), at(q, side * Ws(side), q.top), at(q, side * Ws(side), q.top + PARAPET), at(q, side * hs(side), q.top + PARAPET), fwd,
               [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], STONE);
         }
         // the supports: a block from the deck's underside down into the ground
@@ -947,7 +951,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const low = Math.min(q.g, lerpAt(Math.max(0, sp - L)).g, lerpAt(Math.min(s, sp + L)).g) - 1.5;
           if (under - low < 0.5) continue;
           const fx = -q.ny, fy = q.nx;     // along the road
-          const c = [[-L, -W], [L, -W], [L, W], [-L, W]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
+          const c = [[-L, -Ws(-1)], [L, -Ws(-1)], [L, Ws(1)], [-L, Ws(1)]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
           for (let k = 0; k < 4; k++) {
             const A = c[k], B = c[(k + 1) % 4], mx = (A[0] + B[0]) / 2 - q.x, my = (A[1] + B[1]) / 2 - q.y;
             facing(g, [A[0], low, -A[1]], [B[0], low, -B[1]], [B[0], under, -B[1]], [A[0], under, -A[1]], [mx, 0, -my],
