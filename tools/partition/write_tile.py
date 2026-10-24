@@ -21,7 +21,10 @@ the partition owns, so the only difference Dan sees is the partition's:
   - `fp`, `dv`: a straight line from each gate into its house, and the drives the writer puts beside
     some gates (`drives_from_openings`). The copied ones point at the old build's gates, so they are
     replaced;
-  - `bl`, `t` and the decoration fields: **copied** from the existing tile. The footprints are not what
+  - `t`: the existing tile's ground, laid afresh where these streets and paths meet their bridges
+    (`lay_ground`: a street's approach to its bridge, a path dug under one), with what stood on it
+    moved up or down with it;
+  - `bl` and the decoration fields: **copied** from the existing tile. The footprints are not what
     this stage is testing, and a bare tile would look worse for reasons that have nothing to do with
     the partition. Placing decoration against the new cross-sections is its own step, done after the
     layout works across the city; until then anything the new layout contradicts is **dropped**, not
@@ -353,12 +356,17 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             for pp, ww, vv in pieces:
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
                     marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None,
-                                       (road_lines, road_tree) if not vehicle and road_lines else None)
+                                       (road_lines, road_tree) if not vehicle and road_lines else None,
+                                       (road_lines, road_tree) if road_lines else None)
                     if marked is None:
                         continue
-                    for piece, deep in marked:
+                    for piece, deep, lay, tow in marked:
                         for part in _surface_pieces(piece, deep):
                             rec = dict(c=r["cls"], n=r.get("name", ""), p=part, w=round(ww, 2))
+                            if lay:
+                                rec["_lay"] = lay
+                            if tow:
+                                rec["_tow"] = tow
                             if not r.get("path"):
                                 # always written: left out, the game gives a street 1.7 m of pavement each side
                                 rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
@@ -366,7 +374,13 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     return out
 
 
-def _profiled(seg, whole, prof, ground, crossings=None, others=None):
+# Points (4 m apart) a street's approach to its bridge may keep its profile for, and the steepest the
+# step back down to the ground may be where an approach has to stop short.
+APPROACH = 9
+ROAD_RAMP = 0.15
+
+
+def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None):
     """[(points, bored indexes)] for a run of points: heights from the street's stored profile, found
     by each point's distance along the whole street so a re-fitted or clipped line still reads the
     right height and bridge mark; the ground's own height where the street has no profile. None if
@@ -384,11 +398,11 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None):
             out = []
             for st in stretches({i for i, k in enumerate(keep) if k}):
                 if len(st) >= 2:
-                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others) or []
+                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others, streets) or []
             return out
     if not prof:
         zs = ease_bends(seg, gs, gs, set())
-        return [([[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)], set())]
+        return [([[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)], set(), set(), set())]
     spans, decks, deep, dipped, tow, zs = set(), set(), set(), set(), set(), []
     steps = len(prof["z"]) - 1
     under = set(prof.get("dip") or ())
@@ -411,22 +425,95 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None):
     if crossings:
         level_footbridges(seg, zs, gs, spans, crossings)
     # a path that passes under a bridge was dipped to leave headroom, below the ground the tile has
-    # there (the ground is cut for streets, not paths): it keeps its dip instead of being held to the
-    # ground. A street under a bridge stays on the ground the tile has cut for it.
-    grow_marks(zs, gs, spans, decks, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow)
+    # there: it keeps its dip instead of being held to the ground, and the ground is dug to it
+    # (lay_ground). A street under a bridge stays on the ground the tile has cut for it.
+    # A street's approach to its own bridge keeps its profile, and the ground is laid to it
+    # afterwards (lay_ground). Held to the base tile's ground instead, which was laid to the old
+    # build's lower approaches, the deck's end stood a metre over the ground.
+    # (but not across another street, whose own height the ground is laid to)
+    approach = _approaches(seg, zs, gs, spans | decks, ground, _across_streets(seg, streets) if streets and (spans or decks) else ())
+    grow_marks(zs, gs, spans, decks, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow | approach)
     # (but not beside its own deck, whose ends must meet the ground)
     beside = {j for i in spans | decks for j in range(i - 2, i + 3)}
     # the towpath is level with the canal's banks, which the game builds, whatever the ground under it;
     # but where a bridge starts off the towpath, its first point meets the ground the deck starts from
     tow -= {j for i in spans | decks for j in (i - 1, i + 1)}
-    held = decks | tow | (dipped - beside if others is not None else set())
-    zs = ease_bends(seg, follow_ground(zs, gs, spans, held), gs, spans | held, deck_ends(spans | decks))
+    held = decks | tow | approach | (dipped - beside if others is not None else set())
+    # (a deck's last points may come down to the ground, except at an end whose approach keeps its height)
+    ends = {i for i in deck_ends(spans | decks) if not any(abs(i - j) <= 4 for j in approach)}
+    zs = ease_bends(seg, follow_ground(zs, gs, spans, held), gs, spans | held, ends)
     # a deck carried straight over a rise in the ground would sink into it
     for i in spans:
         if gs[i] is not None and zs[i] < gs[i] - 0.25:
             zs[i] = gs[i] - 0.25
-    return [([[round(x, 1), round(y, 1), round(z, 1)] + ([1] if i in spans else [2] if i in decks else [])
-              for i, ((x, y), z) in enumerate(zip(seg, zs))], deep)]
+    pts = [[round(x, 1), round(y, 1), round(z, 1)] + ([1] if i in spans else [2] if i in decks else [])
+           for i, ((x, y), z) in enumerate(zip(seg, zs))]
+    lay = approach | (dipped - beside if others is not None else set())
+    return [(pts, deep, {tuple(pts[i][:2]) for i in lay}, {tuple(pts[i][:2]) for i in tow})]
+
+
+def _approaches(seg, zs, gs, marks, ground, blocked=(), reach=APPROACH, edge=8.0, tol=0.4):
+    """The points on the ground leading to each end of a bridge's span or deck that keep their
+    profile's height, for the ground to be laid to it (lay_ground): out from the deck's end until
+    the profile comes back within `tol` of the ground, at most `reach` points. An approach that has
+    to stop short of that, at the end of the run (a junction, whose other ways stay on the ground),
+    at a point in `blocked`, or within `edge` metres of the edge of the tile's grid (which the next
+    square shares and which is left alone), is let go if the step back down to the ground there
+    would be steeper than ROAD_RAMP: it stays on the ground as before."""
+    out = set()
+    n = len(seg)
+
+    def free(i):
+        x, y = seg[i]
+        return (0 < i < n - 1 and i not in marks and i not in blocked and gs[i] is not None
+                and all(ground(x + a, y + b) is not None for a in (-edge, edge) for b in (-edge, edge)))
+    for st in stretches(marks):
+        for e, step in ((st[0], -1), (st[-1], 1)):
+            run, met = [], False
+            for k in range(1, reach + 1):
+                i = e + step * k
+                if not 0 <= i < n or i in marks:
+                    met = True
+                    break
+                if abs(zs[i] - gs[i]) <= tol:
+                    met = True
+                    break
+                if not free(i):
+                    break
+                run.append(i)
+            if run and not met:
+                last, nxt = run[-1], run[-1] + step
+                if 0 <= nxt < n and gs[nxt] is not None:
+                    held = min(max(zs[nxt], gs[nxt] - tol), gs[nxt] + tol)
+                    if abs(zs[last] - held) > ROAD_RAMP * (math.dist(seg[last], seg[nxt]) or 0.01):
+                        run = []
+            # (the ground is laid along the way between its points, so one point alone lays none)
+            if len(run) >= 2:
+                out.update(run)
+    return out
+
+
+def _across_streets(seg, streets, least=30.0):
+    """Which points of a run lie where it crosses another street at an angle (at least `least`
+    degrees): not its own line, nor the next stretch of the same street, which the fitted points
+    wander either side of."""
+    lines, tree = streets
+    out = set()
+    for i in range(len(seg)):
+        chord = LineString(seg[max(0, i - 1):i + 2])
+        (ax, ay), (bx, by) = chord.coords[0], chord.coords[-1]
+        for j in tree.query(chord):
+            line = lines[int(j)]
+            x = line.intersection(chord) if line.crosses(chord) else None
+            if x is None or x.geom_type != "Point":
+                continue
+            t = line.project(x)
+            (cx, cy), (dx_, dy_) = line.interpolate(max(0.0, t - 1.0)).coords[0], line.interpolate(t + 1.0).coords[0]
+            cos = abs((bx - ax) * (dx_ - cx) + (by - ay) * (dy_ - cy)) / ((math.hypot(bx - ax, by - ay) * math.hypot(dx_ - cx, dy_ - cy)) or 1)
+            if cos < math.cos(math.radians(least)):
+                out.add(i)
+                break
+    return out
 
 
 def _over_other_streets(seg, others):
@@ -531,79 +618,264 @@ def even_bridge_pavements(rd, houses=()):
         r["pv"] = [max(pv), max(pv)]
 
 
-BURIED = 0.5        # metres a way may lie under the drawn ground before the ground is cut to it
+DIP_REACH = 40.0    # metres from a bridge's span that a path may have been dipped for its headroom
+SLOPE = 1.5         # the ground eases from a way's level to its own over this many metres per metre of difference
+EASE = 12.0         # and over this far at most
+LAY_KERB = 1.7      # a kerbed street's pavement where its record gives none
 
 
-def cut_under_bridges(T, rd):
-    """Cut the tile's ground down to every path that lies buried in it under a bridge, where it was
-    dipped for its headroom. The survey carries the ground up to the deck under many bridges (the bridge
-    left in it), and the base tile's ground was laid for the old build's roads, which kept paths on
-    the ground as it lay; so the path went under the deck through solid ground with no gap above
-    it. Its own width is dug to its height, and the sides of the cutting rise one in one. The
-    square's outermost ring of the grid is left alone, so the ground still meets the next square's."""
-    dx, dy, x0, y0, z0, nx, ny, h = T["dx"], T["dy"], T["x0"], T["y0"], T["z0"], T["nx"], T["ny"], T["h"]
-    decks = []
+def _grid_points(T, ring, reach):
+    """The window of the tile's grid within `reach` of a run's bounds, its vertices' x and y."""
+    x0, y0, dx, dy, nx, ny = T["x0"], T["y0"], T["dx"], T["dy"], T["nx"], T["ny"]
+    xs, ys = [q[0] for q in ring], [q[1] for q in ring]
+    i0, i1 = max(0, int((min(xs) - reach - x0) / dx)), min(nx - 1, int((max(xs) + reach - x0) / dx) + 1)
+    j0, j1 = max(0, int((min(ys) - reach - y0) / dy)), min(ny - 1, int((max(ys) + reach - y0) / dy) + 1)
+    if i1 < i0 or j1 < j0:
+        return None
+    W = (slice(j0, j1 + 1), slice(i0, i1 + 1))
+    gx, gy = np.meshgrid(x0 + np.arange(i0, i1 + 1) * dx, y0 + np.arange(j0, j1 + 1) * dy)
+    return W, gx, gy
+
+
+def lay_ground(T, rd, houses=(), rails=()):
+    """Lay the tile's ground to this build's own streets and paths where they meet their bridges,
+    by the old build's rules (`prep_map.py`'s flatten, its protection of the ground under a span, cut
+    0.6 m under the deck where it humps up and lifted along every way at grade, and its blend), on
+    top of the base tile's ground, which was laid to the old build's roads. Laid: a street's or a
+    path's approach to its own bridge (`_approaches`), and a path dipped under another way's bridge
+    for headroom, dug as wide as a verge (the old build left that to the survey, which often has the
+    bridge in it, and the path ran through solid ground). The ground under a street at grade and
+    under the railway stays as it was, and nothing beside a street's carriageway wins it; nor does
+    the outermost ring of the grid, which the next square shares, nor the ground in buildings.
+    `_lay` on a record holds the points laid to. Returns the change, as a function of a map point,
+    so what stands on the ground can follow it."""
+    nx, ny, z0 = T["nx"], T["ny"], T["z0"]
+    grid = np.array(T["h"], dtype=float).reshape(ny, nx) / 10.0 + z0
+    old = grid.copy()
+    flat_w = np.full(grid.shape, np.inf)
+    flat_z = grid.copy()
+    flat_in = np.zeros(grid.shape, dtype=bool)
+    flat_f = np.zeros(grid.shape)
+    protect = np.zeros(grid.shape, dtype=bool)
+
+    def kerb(r):
+        return max(r.get("pv") or [LAY_KERB]) if r["c"] in KERBED else 0.3
+
+    def flagged(q, *flags):
+        return len(q) > 3 and q[3] in flags
+
     for r in rd:
         p = r["p"]
-        for m in range(len(p) - 1):
-            if len(p[m]) > 3 and len(p[m + 1]) > 3 and p[m][3] == 1 and p[m + 1][3] == 1:
-                decks.append(LineString([p[m][:2], p[m + 1][:2]]).buffer(r.get("w", 2.0) / 2 + max(r.get("pv") or [0]) + 2.0))
-    if not decks:
-        return 0
-    overhead = unary_union(decks)
-    shapely.prepare(overhead)
-    buried = {}
-    for n, r in enumerate(rd):
-        if r["c"] in GAME_PATHS and len(r["p"]) > 1:
-            under = [len(q) < 4 and (g := ground_at(T, q[0], q[1], split=False)) is not None and q[2] < g - BURIED
-                     and shapely.contains_xy(overhead, q[0], q[1]) for q in r["p"]]
-            if any(under):
-                buried[n] = under
-    if not buried:
-        return 0
-    # (and never under another way where it lies on the ground: the street at the bridge's end)
-    keep, corners = [], set()
-    for n, r in enumerate(rd):
-        p, under = r["p"], buried.get(n)
-        reach = r.get("w", 2.0) / 2 + max(r.get("pv") or [0]) + 0.5
-        on = [len(q) < 4 and not (under and under[m]) for m, q in enumerate(p)]
-        for m in range(len(p) - 1):
-            if on[m] and on[m + 1]:
-                keep.append(LineString([p[m][:2], p[m + 1][:2]]).buffer(reach, cap_style="flat"))
-        # (and the corners of the grid cell each point on the ground reads its height from)
-        for m, q in enumerate(p):
-            if on[m]:
-                i, j = int(math.floor((q[0] - x0) / dx)), int(math.floor((q[1] - y0) / dy))
-                corners.update((i + a, j + b) for a in (0, 1) for b in (0, 1))
-    kept = unary_union(keep) if keep else Polygon()
-    shapely.prepare(kept)
-    cut = 0
-    for n, under in buried.items():
-        r = rd[n]
-        p = r["p"]
-        half = r.get("w", 2.0) / 2 + 0.3
-        for a, b, ua, ub in zip(p, p[1:], under, under[1:]):
-            if not (ua or ub):
+        span = {i for i, q in enumerate(p) if flagged(q, 1)}
+        for st in stretches(span):
+            if len(st) < 4:
                 continue
-            far = half + 3.0
-            i0, i1 = max(1, int((min(a[0], b[0]) - far - x0) / dx)), min(nx - 2, int((max(a[0], b[0]) + far - x0) / dx) + 1)
-            j0, j1 = max(1, int((min(a[1], b[1]) - far - y0) / dy)), min(ny - 2, int((max(a[1], b[1]) + far - y0) / dy) + 1)
+            inner = [p[i] for i in st[1:-1]]
+            line = LineString([q[:2] for q in inner])
+            got = _grid_points(T, inner, r.get("w", 4) / 2 + kerb(r) + 1.0)
+            if got is None:
+                continue
+            W, gx, gy = got
+            inn = shapely.contains_xy(line.buffer(r.get("w", 4) / 2 + kerb(r) + 1.0, cap_style="flat"), gx, gy)
+            if not inn.any():
+                continue
+            t = np.array([line.project(Point(x, y)) for x, y in zip(gx[inn], gy[inn])]) / (line.length or 1) * (len(inner) - 1)
+            lo = np.clip(t.astype(int), 0, len(inner) - 2)
+            zs = np.array([q[2] for q in inner])
+            deck = zs[lo] + (zs[lo + 1] - zs[lo]) * (t - lo)
+            blk = protect[W]; blk[inn] = True
+            blk = grid[W]; blk[inn] = np.minimum(blk[inn], deck - 0.6)
+    for r in rd:
+        p = r["p"]
+        for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2)}):
+            if len(st) < 2:
+                continue
+            run = [p[i] for i in st]
+            half = r.get("w", 4) / 2 + 2.5
+            got = _grid_points(T, run, half)
+            if got is None:
+                continue
+            W, gx, gy = got
+            inn = shapely.contains_xy(LineString([q[:2] for q in run]).buffer(half, cap_style="flat"), gx, gy)
+            blk = protect[W]; blk[inn] = False
+
+    def flatten(run, reach):
+        for a, b in zip(run, run[1:]):
+            far = reach + EASE
+            got = _grid_points(T, [a, b], far)
+            if got is None:
+                continue
+            W, px, py = got
             vx, vy = b[0] - a[0], b[1] - a[1]
-            L2 = vx * vx + vy * vy or 1
-            for j in range(j0, j1 + 1):
-                for i in range(i0, i1 + 1):
-                    px, py = x0 + i * dx, y0 + j * dy
-                    t = min(1, max(0, ((px - a[0]) * vx + (py - a[1]) * vy) / L2))
-                    d = math.hypot(px - a[0] - t * vx, py - a[1] - t * vy)
-                    if d >= far or (i, j) in corners or shapely.contains_xy(kept, px, py):
-                        continue
-                    want = a[2] + (b[2] - a[2]) * t - 0.1 + max(0.0, d - half)
-                    k = j * nx + i
-                    v = int(math.floor((want - z0) * 10))
-                    if v < h[k]:
-                        h[k] = v
-                        cut += 1
-    return cut
+            t = np.clip(((px - a[0]) * vx + (py - a[1]) * vy) / (vx * vx + vy * vy or 1), 0, 1)
+            d = np.hypot(px - (a[0] + t * vx), py - (a[1] + t * vy))
+            zz = a[2] + (b[2] - a[2]) * t
+            inside = d < reach
+            # the nearest way wins, but a carriageway beats another way's easing
+            win = (d < far) & np.where(inside, ~flat_in[W] | (d < flat_w[W]), ~flat_in[W] & (d < flat_w[W])) & ~protect[W]
+            flat_w[W][win] = d[win]
+            flat_z[W][win] = zz[win]
+            flat_f[W][win] = reach
+            flat_in[W] |= win & inside
+
+    deck_nodes = {(q[0], q[1]) for r in rd if r["c"] not in GAME_PATHS or r["c"] == "pedestrian"
+                  for q in r["p"] if flagged(q, 1)}
+
+    def hold(run, reach, core=0.0):
+        # (the ground under a street or the railway on the ground stays as the base tile laid it,
+        # which is what it lies on: nothing laid beside it may ease it away)
+        for a, b in zip(run, run[1:]):
+            got = _grid_points(T, [a, b], reach)
+            if got is None:
+                continue
+            W, px, py = got
+            vx, vy = b[0] - a[0], b[1] - a[1]
+            t = np.clip(((px - a[0]) * vx + (py - a[1]) * vy) / (vx * vx + vy * vy or 1), 0, 1)
+            d = np.hypot(px - (a[0] + t * vx), py - (a[1] + t * vy))
+            win = (d < reach) & (d < flat_w[W])
+            # (and under its carriageway nothing laid beside it wins, however near)
+            flat_w[W][win] = np.where(d[win] < core, 0.0, d[win])
+            flat_z[W][win] = grid[W][win]
+            flat_f[W][win] = reach
+            flat_in[W] |= win
+
+    for r in rd:
+        p, lay = r["p"], r.get("_lay") or set()
+        street = r["c"] not in GAME_PATHS or r["c"] == "pedestrian"
+        reach = r.get("w", 4) / 2 + (max(2.5, kerb(r) + 0.5) if street else 1.0)
+        if street:
+            # (but where a street meets another's bridge, that bridge's end is dug past for a path
+            # just beyond it, and the point they share rides on its deck: settle_on_laid_ground)
+            at_deck = {i for i, q in enumerate(p) if (q[0], q[1]) in deck_nodes}
+            for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2) and tuple(q[:2]) not in lay}):
+                for a, b in zip(st, st[1:]):
+                    hold([p[a], p[b]], reach, 0.0 if a in at_deck or b in at_deck else r.get("w", 4) / 2 + 0.5)
+    for t in rails:
+        for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0}):
+            if len(st) >= 2:
+                hold([t["p"][i] for i in st], RAIL_HALF)
+    # (a path carried over from the base tile has no profile of ours, but was dipped all the same:
+    # one that passes under a bridge is dug for where it lies buried in the ground near it)
+    spans = [(LineString([a[:2], b[:2]]), r) for r in rd for a, b in zip(r["p"], r["p"][1:]) if flagged(a, 1) and flagged(b, 1)]
+    near_span = unary_union([s.buffer(DIP_REACH) for s, _ in spans]) if spans else Polygon()
+    overhead = unary_union([s.buffer(o.get("w", 4) / 2 + 1.0) for s, o in spans]) if spans else Polygon()
+    shapely.prepare(near_span)
+
+    def buried(q):
+        g = ground_at(T, q[0], q[1], split=False)
+        return g is not None and q[2] < g - 0.3 and shapely.contains_xy(near_span, q[0], q[1])
+    for r in rd:
+        p, lay = r["p"], r.get("_lay") or set()
+        street = r["c"] not in GAME_PATHS or r["c"] == "pedestrian"
+        reach = r.get("w", 4) / 2 + (max(2.5, kerb(r) + 0.5) if street else 1.0)
+        if not street and len(p) > 1 and overhead.intersects(LineString([q[:2] for q in p])):
+            lay = lay | {tuple(q[:2]) for q in p if len(q) < 4 and buried(q) and tuple(q[:2]) not in (r.get("_tow") or ())}
+            r["_lay"] = lay
+        for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2) and tuple(q[:2]) in lay}):
+            if len(st) >= 2:
+                run = [p[i] for i in st]
+                # a cutting is dug as wide as a street's verge, so the ground the path reads between
+                # the grid's points is the cutting's floor, not halfway up its side
+                dug = not street and any((g := ground_at(T, q[0], q[1], split=False)) is not None and q[2] < g - 0.3 for q in run)
+                flatten(run, r.get("w", 4) / 2 + 2.5 if dug else reach)
+    ease = np.clip(np.abs(grid - flat_z) * SLOPE, 2.5, EASE)
+    k = np.clip((flat_w - flat_f) / ease, 0, 1)
+    k = k * k * (3 - 2 * k)
+    k[np.isinf(flat_w)] = 1
+    grid = flat_z * (1 - k) + grid * k
+    keep = np.zeros(grid.shape, dtype=bool)
+    keep[0, :] = keep[-1, :] = keep[:, 0] = keep[:, -1] = True
+    for g in houses:
+        got = _grid_points(T, list(g.exterior.coords), 0.0)
+        if got is not None:
+            W, gx, gy = got
+            blk = keep[W]; blk |= shapely.contains_xy(g, gx, gy)
+    grid[keep] = old[keep]
+    T["h"] = [int(v) for v in np.round((grid - z0) * 10).ravel()]
+    before = dict(T, h=[int(v) for v in np.round((old - z0) * 10).ravel()])
+
+    def change(x, y, split=True):
+        a, b = ground_at(before, x, y, split), ground_at(T, x, y, split)
+        return 0.0 if a is None or b is None else b - a
+    return change
+
+
+def settle_on_laid_ground(rd, change, ground, reach=3):
+    """After the ground is laid: a path that lies on the ground, where the ground was not laid to
+    it, goes up and down with the ground (not the towpath, which keeps the canal's level); and where the ground was dug away from under a street (a
+    path dug under it just past the end of its span), the span runs on, by at most `reach` points,
+    to where its deck meets the ground as it now is, as `prep_map.py` runs its spans on after its flatten."""
+    for r in rd:
+        p, lay, tow = r["p"], r.pop("_lay", None) or set(), r.pop("_tow", None) or set()
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian":
+            r["_lay"] = lay
+        else:
+            for q in p:
+                if len(q) < 4 and tuple(q[:2]) not in lay and tuple(q[:2]) not in tow:
+                    dz = change(q[0], q[1], False)
+                    if abs(dz) > 0.05:
+                        q[2] = round(q[2] + dz, 1)
+    def low(q, by=0.3):
+        # (only where the laying took the ground away: elsewhere the spans were run out already)
+        g = ground(q[0], q[1])
+        return len(q) < 4 and g is not None and q[2] - g > by and change(q[0], q[1], False) < -0.1
+    streets = [r for r in rd if r["c"] not in GAME_PATHS or r["c"] == "pedestrian"]
+    grown = 0
+    for r in streets:
+        p = r["p"]
+        span = {i for i, q in enumerate(p) if len(q) > 3 and q[3] == 1}
+        for st in stretches(span):
+            for e, step in ((st[0], -1), (st[-1], 1)):
+                for k in range(1, reach + 1):
+                    i = e + step * k
+                    if not 0 <= i < len(p) or not low(p[i]):
+                        break
+                    span.add(i)
+        for i in span:
+            if len(p[i]) < 4:
+                p[i] = p[i][:3] + [1]
+                grown += 1
+        # (an approach the ground could not be laid to, beside another street's carriageway,
+        # comes back to the ground as it was held before)
+        lay = r.pop("_lay", None) or set()
+        for q in p:
+            g = ground(q[0], q[1]) if len(q) < 4 and tuple(q[:2]) in lay else None
+            if g is not None and abs(q[2] - g) > 0.4:
+                q[2] = round(min(max(q[2], g - 0.4), g + 0.4), 1)
+    # a street that ends where another's span begins shares that point with the bridge: where the
+    # ground was dug from under it, it rides on that bridge's deck (2), and builds nothing of its own
+    ends = {(q[0], q[1]) for r in streets for q in (r["p"][0], r["p"][-1]) if len(q) > 3 and q[3] == 1}
+    for r in streets:
+        p = r["p"]
+        for i in (0, len(p) - 1):
+            # (the street's faces are drawn on the ground, so even a small drop there shows as a
+            # step down from the deck)
+            if (p[i][0], p[i][1]) in ends and low(p[i], 0.1):
+                p[i] = p[i][:3] + [2]
+                grown += 1
+    return grown
+
+
+def follow_laid_ground(tile, change):
+    """What the base tile placed on its ground (street items, trees, shrubs, doors, signs, landmarks,
+    bay windows, road markings) moved up or down with the ground under it."""
+    moved = 0
+    for key, xi, zi in (("fx", 1, 3), ("tr", 0, 2), ("sb", 0, 2), ("dr", 0, 2), ("sh", 0, 2),
+                        ("lm", 1, 3), ("by", 0, 2)):
+        for row in tile.get(key) or []:
+            if len(row) > zi and isinstance(row[zi], (int, float)) and isinstance(row[xi], (int, float)):
+                dz = change(row[xi], row[xi + 1])
+                if abs(dz) > 0.05:
+                    row[zi] = round(row[zi] + dz, 2)
+                    moved += 1
+    # (and a wire's ends with the poles they hang from, which are street items)
+    for key, ends in (("mk", ((0, 4), (2, 5))), ("wr", ((0, 2), (3, 5)))):
+        for row in tile.get(key) or []:
+            for xi, zi in ends:
+                dz = change(row[xi], row[xi + 1])
+                if abs(dz) > 0.05:
+                    row[zi] = round(row[zi] + dz, 2)
+    return moved
 
 
 def deck_reach(rd):
@@ -2622,7 +2894,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                          + water[sum(1 for w in tile["wp"] if len(w["r"][0]) >= 3):], rails, road_ground)
     even_bridge_pavements(rd, houses)
     deck_reach(rd)
-    cut_under_bridges(T, rd)
+    # the ground is laid to these streets and paths before anything else stands on it
+    laid = lay_ground(T, rd, houses, rail_tracks)
+    settle_on_laid_ground(rd, laid, road_ground)
+    follow_laid_ground(tile, laid)
     # which boundaries stand is settled once the streets are known: a pedestrian street's edge is open
     settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
                      tile.get("sh") or [], row_at, streets, pedestrian_ground(rd))
