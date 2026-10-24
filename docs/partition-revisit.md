@@ -701,3 +701,29 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   network went 0.990 to 0.989.
 - [ ] **Post boxes** stay at 0.722 (main 0.742): none is dropped; the two short of main were set back
   onto our pavements from where our wider carriageways put them, ending over 3 m from the mapped box.
+
+## Plot edges after the merge of main (24 October)
+
+- [ ] **Plot-edge recall fell from 0.469 to 0.412 for two reasons, neither of them the merge's code.**
+  Bisected on -1,2 1,3 0,3 -4,-2 0,-2 -6,2 (recall within 1 m, plot edges):
+  - The earlier figure was too high. Before the merge, a full write started from the branch's own
+    committed maps, which are the partition's own output. The writer marks every run it draws with
+    a height, and it takes any base run with a height as a measured (lidar) barrier. So last time's
+    guesses came back as evidence and held themselves up. With the same code (6d2ed4d), the score
+    is 0.541 on that base and 0.459 on main's tiles. Only main's tiles are a fair base: always pass
+    `--base` with main's maps, never the branch's own.
+  - The real loss came with main's rebuild 2f5b157. It measured the squares round the edge of Bath
+    without their lidar: the raw lidar there had 6 of the 13 OS 5 km squares the map needs
+    (ST6555, ST6560, ST7055, ST7070, ST7570, ST8060 and ST8065 are missing). Those squares'
+    `data/combe-down/measured/*.zip` were stored with no lidar walls and no building heights
+    (-6_2 had 8.9 km of walls, now none). Field parcel edges stand only where a lidar or mapped
+    barrier backs them, so they went. The head code on main's tiles scores 0.440, and 0.457 with
+    the measurements from before 2f5b157, the rural squares coming back whole (-6,2 0.001 to 0.227).
+    The merge's code itself (the lone-stub loop, the tree and stub rules) moved nothing measurable.
+  - Fix: `prep_map.py --measure` now stops when the lidar has no tiles under part of the square, and
+    says to fetch them (`Lidar.uncovered`). The 42 squares the local lidar doesn't cover whole are
+    -7_2 -7_3 -6_-1 -6_0 -6_1 -6_2 -6_3 -5_-2 -5_-1 -5_0 -5_1 -5_2 -5_3 -4_-3 -4_-2 -4_-1 -4_0
+    -4_1 -4_2 -4_3 -3_-3 -3_-2 -3_8 -2_-4 -2_-3 -2_-2 -2_8 -1_-4 -1_-3 -1_-2 -1_8 0_-4 0_-3 0_-2
+    0_8 1_8 5_0 5_1 5_2 5_3 5_4 5_5. They need the lidar fetched and measuring again on main, and
+    then the partition writing again on main's new tiles. Trade-off: a square the survey really
+    doesn't reach can no longer be measured, only built from what is already stored.

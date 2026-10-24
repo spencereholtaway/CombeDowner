@@ -1590,6 +1590,14 @@ else:
     try:
         from lidar import Lidar
         lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
+        if STORE is not None and STORE.record and TILE is not None:
+            # a square measured without its survey stores no walls and no building heights, and
+            # every later build of it then goes without them
+            gx, gy = np.meshgrid(np.linspace(TX0, TX1, 21), np.linspace(TY0, TY1, 21))
+            missing = lidar.uncovered(gx.ravel(), gy.ravel())
+            if missing > 0:
+                raise SystemExit(f"--measure: the lidar has no tiles under {missing:.0%} of square {ti},{tj}; "
+                                 f"fetch them first (python3 -I tools/fetch.py {args[0]} --only lidar)")
     except Exception as e:
         if STORE is not None: raise SystemExit(f"--measure needs the lidar: {e}")
         print("no lidar data:", e)

@@ -89,6 +89,17 @@ class Lidar:
                 t, (h, w) = g[1], g[2]
                 if e.max() >= t.c and e.min() <= t.c + w * t.a and n.max() >= t.f + h * t.e and n.min() <= t.f: self._heights(g)
 
+    def uncovered(self, xs, ys):
+        """The share of model points that some survey (dsm or dtm) has no tile over."""
+        e, n = self._bng(xs, ys)
+        out = np.zeros(len(e), dtype=bool)
+        for kind in ("dsm", "dtm"):
+            inside = np.zeros(len(e), dtype=bool)
+            for _f, t, (h, w), _a in self.grids[kind]:
+                inside |= (e >= t.c) & (e < t.c + w * t.a) & (n <= t.f) & (n > t.f + h * t.e)
+            out |= ~inside
+        return float(out.mean()) if len(out) else 0.0
+
     def _heights(self, g):
         if g[3] is None:
             import rasterio
