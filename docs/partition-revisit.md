@@ -927,3 +927,10 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   main's paths carried over a lock on its coping, the ramp down off a deck that ends in the air, and
   digging the ground out under a dipped path (the writer's `lay_ground` does its own); check those
   against main's once the shots have been looked at.
+- [ ] **Left after the merge** (map check against the run before it): roads kinked 15 to 20 (the
+  Bailbrook Underpass junction, and Winsley Hill, whose span now ends a point short of main's and
+  dips 0.4 m just past it), span ends where its record does 116 to 130 (main 39 to 53 with the same
+  rules), ground in the gap 3 to 5 (Rossiter Road over the canal, the Railway Path at Newbridge),
+  one more sunk footway span by Green Park. Too steep fell 177 to 62. In the shots, a garden fence
+  runs down the bank to the water beside Bathwick Hill's canal bridge, and the Dundas basin
+  cycleway's parapets run on along its ramp on to the grass.
