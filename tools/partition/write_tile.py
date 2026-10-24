@@ -24,6 +24,10 @@ the partition owns, so the only difference Dan sees is the partition's:
   - `t`: the existing tile's ground, laid afresh where these streets and paths meet their bridges
     (`lay_ground`: a street's approach to its bridge, a path dug under one), with what stood on it
     moved up or down with it;
+  - `bt` and `uo` on a bridge's record: what kind of bridge the game builds (OpenStreetMap's
+    `osm-bridges` layer, else what it carries and crosses: `bridge_kinds`), and the stretches over
+    what passes under it, where no pier stands. Nothing stands in the gap under a deck
+    (`deck_gaps`: no wall is drawn there, and plants and street items under it go);
   - `bl` and the decoration fields: **copied** from the existing tile. The footprints are not what
     this stage is testing, and a bare tile would look worse for reasons that have nothing to do with
     the partition. Placing decoration against the new cross-sections is its own step, done after the
@@ -1178,6 +1182,189 @@ def deck_reach(rd):
                     side[s_] = max(side[s_], line.distance(pt) + half)
         side = [round(v, 2) for v in side]
         r["dk"] = side[0] if side[0] == side[1] else side
+
+
+STRUCTURES = {"arch": "arch", "humpback": "arch", "beam": "beam", "girder": "beam", "truss": "truss",
+              "suspension": "foot", "simple-suspension": "foot", "cable-stayed": "beam", "cantilever": "beam"}
+LONG_ARCH = 70.0      # metres: a river crossing longer than this with nothing to say otherwise is a modern beam
+
+
+def osm_bridges(sq, reach=60.0):
+    """OpenStreetMap's bridges round the square: (lines, outlines), each a list of (shape, tags)."""
+    from partition import load_layer
+    bb = (sq[0] - reach, sq[1] - reach, sq[2] + reach, sq[3] + reach)
+    got = load_layer(os.path.join(ROOT, "data", "raw", MAP, "wide"), "osm-bridges", bb)
+    return ([(g, p) for g, p in got if p.get("man_made") != "bridge" and g.geom_type == "LineString"],
+            [(g, p) for g, p in got if p.get("man_made") == "bridge" and g.geom_type in ("Polygon", "MultiPolygon")])
+
+
+def bridge_kinds(rd, osm, water, rails, canal_lines):
+    """`bt` on each street or path with a span: what kind of bridge the game builds for it, and
+    `uo`, the stretches of it over a road, path or railway passing under, where no pier may stand.
+
+    "arch" is masonry, a stone arch or a row of them; "beam" a flat concrete or steel deck on slim
+    piers with railings; "truss" a beam with steel trusses for its sides; "foot" a light footbridge,
+    a thin deck between railings. OpenStreetMap says which where it is mapped (the bridge's outline
+    or its way: `bridge:structure`; a viaduct or aqueduct, which round here are stone; a swing
+    bridge, a steel deck). Where it
+    isn't, it goes by what the bridge carries and crosses, as Bath's are built: the canal's bridges
+    and the railway's over and under roads are stone arches, as are an old railway's that a path
+    now runs along (Linear Park, the Two Tunnels), farm tracks' bridges and the
+    streets' over the river and the brooks; a trunk road's bridge (but over the railway) and a main
+    road's over another road are modern beams, as is a very long crossing; and a path's own bridge
+    is a footbridge."""
+    lines, outlines = osm
+    ltree = STRtree([g for g, _ in lines]) if lines else None
+    otree = STRtree([g for g, _ in outlines]) if outlines else None
+    wtree = STRtree(water) if water else None
+    rtree = STRtree(rails) if rails else None
+    ctree = STRtree(canal_lines) if canal_lines else None
+    ways = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if len(r["p"]) > 1]
+    way_tree = STRtree([l for l, _ in ways]) if ways else None
+    for r in rd:
+        p = r["p"]
+        on = [i for i, q in enumerate(p) if len(q) > 3 and q[3] == 1]
+        if len(p) < 2 or not on:
+            r.pop("bt", None)
+            continue
+        span = LineString([q[:2] for q in p[max(0, on[0] - 1):on[-1] + 2]])
+        mid = span.interpolate(0.5, normalized=True)
+        path = r["c"] in GAME_PATHS
+        tags = {}
+        if otree is not None:
+            # the outline the span runs furthest through
+            hit = [(outlines[int(k)][0].intersection(span).length, outlines[int(k)][1]) for k in otree.query(span)]
+            hit = [h for h in hit if h[0] > min(5.0, span.length * 0.3)]
+            tags = max(hit, key=lambda h: h[0])[1] if hit else {}
+        if not tags.get("bridge:structure") and ltree is not None:
+            near = [(lines[int(k)][0].distance(mid), lines[int(k)][1]) for k in ltree.query(mid.buffer(6.0))]
+            near = [(d, t) for d, t in near if t.get("highway") and (t["highway"] in GAME_PATHS) == path]
+            if near:
+                way = min(near, key=lambda t: t[0])[1]
+                tags = dict(way, **{k: v for k, v in tags.items() if v})
+        hits = lambda tree, geoms: tree is not None and any(geoms[int(k)].intersects(span) for k in tree.query(span))
+        over_canal = hits(ctree, canal_lines)
+        over_rail = hits(rtree, rails)
+        over_water = hits(wtree, water)
+        over_road = False
+        whole = LineString([q[:2] for q in p])
+        kept = []
+
+        def keep_clear(shape):
+            # the stretch of the record over it, in metres from its first point
+            x = whole.intersection(shape)
+            for piece in getattr(x, "geoms", [x]):
+                if piece.geom_type == "LineString" and piece.length > 0:
+                    ends = sorted(whole.project(Point(c)) for c in (piece.coords[0], piece.coords[-1]))
+                    kept.append([round(ends[0], 1), round(ends[1], 1)])
+        if way_tree is not None:
+            for k in way_tree.query(span):
+                l, o = ways[int(k)]
+                if o is r or not l.crosses(span):
+                    continue
+                x = l.intersection(span)
+                x = x.geoms[0] if hasattr(x, "geoms") else x
+                if x.geom_type != "Point":
+                    continue
+                zo = min(o["p"], key=lambda q: math.dist(q[:2], (x.x, x.y)))[2]
+                zr = min(p, key=lambda q: math.dist(q[:2], (x.x, x.y)))[2]
+                if zr - zo > (2.0 if o["c"] in GAME_PATHS else 2.5):
+                    over_road |= o["c"] not in GAME_PATHS
+                    reach = o["w"] / 2 + (max(o.get("pv") or [0]) if o["c"] in KERBED else 0.3)
+                    keep_clear(l.buffer(reach + 1.0, cap_style="flat"))
+        if over_rail:
+            for k in rtree.query(span):
+                if rails[int(k)].intersects(span):
+                    keep_clear(rails[int(k)].buffer(RAIL_HALF + 1.0, cap_style="flat"))
+        if kept:
+            r["uo"] = kept
+        else:
+            r.pop("uo", None)
+        kind = STRUCTURES.get(tags.get("bridge:structure") or "")
+        if kind is None and tags.get("bridge") in ("viaduct", "aqueduct"):
+            kind = "arch"
+        if kind is None and tags.get("bridge") == "movable":
+            kind = "beam"       # (a swing bridge's steel deck)
+        if kind is None:
+            if r["c"] == "track" or over_canal or tags.get("railway") in ("abandoned", "disused"):
+                kind = "arch"
+            elif path:
+                kind = "foot"
+            elif r["c"] in ("motorway", "trunk") and not over_rail or over_road and r["c"] == "primary":
+                kind = "beam"
+            elif over_water and span.length > LONG_ARCH:
+                kind = "beam"
+            else:
+                kind = "arch"
+        if kind == "beam" and path:
+            kind = "foot"
+        r["bt"] = kind
+
+
+BANK = 1.5        # metres: the end of a span the abutment stands on
+
+
+def deck_gaps(rd, ground, depth=0.9):
+    """The gap under each bridge's deck: (outline, line, distances along it, the underside's height
+    at each point), from the abutment at one end to the other, out to the parapets. The deck is
+    `depth` thick, as the game builds it (world.ts)."""
+    out = []
+    for r in rd:
+        p = r["p"]
+        mk = [q[3] if len(q) > 3 else 0 for q in p]
+        if len(p) < 2 or 1 not in mk:
+            continue
+        dk = r.get("dk")
+        hl, hr = (dk if isinstance(dk, list) else [dk or r["w"] / 2 + max(r.get("pv") or [0]), ] * 2)[:2]
+        k = 0
+        while k < len(p):
+            if mk[k] != 1:
+                k += 1
+                continue
+            e = k
+            while e + 1 < len(p) and mk[e + 1] == 1:
+                e += 1
+            a, b = max(0, k - 1), min(len(p) - 1, e + 1)
+            k = e + 1
+            xy = [q[:2] for q in p[a:b + 1]]
+            line = LineString(xy)
+            if line.length < 2 * BANK + 1:
+                continue
+            under = [(q[2] if mk[a + i] else ground(q[0], q[1])) - depth for i, q in enumerate(p[a:b + 1])]
+            cum = [0.0]
+            for u, v in zip(xy, xy[1:]):
+                cum.append(cum[-1] + math.dist(u, v))
+            core = substring(line, BANK, line.length - BANK)
+            outline = core.buffer(hl + 0.4, single_sided=True, cap_style="flat").union(
+                core.buffer(-(hr + 0.4), single_sided=True, cap_style="flat"))
+            out.append((outline, line, cum, under))
+    return out
+
+
+def under_a_deck(gaps, x, y, foot, room=0.3):
+    """Does something whose foot is at `foot` stand in the gap under a bridge's deck at (x, y)?"""
+    pt = Point(x, y)
+    for outline, line, cum, under in gaps:
+        if outline.contains(pt) and foot < float(np.interp(line.project(pt), cum, under)) - room:
+            return True
+    return False
+
+
+def clear_under_decks(tile, gaps, gone):
+    """Trees, shrubs and street items (parked cars aside) standing under a bridge's deck go: the gap
+    under a bridge is open, as it is in Bath (what is in it is the river, the road or the path it
+    crosses, or the bank)."""
+    if not gaps:
+        return
+    for field, xy in (("tr", lambda q: (q[0], q[1], q[2])), ("sb", lambda q: (q[0], q[1], q[2])),
+                      ("fx", lambda q: (q[1], q[2], q[3]))):
+        keep = []
+        for q in tile.get(field) or []:
+            if (field != "fx" or q[0] != "car") and under_a_deck(gaps, *xy(q)):
+                gone[field] += 1
+            else:
+                keep.append(q)
+        tile[field] = keep
 
 
 def _side(line, pt):
@@ -3231,6 +3418,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     settle_on_laid_ground(rd, laid, road_ground)
     # (a span run on to the end of its record, there, carries on into the next)
     whole_spans(rd, sq, road_ground, wet, cut=True)
+    bridge_kinds(rd, osm_bridges(sq), water, rails, canal_lines)
     follow_laid_ground(tile, laid)
     # which boundaries stand is settled once the streets are known: a pedestrian street's edge is open
     settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
@@ -3248,6 +3436,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                  if f["cls"] in ("carriageway", "pavement", "path") and len(f["xy"]) > 2]
     corridor_area = unary_union(cor_faces) if cor_faces else None
     blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
+    # no wall, fence or hedge stands in the gap under a bridge
+    gaps = deck_gaps(rd, road_ground)
+    wall_blocked = blocked
+    if gaps:
+        wall_blocked = unary_union([g[0] for g in gaps] + ([blocked] if blocked is not None else []))
+        shapely.prepare(wall_blocked)
     door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq)
     gone = {id(o) for o in wrong_side}
     part = dict(part, openings=[o for o in part["openings"] if id(o) not in gone] + door_gates)
@@ -3265,7 +3459,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     mapped = [dict(c=c, p=[list(q[:2]) for q in l.coords]) for l, c in evidence.mapped if l.length > 0]
     br, gt, br_in_road = walls_and_gates(part, sq, wall_ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
-                                         blocked=blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses,
+                                         blocked=wall_blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses,
                                          paths=[(LineString([q[:2] for q in r["p"]]), r.get("w", 1.8) / 2) for r in rd
                                                 if r["c"] in GAME_PATHS and len(r["p"]) > 1])
 
@@ -3291,6 +3485,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     moved = collections.Counter()
     gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved, blocked=blocked,
                         dv=dv, carriageway=drawn_carriageway(tile["sf"]))
+    clear_under_decks(tile, gaps, gone)
     # placed after the clash pass, which would take a car for a thing standing in the road
     cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground, dv)
     tile["fx"] += cars + drive_cars

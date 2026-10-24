@@ -33,7 +33,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number | number[]; held?: boolean }   // dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number | number[]; held?: boolean; bt?: string; uo?: number[][] }   // bt: what kind of bridge it is (arch, beam, truss or foot: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
@@ -207,7 +207,7 @@ export class GameMap {
   // the detailed terrain grid's far edges (data coords)
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
-  private decks: { p: number[][]; half: number }[] = [];
+  private decks: { p: number[][]; half: number; left: number; right: number }[] = [];
   private deckCells = new Map<number, number[]>();
   // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
   private tA: number[][] = []; private tB: number[][] = [];
@@ -378,8 +378,9 @@ export class GameMap {
       if (this.spent(2)) yield;
       if (!r.bridge) continue;
       // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
-      const k = this.decks.length, half = deckHalf(r) + 0.2, seen = new Set<number>(), flags = spanFlags(r, g, this.z0);     // (out to its parapets: deckHalf)
-      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half });
+      // (out to its parapets, each side its own: a side with no pavement stops at its kerb)
+      const k = this.decks.length, half = deckHalf(r) + 0.2, [hl, hr] = deckSides(r), seen = new Set<number>(), flags = spanFlags(r, g, this.z0);
+      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half, left: hl + 0.2, right: hr + 0.2 });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
         for (let s = 0; s <= n; s++)
@@ -710,11 +711,13 @@ export class GameMap {
     if (tile) return tile.deck(x, z, y);
     let best: number | null = null, floor: number | null = null;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-      const { p, half } = this.decks[k];
+      const { p, left, right } = this.decks[k];
       for (let i = 0; i < p.length - 1; i++) {
         const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
         const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
-        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        // (scene z is south, so a point left of the road looking along it has a negative cross product)
+        const reach = vx * (z - a[1]) - vz * (x - a[0]) < 0 ? left : right;
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= reach) continue;
         const h = a[2] + (b[2] - a[2]) * t;
         if (h > y + 0.6 || (best !== null && h <= best)) continue;
         if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;

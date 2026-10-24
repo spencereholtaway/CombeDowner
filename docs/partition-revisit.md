@@ -858,3 +858,56 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   same code gives 5,253 and 5,254 barrier records, and the same code's full write scored wall
   recall 0.946 (final2's maps) and 0.951 (rewritten today). Barrier score moves of a few thousandths
   between two runs are noise until that is found; the street records (`rd`) do come out the same.
+
+## Bridges built as their kind, the gap under them kept clear (24 October)
+
+- [ ] **Each bridge is built as its kind** (`bt` on its record, `bridge_kinds` in the writer; the
+  game's model in `world.ts`): `arch` (Bath stone, solid parapets, spandrels down to arches between
+  piers), `beam` (a concrete deck with a flat underside on slim columns under a crosshead, a steel
+  railing on a low upstand), `truss` (steel trusses for its sides) and `foot` (a thin deck between
+  steel railings). The kind is OpenStreetMap's where it is mapped: a new data layer,
+  `osm-bridges.geojson.xz` (`tools/osm.py ... wide bridges`), with each bridge way's and outline's
+  `bridge`, `bridge:structure` and `layer`. A span takes the outline it runs furthest through, else
+  the bridge way along it. Bath's OSM has few structure tags (11 arch, 10 beam, 4 truss, 4
+  humpback, on outlines), so the rest go by what they carry and cross: over the canal, a farm track,
+  or a path on an old railway (Linear Park, the Two Tunnels, `railway=abandoned`) is stone; a path's
+  own bridge is a footbridge; a trunk road's bridge (but over the railway) and a primary road over
+  another road are beams; a river crossing over 70 m with nothing to say otherwise is a beam; the
+  rest are stone. Swing bridges are steel decks. Trade-offs: Victoria Bridge's approaches are stone
+  because OSM tags its outline `arch` (it is a suspension bridge); Warminster Road's viaduct is
+  stone because viaducts round here are; a beam's railing and a truss are drawn as thin bars in a
+  second, untextured material, one more draw call in a square with such bridges. A map without
+  `bt` (main's) builds stone arches, as before.
+- [ ] **No pier stands in what passes under** (`uo` on the record: the stretches over a road, path
+  or railway passing under, in metres from its first point). A pier is moved up to a third of the
+  pier spacing to stand clear, or left out. Main's maps have no `uo`, so main's piers are as before.
+- [ ] **The parapets run on along an embankment approach** until the road meets the ground beside
+  it (0.5 m), a street joins, or 15 m, with the wall's outer face down to the ground, so Midland
+  Road's no longer ends in a bare face before its bank. A truss's approaches get a beam's railing.
+- [ ] **An abutment is a face across the deck's end whose foot follows the ground under it** (sampled
+  every metre across), not a 1.5 m block down to 1.5 m under the lowest ground, which stood out
+  wherever the bank fell away. A non-stone deck's sides stop at its underside; a stone one's go down
+  to the bank only beside its abutments, where no arch springs (they used to go to the ground the
+  whole way, so a low bridge read as a wall).
+- [ ] **You stand on a deck only out to its own side's parapet** (`map.deck`): each deck keeps its
+  left and right reach, so the narrow side of a bridge with one pavement is no longer walkable past
+  its parapet.
+- [ ] **Nothing stands in the gap under a bridge** (`deck_gaps`): the span's outline from bank to bank
+  (1.5 m in from each abutment, out to the parapets) is blocked ground for walls, fences and hedges,
+  and the trees, shrubs and street items (parked cars aside) whose foot is below the deck's
+  underside go. `check_map` rule 10 counts what is left under every span, the railway's included,
+  and spans with no open gap: ours before 14 buildings / 3 ground in the gap / 14 no open gap /
+  1 shrub / 36 street items / 1 tree / 3 walls, after 14 / 3 / 14 / 0 / 0 / 0 / 0; main 18 / 2 / 11 /
+  0 / 36 / 0 / 2. Left: the 14 "buildings" are Pulteney Bridge's shops (12, the set piece hides
+  them) and two on North Parade's bank; the "no open gap" spans are decks the profile lays on the
+  ground (`structures.py`: Bristol Road over the river at -0.3 m, short footbridges), and the three
+  "ground in the gap" are banks rising inside long spans (Brook Road, Mill Lane). Warminster Road's
+  footway still ends buried in its abutment (not looked into).
+- Findings the shots showed and that are not fixed: an arch's barrel is drawn every 2 m, so a short
+  arch is faceted; the side views are often blocked by a tree; the railway's own bridges
+  (`railway.ts`, shared with main) are brick boxes on piers every third point, piers that can stand
+  in a road under them, and are not changed here.
+- Portable to main (shared game code, works on main's maps without `bt`/`uo`): the shaped
+  abutments, the parapets run on along the approach, the deck sides stopping at the underside
+  away from the abutments, and the per-side standing reach. The kinds and the pier clearance need
+  the map fields.

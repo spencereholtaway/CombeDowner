@@ -822,46 +822,82 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   // ---- bridges ---------------------------------------------------------------------------
   // A road or path on a bridge is drawn at its own height by strips; this builds what holds it
-  // up and keeps you on it: the deck's stone sides and underside, a parapet each side, an
-  // abutment at each end where the deck leaves the ground, piers every so often along a long
-  // span, and, where the deck stands high enough, Bath-stone arches between them. What the
-  // bridge crosses (the river, the canal, the railway, another road) keeps its own ground
-  // underneath, as tools/prep_map.py no longer raises the terrain under a span.
+  // up and keeps you on it, as its kind is built (the map's `bt`; a map without it has stone):
+  //  - arch: Bath stone, a solid parapet each side and the spandrels down to arches between its
+  //    piers (a short span is one arch, springing from the banks);
+  //  - beam: a concrete deck with a flat underside on slim piers, and a steel railing on a low
+  //    concrete upstand each side;
+  //  - truss: a deck between two steel trusses, which are its sides;
+  //  - foot: a thin deck between steel railings, on slim legs where it is long.
+  // Each end has an abutment whose foot follows the bank under it, and the parapets run on along
+  // the approach while the road stands above the ground beside it, so they meet the bank rather
+  // than ending in the air. No pier stands in what passes under (the map's `uo`: a road, a path or
+  // the railway) or in the canal. What the bridge crosses keeps its own ground underneath.
   const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
-  const DECK = 0.9;           // how thick the deck is, top to underside
+  const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52];
   const PARAPET = 1.05;       // above the pavement
-  const PIER_GAP = 16;        // a pier at least every so often
-  function bridgeStructures(rd: Road[], g: Geo) {
+  const KINDS: Record<string, { deck: number; gap: number }> = {
+    arch: { deck: 0.9, gap: 16 }, beam: { deck: 1.1, gap: 26 }, truss: { deck: 0.9, gap: 45 }, foot: { deck: 0.45, gap: 18 },
+  };
+  /** An upright block on corners [x, y] (data) from low to high. */
+  function prism(g: Geo, c: number[][], low: number, high: number, col: number[]) {
+    const mx = c.reduce((s, q) => s + q[0], 0) / c.length, my = c.reduce((s, q) => s + q[1], 0) / c.length;
+    for (let k = 0; k < c.length; k++) {
+      const A = c[k], B = c[(k + 1) % c.length], l = Math.hypot(B[0] - A[0], B[1] - A[1]);
+      facing(g, [A[0], low, -A[1]], [B[0], low, -B[1]], [B[0], high, -B[1]], [A[0], high, -A[1]], [(A[0] + B[0]) / 2 - mx, 0, -((A[1] + B[1]) / 2 - my)],
+        [0, 0], [l / 2.5, 0], [l / 2.5, (high - low) / 2.5], [0, (high - low) / 2.5], col);
+    }
+  }
+  /** A thin square bar between two scene points: a railing's post or rail, a truss's member. */
+  function bar(g: Geo, A: number[], B: number[], t: number, col: number[]) {
+    const d = norm(sub(B, A));
+    const u = Math.abs(d[1]) > 0.9 ? [1, 0, 0] : norm(cross(d, [0, 1, 0])), v = norm(cross(u, d));
+    const c = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([i, j]) => [u[0] * i * t + v[0] * j * t, u[1] * i * t + v[1] * j * t, u[2] * i * t + v[2] * j * t]);
+    for (let k = 0; k < 4; k++) {
+      const p = c[k], q = c[(k + 1) % 4], o = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
+      facing(g, [A[0] + p[0], A[1] + p[1], A[2] + p[2]], [B[0] + p[0], B[1] + p[1], B[2] + p[2]], [B[0] + q[0], B[1] + q[1], B[2] + q[2]], [A[0] + q[0], A[1] + q[1], A[2] + q[2]], o,
+        [0, 0], [1, 0], [1, 0.05], [0, 0.05], col);
+    }
+  }
+  type Pt = { x: number; y: number; s: number; top: number; g: number; nx: number; ny: number };
+  function bridgeStructures(rd: Road[], g: Geo, steel: Geo) {
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
+      const kind = r.bt && KINDS[r.bt] ? r.bt : "arch", DECK = KINDS[kind].deck, stone = kind === "arch";
       const [hl, hr] = deckSides(r), half = Math.max(hl, hr), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
-      for (const [a, b] of bridgeSpans(r, flags, true)) {
-        // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it
-        const src = r.p.slice(a, b + 1), tops = src.map((q, i) => deckTop(q, flags[a + i], ground, Z0));
-        const P: { x: number; y: number; s: number; top: number; g: number; nx: number; ny: number }[] = [];
-        let s = 0;
-        for (let i = 0; i < src.length - 1; i++) {
-          const A = src[i], B = src[i + 1], len = Math.hypot(B[0] - A[0], B[1] - A[1]), n = Math.max(1, Math.ceil(len / 2));
+      const along0: number[] = [0];
+      for (let i = 1; i < r.p.length; i++) along0.push(along0[i - 1] + Math.hypot(r.p[i][0] - r.p[i - 1][0], r.p[i][1] - r.p[i - 1][1]));
+      const sample = (from: number, to: number, s0: number): Pt[] => {
+        // the record's points from index `from` to `to` (either way), every 2 m, at the height they're drawn
+        const out: Pt[] = [], dir = to >= from ? 1 : -1;
+        let s = s0;
+        for (let i = from; i !== to; i += dir) {
+          const A = r.p[i], B = r.p[i + dir], len = Math.hypot(B[0] - A[0], B[1] - A[1]), n = Math.max(1, Math.ceil(len / 2));
+          const ta = deckTop(A, flags[i], ground, Z0), tb = deckTop(B, flags[i + dir], ground, Z0);
           for (let k = 0; k < n; k++) {
             const f = k / n, x = A[0] + (B[0] - A[0]) * f, y = A[1] + (B[1] - A[1]) * f;
-            P.push({ x, y, s: s + len * f, top: tops[i] + (tops[i + 1] - tops[i]) * f + lift, g: ground(x, -y), nx: 0, ny: 0 });
+            out.push({ x, y, s: s + len * f, top: ta + (tb - ta) * f + lift, g: ground(x, -y), nx: 0, ny: 0 });
           }
           s += len;
         }
-        const E = src[src.length - 1];
-        P.push({ x: E[0], y: E[1], s, top: tops[tops.length - 1] + lift, g: ground(E[0], -E[1]), nx: 0, ny: 0 });
-        if (P.length < 2 || s < 3) continue;
-        for (let i = 0; i < P.length; i++) {
-          const A = P[Math.max(0, i - 1)], B = P[Math.min(P.length - 1, i + 1)], dx = B.x - A.x, dy = B.y - A.y, l = Math.hypot(dx, dy) || 1;
-          P[i].nx = -dy / l; P[i].ny = dx / l;
+        const E = r.p[to];
+        out.push({ x: E[0], y: E[1], s, top: deckTop(E, flags[to], ground, Z0) + lift, g: ground(E[0], -E[1]), nx: 0, ny: 0 });
+        for (let i = 0; i < out.length; i++) {
+          const A = out[Math.max(0, i - 1)], B = out[Math.min(out.length - 1, i + 1)], dx = (B.x - A.x) * dir, dy = (B.y - A.y) * dir, l = Math.hypot(dx, dy) || 1;
+          out[i].nx = -dy / l; out[i].ny = dx / l;
         }
+        return out;
+      };
+      for (const [a, b] of bridgeSpans(r, flags, true)) {
+        const P = sample(a, b, 0), s = P[P.length - 1].s;
+        if (P.length < 2 || s < 3) continue;
         const W = half + 0.4;    // out to the parapet's outer face, on the wider side
         // (each side its own: a parapet at the edge of its pavement, or at the kerb where there is none)
         const hs = (side: number) => (side > 0 ? hl : hr), Ws = (side: number) => hs(side) + 0.4;
-        const at = (q: typeof P[number], o: number, h: number) => [q.x + q.nx * o, h, -(q.y + q.ny * o)];
-        const out = (q: typeof P[number], side: number) => [q.nx * side, 0, -q.ny * side];
-        const along = (q: typeof P[number]) => q.s / 2.5;
+        const at = (q: Pt, o: number, h: number) => [q.x + q.nx * o, h, -(q.y + q.ny * o)];
+        const out = (q: Pt, side: number) => [q.nx * side, 0, -q.ny * side];
+        const along = (q: Pt) => q.s / 2.5;
         // where it leaves the ground at each end, and the piers between: the supports (but not
         // at an end on the edge of this square of Bath, where the bridge only carries on into the next)
         const seam = (q: { x: number; y: number }) => !core && (Math.abs(q.x - T.x0) < 0.5 || Math.abs(q.x - (T.x0 + (T.nx - 1) * T.dx)) < 0.5 || Math.abs(q.y - T.y0) < 0.5 || Math.abs(q.y - (T.y0 + (T.ny - 1) * T.dy)) < 0.5);
@@ -885,101 +921,192 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (const O of openings) { O.a = Math.max(0.6, O.a - 2); O.b = Math.min(s - 0.6, O.b + 2); }
         }
         const opened = (sp: number) => openings.some((O) => sp > O.a - 1.5 && sp < O.b + 1.5);
-        // (a short span is one arch, with nothing standing in the water or the road under it)
+        // what passes under: no pier stands in it
+        const s0 = along0[a], kept = (r.uo ?? []).map(([u0, u1]) => [u0 - s0, u1 - s0]);
+        const free = (sp: number) => !opened(sp) && !kept.some(([u0, u1]) => sp > u0 - 1 && sp < u1 + 1);
         const clear = Math.max(...P.map((q) => q.top - DECK - q.g));
-        if (clear > 1.5 && s >= 2 * PIER_GAP) for (let k = 1; k < Math.ceil(s / PIER_GAP); k++) if (!opened((s * k) / Math.ceil(s / PIER_GAP))) supports.push((s * k) / Math.ceil(s / PIER_GAP));
+        const gap = KINDS[kind].gap, n = Math.ceil(s / gap);
+        if (clear > 1.5 && n > 1 && s > gap * 1.4) for (let k = 1; k < n; k++) {
+          // a pier where it should be, or as near as it can stand clear of what passes under
+          const want = (s * k) / n;
+          let sp: number | null = null;
+          for (let d = 0; d <= gap / 3 && sp === null; d += 1) for (const c of [want - d, want + d]) if (sp === null && c > 3 && c < s - 3 && free(c)) sp = c;
+          if (sp !== null) supports.push(sp);
+        }
         supports.sort((p, q) => p - q);
-        const lerpAt = (sp: number) => {
+        const lerpAt = (sp: number): Pt => {
           let i = 0;
           while (i < P.length - 2 && P[i + 1].s < sp) i++;
           const A = P[i], B = P[i + 1], f = Math.min(1, Math.max(0, (sp - A.s) / ((B.s - A.s) || 1)));
           return { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, s: sp, top: A.top + (B.top - A.top) * f, g: Math.min(A.g, B.g), nx: A.nx, ny: A.ny };
         };
-        // arches: between supports, where the deck stands high enough above the ground for one
+        // arches (stone only): between supports, where the deck stands high enough above the ground for one
         const arches: { a: number; b: number; spring: number; rise: number }[] = [];
-        for (let k = 0; k < supports.length - 1; k++) {
-          const a = supports[k] + 1.4, b = supports[k + 1] - 1.4, span = b - a;
-          if (span < 4) continue;
-          const mid = lerpAt((a + b) / 2), low = Math.min(...P.filter((q) => q.s >= a && q.s <= b).map((q) => q.g), mid.g);
-          const rise = Math.min(span * 0.45, mid.top - DECK - low - 0.6);
-          if (rise >= 1 && !openings.some((O) => a < O.b && b > O.a)) arches.push({ a, b, spring: mid.top - DECK - rise, rise });
-        }
-        // over the canal, the arch springs from the banks (or from the abutment, where the span
-        // ends before the bank does) and rises as high as the deck lets it
-        for (const O of openings) {
-          const mid = lerpAt((O.a + O.b) / 2), spring = Math.min(O.bank, lerpAt(O.a).top - DECK, lerpAt(O.b).top - DECK);
-          arches.push({ a: O.a, b: O.b, spring, rise: Math.max(0, Math.min((O.b - O.a) * 0.45, mid.top - DECK - 0.15 - spring)) });
+        if (stone) {
+          for (let k = 0; k < supports.length - 1; k++) {
+            const a = supports[k] + 1.4, b = supports[k + 1] - 1.4, span = b - a;
+            if (span < 4) continue;
+            const mid = lerpAt((a + b) / 2), low = Math.min(...P.filter((q) => q.s >= a && q.s <= b).map((q) => q.g), mid.g);
+            const rise = Math.min(span * 0.45, mid.top - DECK - low - 0.6);
+            if (rise >= 1 && !openings.some((O) => a < O.b && b > O.a)) arches.push({ a, b, spring: mid.top - DECK - rise, rise });
+          }
+          // over the canal, the arch springs from the banks (or from the abutment, where the span
+          // ends before the bank does) and rises as high as the deck lets it
+          for (const O of openings) {
+            const mid = lerpAt((O.a + O.b) / 2), spring = Math.min(O.bank, lerpAt(O.a).top - DECK, lerpAt(O.b).top - DECK);
+            arches.push({ a: O.a, b: O.b, spring, rise: Math.max(0, Math.min((O.b - O.a) * 0.45, mid.top - DECK - 0.15 - spring)) });
+          }
         }
         const archAt = (sp: number) => {
           for (const A of arches) if (sp >= A.a && sp <= A.b) return A.spring + A.rise * Math.sqrt(Math.max(0, 1 - ((sp - (A.a + A.b) / 2) / ((A.b - A.a) / 2)) ** 2));
           return null;
         };
         // where another bridge's deck runs alongside at the same height (the other carriageway of a
-        // dual carriageway, each built as its own bridge), there's no parapet between the two (looked
-        // for past the wider side's parapet, as this deck's own reach is the wider side's either way)
-        const beside = (q: typeof P[number], side: number) => {
-          const x = q.x + q.nx * side * (W + 1.2), y = q.y + q.ny * side * (W + 1.2), h = map.deck(x, -y, q.top + 0.5);
+        // dual carriageway, each built as its own bridge), there's no parapet between the two
+        const beside = (q: Pt, side: number) => {
+          const x = q.x + q.nx * side * (Ws(side) + 1.2), y = q.y + q.ny * side * (Ws(side) + 1.2), h = map.deck(x, -y, q.top + 0.5);
           return h !== null && Math.abs(h - q.top) < 1.2;
         };
         const open = [1, -1].map((side) => P.filter((q) => beside(q, side)).length > P.length / 2);
+        const sideCol = stone ? STONE : kind === "foot" ? PLATE : CONCRETE;
         for (let i = 0; i < P.length - 1; i++) {
           const A = P[i], B = P[i + 1], uA = along(A), uB = along(B);
           const underA = A.top - DECK, underB = B.top - DECK;
           for (const side of [1, -1]) {
-            if (open[side > 0 ? 0 : 1]) continue;
-            // the parapet: outer face, inner face and coping
-            const w = side * Ws(side), h = side * hs(side);
-            facing(g, at(A, w, A.top), at(B, w, B.top), at(B, w, B.top + PARAPET), at(A, w, A.top + PARAPET), out(A, side),
-              [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
-            facing(g, at(A, h, A.top), at(B, h, B.top), at(B, h, B.top + PARAPET), at(A, h, A.top + PARAPET), out(A, -side),
-              [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
-            facing(g, at(A, h, A.top + PARAPET), at(B, h, B.top + PARAPET), at(B, w, B.top + PARAPET), at(A, w, A.top + PARAPET), [0, 1, 0],
-              [uA, 0], [uB, 0], [uB, 0.2], [uA, 0.2], COPING);
+            const w = side * Ws(side);
             // the deck's side, and the spandrel down to the arch where there is one
+            // (a stone bridge's side goes down to the bank beside its abutments, where no arch springs)
             const arA = archAt(A.s), arB = archAt(B.s);
-            const footA = arA ?? (opened(A.s) ? underA : Math.min(underA, A.g - 0.5)), footB = arB ?? (opened(B.s) ? underB : Math.min(underB, B.g - 0.5));
+            const solid = (sp: number) => stone && !opened(sp) && supports.some((u) => Math.abs(u - sp) < 1.6);
+            const footA = arA ?? (solid(A.s) ? Math.min(underA, A.g - 0.5) : underA), footB = arB ?? (solid(B.s) ? Math.min(underB, B.g - 0.5) : underB);
             if (A.top - A.g > 0.3 || B.top - B.g > 0.3)
               facing(g, at(A, w, footA), at(B, w, footB), at(B, w, B.top), at(A, w, A.top), out(A, side),
-                [uA, (footA - A.top) / 2.5], [uB, (footB - B.top) / 2.5], [uB, 0], [uA, 0], STONE);
+                [uA, (footA - A.top) / 2.5], [uB, (footB - B.top) / 2.5], [uB, 0], [uA, 0], sideCol);
           }
           // the underside: the arch's barrel, or the flat soffit of the deck
           const arA = archAt(A.s), arB = archAt(B.s);
           if (arA !== null && arB !== null)
             facing(g, at(A, -Ws(-1), arA), at(B, -Ws(-1), arB), at(B, Ws(1), arB), at(A, Ws(1), arA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
           else if (A.top - A.g > 0.6 || B.top - B.g > 0.6)
-            facing(g, at(A, -Ws(-1), underA), at(B, -Ws(-1), underB), at(B, Ws(1), underB), at(A, Ws(1), underA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
+            facing(g, at(A, -Ws(-1), underA), at(B, -Ws(-1), underB), at(B, Ws(1), underB), at(A, Ws(1), underA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], stone ? SOFFIT : UNDERSIDE);
         }
-        // the parapets' ends
-        for (const [q, dir] of [[P[0], -1], [P[P.length - 1], 1]] as const) {
-          if (seam(q)) continue;
-          const fwd = [-q.ny * dir, 0, -q.nx * dir];
-          for (const side of [1, -1])
-            facing(g, at(q, side * hs(side), q.top), at(q, side * Ws(side), q.top), at(q, side * Ws(side), q.top + PARAPET), at(q, side * hs(side), q.top + PARAPET), fwd,
-              [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], STONE);
+        // the parapets, run on along each approach while the road stands above the ground beside
+        // it (an embankment), until it meets the bank or a street joining it
+        const approach = (from: number, to: number, side: number, start: Pt) => {
+          if (from === to || seam(start)) return [] as Pt[];
+          const Q = sample(from, to, 0).slice(1), got: Pt[] = [];
+          for (const q of Q) {
+            if (q.s > 15) break;
+            const o = Ws(side) + 0.4, x = q.x + q.nx * o * side, y = q.y + q.ny * o * side;
+            if (q.top - ground(x, -y) < 0.5 || onOtherStreet(r, x, y)) break;
+            got.push(q);
+          }
+          return got;
+        };
+        for (const side of [1, -1]) {
+          if (open[side > 0 ? 0 : 1]) continue;
+          const back = approach(a, 0, side, P[0]).reverse(), on = approach(b, r.p.length - 1, side, P[P.length - 1]);
+          for (const q of back) q.s = -q.s;
+          for (const q of on) q.s += s;
+          // (a truss stands over the span only: its approaches have a beam bridge's railing)
+          if (kind !== "truss") parapet([...back, ...P, ...on], side, P[0].s, s, kind);
+          else {
+            parapet(P, side, P[0].s, s, kind);
+            for (const A of [[...back, P[0]], [P[P.length - 1], ...on]]) if (A.length > 1) parapet(A, side, P[0].s, s, "beam");
+          }
         }
-        // the supports: a block from the deck's underside down into the ground
+        function parapet(run: Pt[], side: number, sa: number, sb: number, kind: string) {
+          const stone = kind === "arch";
+          const w = side * Ws(side), h = side * hs(side);
+          for (let i = 0; i < run.length - 1; i++) {
+            const A = run[i], B = run[i + 1], uA = along(A), uB = along(B), onDeck = A.s >= sa && B.s <= sb;
+            // on the approach, the wall's outer face goes down to the ground beside it
+            if (!onDeck) {
+              const gA = ground(...([A.x + A.nx * w, -(A.y + A.ny * w)] as [number, number])) - 0.3, gB = ground(...([B.x + B.nx * w, -(B.y + B.ny * w)] as [number, number])) - 0.3;
+              facing(g, at(A, w, gA), at(B, w, gB), at(B, w, B.top), at(A, w, A.top), out(A, side),
+                [uA, (gA - A.top) / 2.5], [uB, (gB - B.top) / 2.5], [uB, 0], [uA, 0], stone ? STONE : CONCRETE);
+            }
+            if (kind === "arch" || kind === "beam") {
+              const up = stone ? PARAPET : 0.35, col = stone ? STONE : CONCRETE;
+              facing(g, at(A, w, A.top), at(B, w, B.top), at(B, w, B.top + up), at(A, w, A.top + up), out(A, side), [uA, 0], [uB, 0], [uB, up / 2], [uA, up / 2], col);
+              facing(g, at(A, h, A.top), at(B, h, B.top), at(B, h, B.top + up), at(A, h, A.top + up), out(A, -side), [uA, 0], [uB, 0], [uB, up / 2], [uA, up / 2], col);
+              facing(g, at(A, h, A.top + up), at(B, h, B.top + up), at(B, w, B.top + up), at(A, w, A.top + up), [0, 1, 0], [uA, 0], [uB, 0], [uB, 0.2], [uA, 0.2], stone ? COPING : CONCRETE);
+            }
+          }
+          // a steel railing (on the beam's upstand), or the truss
+          if (!stone) {
+            const m = side * (Ws(side) - 0.2), base = kind === "beam" ? 0.35 : 0, H = kind === "truss" ? Math.max(2.4, Math.min(4, (sb - sa) / 12)) : 1.1;
+            const post = kind === "truss" ? 3.5 : kind === "foot" ? 1.5 : 2;
+            const rails = kind === "truss" ? [base + 0.15, H] : [0.55, 1.1];
+            for (let i = 0; i < run.length - 1; i++) {
+              const A = run[i], B = run[i + 1];
+              for (const y of rails) bar(steel, at(A, m, A.top + y), at(B, m, B.top + y), kind === "truss" ? 0.12 : 0.03, STEEL);
+            }
+            const first = Math.ceil(run[0].s / post) * post, k0 = Math.round(first / post);
+            for (let u = first, k = k0; u <= run[run.length - 1].s + 1e-6; u += post, k++) {
+              let i = 0;
+              while (i < run.length - 2 && run[i + 1].s < u) i++;
+              const A = run[i], B = run[i + 1], f = Math.min(1, Math.max(0, (u - A.s) / ((B.s - A.s) || 1)));
+              const q = { ...A, x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, top: A.top + (B.top - A.top) * f };
+              bar(steel, at(q, m, q.top + base), at(q, m, q.top + (kind === "truss" ? H : 1.12)), kind === "truss" ? 0.1 : 0.03, STEEL);
+              // a truss's diagonal to the next post, leaning alternately
+              if (kind === "truss" && u + post <= run[run.length - 1].s + 1e-6) {
+                let j = i;
+                while (j < run.length - 2 && run[j + 1].s < u + post) j++;
+                const C = run[j], D = run[j + 1], h2 = Math.min(1, Math.max(0, (u + post - C.s) / ((D.s - C.s) || 1)));
+                const q2 = { ...C, x: C.x + (D.x - C.x) * h2, y: C.y + (D.y - C.y) * h2, top: C.top + (D.top - C.top) * h2 };
+                if (k % 2) bar(steel, at(q, m, q.top + base + 0.15), at(q2, m, q2.top + H), 0.08, STEEL);
+                else bar(steel, at(q, m, q.top + H), at(q2, m, q2.top + base + 0.15), 0.08, STEEL);
+              }
+            }
+          }
+          // the ends: where it stops at the bank (or the edge of the square)
+          if (stone || kind === "beam") for (const [q, dir] of [[run[0], -1], [run[run.length - 1], 1]] as const) {
+            if (seam(q)) continue;
+            const up = stone ? PARAPET : 0.35, fwd = [-q.ny * dir, 0, -q.nx * dir];
+            facing(g, at(q, h, q.top), at(q, w, q.top), at(q, w, q.top + up), at(q, h, q.top + up), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], stone ? STONE : CONCRETE);
+          }
+        }
+        // the piers: stone across the deck under an arch bridge, slim columns under the others
         for (const sp of supports) {
-          const q = lerpAt(sp), under = q.top - DECK + 0.02, L = sp === 0 || sp === s ? 1.5 : 1.0;
-          const low = Math.min(q.g, lerpAt(Math.max(0, sp - L)).g, lerpAt(Math.min(s, sp + L)).g) - 1.5;
+          if (sp === 0 || sp === s) continue;
+          const q = lerpAt(sp), under = q.top - DECK + 0.02;
+          const low = Math.min(q.g, lerpAt(Math.max(0, sp - 1)).g, lerpAt(Math.min(s, sp + 1)).g) - 1.0;
           if (under - low < 0.5) continue;
           const fx = -q.ny, fy = q.nx;     // along the road
-          const c = [[-L, -Ws(-1)], [L, -Ws(-1)], [L, Ws(1)], [-L, Ws(1)]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
-          for (let k = 0; k < 4; k++) {
-            const A = c[k], B = c[(k + 1) % 4], mx = (A[0] + B[0]) / 2 - q.x, my = (A[1] + B[1]) / 2 - q.y;
-            facing(g, [A[0], low, -A[1]], [B[0], low, -B[1]], [B[0], under, -B[1]], [A[0], under, -A[1]], [mx, 0, -my],
-              [0, 0], [Math.hypot(B[0] - A[0], B[1] - A[1]) / 2.5, 0], [Math.hypot(B[0] - A[0], B[1] - A[1]) / 2.5, (under - low) / 2.5], [0, (under - low) / 2.5], STONE);
+          const box = (u0: number, u1: number, v0: number, v1: number) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
+          if (stone) prism(g, box(-1, 1, -Ws(-1), Ws(1)), low, under, STONE);
+          else {
+            const t = kind === "foot" ? 0.25 : 0.45, cols = kind === "foot" ? [0] : [-hr * 0.6, hl * 0.6];
+            for (const v of cols) prism(g, box(-t, t, v - t, v + t), low, under - 0.6, CONCRETE);
+            prism(g, box(-t - 0.1, t + 0.1, -Ws(-1) + 0.3, Ws(1) - 0.3), under - 0.6, under, CONCRETE);
+          }
+        }
+        // the abutments: a face across each end from the deck's underside down to the bank, its
+        // foot following the ground under it, so it never stands out where the bank falls away
+        for (const [sp, dir] of [[0, 1], [s, -1]] as const) {
+          if (!supports.includes(sp)) continue;
+          const q = lerpAt(sp), under = q.top - DECK + 0.02, fwd = [-q.ny * dir, 0, -q.nx * dir];
+          const n = Math.max(2, Math.ceil((Ws(1) + Ws(-1)) / 1.0));
+          for (let k = 0; k < n; k++) {
+            const o1 = -Ws(-1) + ((Ws(1) + Ws(-1)) * k) / n, o2 = -Ws(-1) + ((Ws(1) + Ws(-1)) * (k + 1)) / n;
+            const g1 = ground(q.x + q.nx * o1, -(q.y + q.ny * o1)) - 0.3, g2 = ground(q.x + q.nx * o2, -(q.y + q.ny * o2)) - 0.3;
+            if (under <= Math.min(g1, g2)) continue;
+            facing(g, at(q, o1, Math.min(g1, under)), at(q, o2, Math.min(g2, under)), at(q, o2, under), at(q, o1, under), fwd,
+              [o1 / 2.5, Math.min(g1, under) / 2.5], [o2 / 2.5, Math.min(g2, under) / 2.5], [o2 / 2.5, under / 2.5], [o1 / 2.5, under / 2.5], stone ? STONE : CONCRETE);
           }
         }
       }
     }
   }
   const bridgeMat: THREE.Material = S.bridgeMat ??= new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true });
+  const steelMat: THREE.Material = S.steelMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
 
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
    *  own picks out roads that carry their own heights (bridges). */
   /** The same, a few dozen roads at a time (yields between). */
   function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean, sf?: MapData["sf"]): Generator<void, THREE.Mesh[]> {
-    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo(), front: new Geo(), drive: new Geo() };
+    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo(), steel: new Geo(), front: new Geo(), drive: new Geo() };
     faceGeo = geo.bridge;
     // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
     const faced = !!sf && SURFACES;
@@ -995,7 +1122,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
       strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
-      if (own) bridgeStructures(part, geo.bridge);
+      if (own) bridgeStructures(part, geo.bridge, geo.steel);
       yield;
     }
     const out: THREE.Mesh[] = [];
@@ -1007,6 +1134,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // (thin: footpaths and pavements, with their kerbs, which a square seen from far off leaves out)
     for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k], false, k === "path" || k === "pave"); yield; }
     add(geo.bridge.build(), bridgeMat, true);
+    add(geo.steel.build(), steelMat, true);
     add(geo.front.build(), S.pathMat!, false, true);
     add(geo.drive.build(), S.driveMat!, false, true);
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
