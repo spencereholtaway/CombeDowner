@@ -701,3 +701,49 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   network went 0.990 to 0.989.
 - [ ] **Post boxes** stay at 0.722 (main 0.742): none is dropped; the two short of main were set back
   onto our pavements from where our wider carriageways put them, ending over 3 m from the mapped box.
+
+## Pedestrian streets, paving on the ground and the canal tunnel (24 October)
+
+- [ ] **Nothing guessed or listed stands between a pedestrian street and its shopfronts.** A guessed
+  boundary (front, parcel or inferred) lying at least half on a pedestrian street's ground (its
+  paving and 1.5 m beyond, `pedestrian_ground`) stands only where a mapped barrier or a lidar run is
+  along it, taking the mapped kind; the listed-front rule no longer applies there. Settling which
+  boundaries stand now runs once the streets are written, so it knows which are pedestrian. The
+  paving then reaches the shops through `pedestrian_frontage`, as nothing is left walling the
+  frontage off (Union Street's railing, New Bond Street Place's stone walls). Trade-off: the lidar
+  counts as real here, as it does everywhere else in `settle`, so a lidar run along a shopfront still
+  stands; main agreed with the lidar on these edges (379 of 819 m on 0,3 matched main against 373 m
+  real).
+- [ ] **Paving laid on the ground is cut along the ground grid** (`_ground_triangles`): a plaza's or
+  a drive's faces get a corner at every grid point inside them and along the diagonal the game splits
+  each cell on, so the grass no longer rises through broad paving (Union Street, the square by Stall
+  Street, where the game raised the grass beside a pavement up to a kerb's height). Only `drive`
+  pieces (drives and plaza paving) are cut; paths are narrow and their outline already has a point
+  every 3 m. Trade-off: 0,3's file grew 5.6 % (3.48 to 3.68 MB).
+- [ ] **No path is drawn over the canal's tunnels.** The partition's path faces along the towpath ran
+  on over the top of the Cleveland House tunnel, drawn as bare earth beside Sydney Road, though the
+  path itself is left out there (`gone`). `street_surfaces` leaves them to the ground inside
+  `canal_bores`.
+- [ ] **Listed railings on a street's edge in front of open ground stand** (`listed_open_fronts`):
+  Historic England's point for "plinth, gates, railings and overthrows to Cleveland House" lies on the
+  railings, 4 m from Sydney Road's edge and 8 m from the house, so the house-front rule missed it and
+  the edge (street against open ground, nothing guessed) drew nothing, where main's guessed garden
+  wall read as the bridge's parapet. A listed railings entry within 5 m of such an edge, with a
+  building within 15 m of it, stands along the edge within 8 m of the entry. Trade-offs: the 8 m is
+  judged, not measured; the plinth is drawn as railings, not stone, so the view shows black railings
+  where main showed a low stone wall; listed walls are left out of this rule, as their points lie
+  inside estates' walls rather than on a street (with them, wall precision on 0,3 and 1,3 fell 0.979
+  to 0.958).
+- [ ] **The dark gap beyond the kerb on Sydney Road** (st-canalbridge, bottom right) is not fixed. It
+  shows only at a grazing angle, not from above, and goes when main's Sydney Road record replaces ours
+  (not when ours loses its `w` and `pv`, nor when its two pieces are joined), so it is something the
+  game does with the street's record by the canal tunnel, not a hole in `sf`. Left for a look in the
+  game.
+- After these fixes (full write, `check_map` against the tidy run): every count is the same. The
+  scoreboard against score-final: pedestrian street paved 0.894 to 0.903 (main 0.932); wall
+  precision 0.9688 to 0.9726, fence precision 0.9500 to 0.9492, hedge precision 0.9866 to 0.9868;
+  wall recall 0.949 to 0.948, fence recall 0.918 to 0.919; plot edges unchanged (0.408 recall, 0.710
+  drawn on an edge). The fence precision dip is probably the new listed railings, which count as
+  fences. The roof and tree rows moved because this run read more lidar squares (129 against 101),
+  not because of these changes. A write needs `data/raw` linked into the worktree: without it the
+  lidar's standing grid is missing, `drop_unstood` drops nothing, and wall precision falls to 0.967.
