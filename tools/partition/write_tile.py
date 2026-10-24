@@ -211,19 +211,30 @@ def _reach(area, p, nx, ny, side, cap):
     return best
 
 
-def _clearance(houses, p, nx, ny, side, cap):
-    """How far from `p`, square to the line on `side`, the nearest house wall stands, up to `cap`."""
+def _clearance(houses, p, nx, ny, side, cap, tall=None):
+    """How far from `p`, square to the line on `side`, the nearest house wall stands, up to `cap`.
+    With `tall` (the lidar, asked only for a street with a measured width), a footprint's edge counts
+    only where something stands in it within `LIDAR_INTO` of it: an outline drawn out over an alley
+    the survey sees open does not narrow a street below what was measured on it."""
     ray = LineString([(p[0], p[1]), (p[0] + nx * side * cap, p[1] + ny * side * cap)])
     _, parts, tree = _parts_of(houses)
     best = cap
     for j in tree.query(ray):
         hit = parts[int(j)].intersection(ray)
-        if not hit.is_empty:
-            best = min(best, hit.distance(Point(p)))
+        if hit.is_empty:
+            continue
+        d = hit.distance(Point(p))
+        if tall is not None:
+            seen = next((d + s for s in np.arange(0.0, LIDAR_INTO + 0.01, 0.25)
+                         if tall(p[0] + nx * side * (d + s), p[1] + ny * side * (d + s))), None)
+            if seen is None:
+                continue
+            d = seen
+        best = min(best, d)
     return best
 
 
-def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None):
+def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
     """Re-centre a street's line on the carriageway the partition drew and give it that width.
 
     The corridor pass fitted `w` as a strip symmetric about the line, but the partition's carriageway
@@ -279,7 +290,7 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None):
         pave.append((min(pv[0], min(m[2] for m in near)) if pv[0] > 0 else 0.0,
                      min(pv[1], min(m[3] for m in near)) if pv[1] > 0 else 0.0))
     if houses is not None and not houses.is_empty:
-        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses)
+        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses, tall)
     moved = [(xy[k][0] + nrm[k][0] * shift[k], xy[k][1] + nrm[k][1] * shift[k]) for k in range(n)]
     runs, i = [], 0
     while i < n - 1:
@@ -307,10 +318,12 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None):
 
 HOUSE_SHIFT = 2.0               # metres a street's line may move to clear the buildings either side
 HOUSE_MARGIN = 0.1
+LIDAR_INTO = 1.5                # metres into a footprint the lidar is looked at for the building itself
+LIDAR_TALL = 1.5                # metres above the ground: lower than this, nothing stands there
 NARROW_LANE = 1.8               # metres: a car's width, the least a lane squeezed between two buildings is drawn
 
 
-def _between_houses(xy, nrm, shift, width, pave, houses):
+def _between_houses(xy, nrm, shift, width, pave, houses, tall=None):
     """(shift, width, pave) at each inner point: moved the least it must be for the carriageway to clear the
     houses each side, where there is room between them. Where there is not, the line is centred in the
     gap and the carriageway narrowed to it, down to `NARROW_LANE`, since the buildings are measured and
@@ -322,8 +335,8 @@ def _between_houses(xy, nrm, shift, width, pave, houses):
     def room(p, nx, ny, half):
         if houses.contains(Point(p)):
             return None
-        left = _clearance(houses, p, nx, ny, 1, reach) - HOUSE_MARGIN
-        right = _clearance(houses, p, nx, ny, -1, reach) - HOUSE_MARGIN
+        left = _clearance(houses, p, nx, ny, 1, reach, tall) - HOUSE_MARGIN
+        right = _clearance(houses, p, nx, ny, -1, reach, tall) - HOUSE_MARGIN
         return (-right + half, left - half, left, right)
 
     out, wide, paved = list(shift), list(width), list(pave)
@@ -351,7 +364,24 @@ def _between_houses(xy, nrm, shift, width, pave, houses):
     return out, wide, paved
 
 
-def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None):
+def lidar_tall(sq):
+    """Whether the lidar sees something `LIDAR_TALL` or more high at (x, y); None without the lidar."""
+    from partition.standing import ndsm
+    got = ndsm(sq)
+    if got is None:
+        return None
+    g, x0, y0 = got
+
+    def tall(x, y):
+        r, c = int(y - y0), int(x - x0)
+        if not (0 <= r < g.shape[0] and 0 <= c < g.shape[1]):
+            return True
+        v = g[r, c]
+        return bool(np.isnan(v) or v >= LIDAR_TALL)
+    return tall
+
+
+def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -419,7 +449,8 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             if fit:
-                pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area)
+                pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area,
+                                      tall if r.get("tagged") else None)
             else:
                 pieces = [(xy, ch[0][2], list(ch[0][3]))]
             for pp, ww, vv in pieces:
@@ -3434,7 +3465,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     roads = []
     for e, car, pl, pr in own:
         rec = dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=e["path"],
-                   line=e["line"], sections=e["sections"])
+                   line=e["line"], sections=e["sections"], tagged=any("width" in t for _, _, t in e.get("obs") or ()))
         roads.append(rec)
 
     # the ground every point in the tile is placed on: the terrain grid the tile carries
@@ -3477,7 +3508,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         pt = Point(x, y)
         return wet_tree is not None and any(wet_tree.geometries[int(k)].contains(pt) for k in wet_tree.query(pt))
     rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir),
-                              (water, rails + canal_lines))
+                              (water, rails + canal_lines), lidar_tall(sq))
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
