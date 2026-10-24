@@ -7,7 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shapely.geometry import LineString
 
-from partition.write_tile import _profiled, cut_under_bridges, deck_reach, ground_at, no_span_over_tunnels
+from partition.write_tile import (_profiled, deck_reach, follow_laid_ground, ground_at, lay_ground, no_span_over_tunnels,
+                                  settle_on_laid_ground)
 from structures import canal_bores
 
 
@@ -24,7 +25,7 @@ class Towpath(unittest.TestCase):
         seg = [(float(x), 5.0) for x in range(0, 41, 4)]
         whole = LineString(seg)
         prof = dict(z=[10.4] * 11, span=[], deck=[], bored=[], dip=[], tow=list(range(11)), gone=[])
-        (pts, _), = _profiled(seg, whole, prof, flat(9.0))
+        (pts, _, _, _), = _profiled(seg, whole, prof, flat(9.0))
         self.assertTrue(all(abs(q[2] - 10.4) < 0.05 for q in pts))
 
     def test_a_towpath_through_a_canal_tunnel_is_left_out(self):
@@ -33,7 +34,7 @@ class Towpath(unittest.TestCase):
         prof = dict(z=[10.4] * 11, span=[], deck=[], bored=[], dip=[], tow=[], gone=[4, 5, 6])
         pieces = _profiled(seg, whole, prof, flat(10.4))
         self.assertEqual(len(pieces), 2)
-        self.assertTrue(all(not 14 < q[0] < 26 for pts, _ in pieces for q in pts))
+        self.assertTrue(all(not 14 < q[0] < 26 for pts, _, _, _ in pieces for q in pts))
 
     def test_the_canals_tunnels_are_found_portal_to_portal(self):
         p = [[x, 0, 3.0, 0, 0, 0, 1 if 20 <= x <= 60 else 0] for x in range(0, 81, 10)]
@@ -58,16 +59,40 @@ class Decks(unittest.TestCase):
         deck_reach([street, rider])
         self.assertAlmostEqual(street["dk"], 5.3)
 
-    def test_the_ground_is_cut_to_a_path_buried_under_a_bridge(self):
+    def test_the_ground_is_dug_for_a_path_dipped_under_a_bridge(self):
         T = grid(20.0)
         bridge = dict(c="residential", n="", w=6, pv=[1.5, 1.5],
-                      p=[[60, 10, 21.0], [60, 50, 21.0, 1], [60, 70, 21.0, 1], [60, 110, 21.0]])
-        path = dict(c="cycleway", n="", w=2.5, p=[[20, 60, 17.0], [60, 60, 17.0], [100, 60, 17.0]])
-        cut_under_bridges(T, [bridge, path])
-        self.assertLess(ground_at(T, 60, 60, split=False), 17.5)
-        self.assertAlmostEqual(ground_at(T, 60, 10, split=False), 20.0)
-        self.assertAlmostEqual(ground_at(T, 20, 60, split=False), 20.0)
+                      p=[[60, 10, 20.0], [60, 30, 20.0], [60, 50, 21.0, 1], [60, 70, 21.0, 1], [60, 90, 20.0], [60, 110, 20.0]])
+        path = dict(c="cycleway", n="", w=2.5, p=[[x, 60, 17.0] for x in range(30, 91, 10)])
+        lay_ground(T, [bridge, path])
+        self.assertLess(ground_at(T, 60, 60, split=False), 17.2)
+        self.assertAlmostEqual(ground_at(T, 60, 20, split=False), 20.0)
+        self.assertAlmostEqual(ground_at(T, 0, 60, split=False), 20.0)       # (the grid's edge)
 
+    def test_a_streets_approach_keeps_its_profile_and_the_ground_is_laid_to_it(self):
+        seg = [(float(x), 60.0) for x in range(0, 113, 4)]
+        whole = LineString(seg)
+        z = [10.0 + 2.0 * min(1.0, max(0.0, (min(i, 28 - i) - 5) / 5)) for i in range(29)]
+        prof = dict(z=z, span=list(range(12, 18)), deck=[], bored=[], dip=[], tow=[], gone=[])
+        T = grid(10.0)
+        (pts, _, lay, _), = _profiled(seg, whole, prof, lambda x, y: ground_at(T, x, y, split=False))
+        self.assertEqual([round(q[2], 1) for q in pts[9:12]], [11.6, 12.0, 12.0])
+        self.assertNotIn(1, [q[3] if len(q) > 3 else 0 for q in pts[:12]])
+        road = dict(c="residential", n="", w=6, pv=[1.7, 1.7], p=pts, _lay=lay)
+        change = lay_ground(T, [road])
+        settle_on_laid_ground([road], change, lambda x, y: ground_at(T, x, y, split=False))
+        self.assertAlmostEqual(ground_at(T, 44, 60, split=False), 12.0, places=1)
+        self.assertNotIn("_lay", road)
+
+    def test_what_stood_on_the_ground_follows_it(self):
+        T = grid(20.0)
+        bridge = dict(c="residential", n="", w=6, p=[[60, 10, 20.0], [60, 30, 20.0], [60, 50, 21.0, 1], [60, 70, 21.0, 1], [60, 90, 20.0]])
+        path = dict(c="footway", n="", w=1.6, p=[[x, 60, 17.0] for x in range(30, 91, 10)])
+        change = lay_ground(T, [bridge, path])
+        tile = dict(tr=[[61.0, 60.0, 20.0, 5.0]], fx=[["bin", 10.0, 100.0, 20.0, 0.0]])
+        follow_laid_ground(tile, change)
+        self.assertLess(tile["tr"][0][2], 18.0)
+        self.assertEqual(tile["fx"][0][3], 20.0)
 
 if __name__ == "__main__":
     unittest.main()

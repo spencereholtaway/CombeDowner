@@ -645,33 +645,56 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 - [x] **A canal bridge clears the towpath by a walker's height** (2.8 m over the towpath, `least`
   out to `TOW_REACH` from the water), not only the boat over the water. Main's rule gives it 2.8 m at
   the water's edge only, which is how main's Mill Lane has 2.6 m over the towpath.
-- [ ] **Midland Road's deck runs on over the cycleway joining it**, 1.9 m above it (the one "bridge
-  without headroom" left; main has one, at Mill Lane). Its profile is the survey's, carried level
-  from the bridge, while main's tile ground there was dipped for main's road. Stopping the deck short
-  of the cycleway (`grow_marks` `forbid` for streets) left a kink at the deck's end, so it was not
-  kept.
+- [x] **Midland Road's deck stops at its bank**: with its approach kept at its profile and the
+  ground laid to it (below), the deck no longer runs on over the cycleway joining it, and the one
+  "bridge without headroom" left is gone (1 to 0; main has one, at Mill Lane).
 - [x] **Bridge decks fit our streets** (`dk`, written by `deck_reach`): the street's own width and
   its wider pavement, or out to a path riding the deck beside it if that reaches further. The game
   takes `dk` where the map gives it and main's rule (at least a default street's width) otherwise, so
   main's tiles build as before.
-- [ ] **Ground filled up to the deck under bridges.** Two causes. Main's: under a span the survey's
-  ground is kept (`PROTECT`) and a hump is cut only to 0.6 m below the deck, and a path is never
-  flattened into its ground, so a path dipped under a bridge for its headroom runs through the
-  survey's ground, which often has the bridge in it (Linear Park under Bridge Road / Claude Avenue).
-  The fix for main, as its own change: in `prep_map.py`, flatten the ground along a path's dipped
-  points (rule 3's dip) the way a road's is, lifting `PROTECT` along that path. Ours: the writer now
-  cuts the tile's ground to a path buried under a bridge (`cut_under_bridges`), but never under a
-  way at grade or the four grid corners an at-grade point reads its height from, and never raises
-  it. With a 4 m grid that leaves most short bridges uncut (8 vertices on ten squares); cutting them
-  broke deck ends instead.
-  The other cause is ours alone: our profiles are carried at the survey's height out to the bridge's
-  ends, where main's tile ground was laid to main's lower, dipped approaches (London Road junction,
-  Midland Road), so a deck end stands a metre over ground. That needs the ground laid to our own
-  roads, which the writer does not do yet.
+- [x] **The writer lays the tile's ground to our own streets and paths at their bridges**
+  (`lay_ground`, run once the streets are final and before anything is stood on the ground), by
+  `prep_map.py`'s rules: its flatten (nearest way wins, a carriageway beats another's easing), its
+  protection of the ground under a span (and the hump there cut 0.6 m under the deck) lifted along
+  every way at grade, and its blend. It replaces `cut_under_bridges`. What it lays:
+  - **A street's approach to its own bridge** keeps its profile instead of being held within 0.4 m
+    of the base tile's ground (`_approaches`), out from the deck's end until the profile comes back
+    to the ground (at most 9 points), and the ground is laid to it, so the deck's end meets the
+    ground rather than running on over ground main dipped for its own approach. An approach is let
+    go (held to the ground as before) where it would have to stop short with a step steeper than
+    0.15 (a junction whose other ways stay on the ground, a street it crosses at an angle, the
+    edge of the grid), or is a single point; and one the ground could not follow (beside another
+    street's carriageway: a dual carriageway at 4_5) is brought back within 0.4 m of the ground.
+  - **A path dipped under a bridge** (its profile's dip, or a path carried from the base tile that
+    passes under a span and lies buried within 40 m of it) has its ground dug to it, as wide as a
+    street's verge, so the ground it reads between the 4 m grid's points is the cutting's floor.
+  - The ground under a **street at grade** stays as the base tile laid it, its carriageway beating
+    any cutting beside it, and the same under the railway on the ground. A street's span runs on
+    (by up to 3 points) over ground the cutting took away from under it, as `prep_map.py` runs its
+    spans on after its flatten; a street's end shared with another record's span start rides on
+    that deck (flag 2) where its ground was dug. The towpath keeps the canal's level and is not
+    dug for. The grid's outer ring and the ground inside buildings are left alone.
+  - What the base tile stood on the ground (street items, trees, shrubs, doors, signs, landmarks,
+    bay windows, road markings, and wires with their poles) moves with it, and a path on the ground
+    goes up and down with it.
+
+  Trade-offs: streets at grade are not flattened as main flattens its own (they stay held within
+  0.4 m of the base tile's ground, as before): laying every carriageway put two streets a metre
+  apart at different heights (Bailbrook Lane's service road) on one ground, and moved the ground
+  under everything near every street for no gain. Cuttings are only as wide as the path plus 2.5 m
+  each side and stop at a street's carriageway, so at a very short bridge the cutting meets the
+  abutment in a steep face. Left (`check_map`'s crossings, and a diagnostic of every path crossing
+  under a span: 12 of 34 with no open gap before, 3 of 30 after): the cycleway under Stanier Road
+  (2.0 m of headroom: its profile dips it too little) and the footway under Warminster Road (no dip
+  in its profile at all, 1.7 m) are `structures.py`'s, not the ground's; the cycleway under Ferry
+  Lane still lies 0.7 m in the ground (not looked into).
 - After these fixes (full write, `check_map` against a7a5c17): towpath off the canal's level 466 to 2,
   way through a canal tunnel 39 to 0, bridge without headroom 4 to 1 (main 1), span sunk in the
   ground 2 to 1, road too steep 178 to 177, footpath along a pavement 486 to 484; nothing went up.
   The scoreboard is unchanged but for the road network above.
+- After laying the ground to our streets and paths (full write, `check_map` against those numbers):
+  bridge without headroom 1 to 0, bridge over nothing 1 to 0; nothing went up. (Footpath along a
+  pavement 484 to 415 and along a carriageway 6 to 0 came with the merged furniture fix, not this.)
 - Scores after the merge, against main rebuilt the same day: barriers drawn 0.967 (main 0.930),
   street width MAE 0.71 m (0.93), pavements 0.933 (0.881), plot edges drawn on a parcel edge within
   1 m 0.704 (0.347; 0.74 before the merge), flush 0.940 (0.816), building on a carriageway 124 (640),
