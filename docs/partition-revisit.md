@@ -934,3 +934,37 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   one more sunk footway span by Green Park. Too steep fell 177 to 62. In the shots, a garden fence
   runs down the bank to the water beside Bathwick Hill's canal bridge, and the Dundas basin
   cycleway's parapets run on along its ramp on to the grass.
+
+## Streets clear of buildings
+
+- [ ] **A street's line moves up to 2 m to clear the buildings either side**, after it is fitted to
+  its carriageway face, and where the gap between two buildings is narrower than the street it is
+  centred in the gap and narrowed to it, down to 1.8 m (a car's width). Its pavements stop at the
+  wall beyond them. Buildings on a carriageway 124 to 9, on a pavement 35 to 4. Of the 124, 86 sat
+  where the face was too narrow to measure, so the line was not moved at all and the 2.5 m floor
+  ran into a wall; 23 at a record's end, 5 with no face, 5 with the line through the building and
+  5 where the fit missed. Trade-off: one lane tagged 3.3 m (Oldfield Park) is now drawn 1.8 m
+  between two buildings, which is why carriageway widths within 1 m fell 0.776 to 0.769. Check
+  that traffic gets down the narrowed lanes. The 9 left are a lane through a gap of about a metre
+  (Wellsway's side lane) and a few at junction corners.
+- [ ] **A street that comes back to where it began is written as two halves.** 31 of the 35
+  buildings on a pavement were the map check laying a one-sided pavement round a loop (Minster
+  Way), which fills the loop's middle: nothing the player saw. Main splits its loops the same way.
+- [ ] **A pedestrian street is paved to the houses across a plot with nothing along its front**,
+  out to 6 m from its line, as open ground already was. Pedestrian streets paved 0.904 to 0.928
+  (main 0.932, which draws them up to 28 m wide over the gardens), pedestrian areas 0.609 to 0.611.
+  Trade-off: an unfenced front garden on a pedestrian street is now paving. Look at Miles's
+  Buildings, where the houses have real front gardens.
+- [ ] **No parked car on a bridge, the railway or the water.** A car placed along a bridge was set
+  on the ground under it, so on the line under Bellotts Road, Sydney Place and Meadow Lane (9 within
+  3 m of a track, now 0). Cars are left out of the whole outline of a bridge's deck, so a street
+  passing under a bridge has no parked cars under it either.
+- [ ] **Path widths within 1 m are 0.810 against main's 0.857 because of the default, not the
+  layout**: pass 1 gives every footway 1.8 m and every cycleway 2.5 m (`corridors.PATHW`) and
+  ignores a path's own width tag, where main uses 1.6 and 2.0. The tagged footways in the build's
+  own input have a median of 1.0 to 1.1 m. Fixing it means reading a path's width tag in
+  `once.fit_edge` and rerunning pass 1 and the city, which was not done here.
+- [ ] **"Footpath along a pavement" now counts only the stretches running along the street.** It
+  counted a path's whole length within a metre of a pavement, so every path crossing a street
+  (through both pavements) was a finding: 390 of the 415. With that, the partition has 9 against
+  main's 70; the 9 are short stretches, 5 to 7 m, where a path meets a pavement at a slant.

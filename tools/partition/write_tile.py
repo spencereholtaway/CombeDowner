@@ -3165,9 +3165,10 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
                 elif field == "tr" and clear(x, y) and not path_faces.contains(Point(x, y)):
                     keep.append(r)
                 continue
-            if clear(x, y):
+            # (a lane moved off a building can bring its edge up to a tree that stood clear of it)
+            if clear(x, y) and not in_full_road(x, y):
                 keep.append(r)
-            elif not (in_road(x, y) or on_way(x, y) or on_strip(x, y)) and (q := nudged(x, y, plant=True)):
+            elif not (in_full_road(x, y) or on_way(x, y) or on_strip(x, y)) and (q := nudged(x, y, plant=True)):
                 keep.append(at_ground(r, q))
                 moved[field] += 1
         gone[field] = len(rows) - len(keep)
