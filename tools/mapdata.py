@@ -43,9 +43,9 @@ import numpy as np
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OVERTURE = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
-# OpenStreetMap (businesses; streets' widths), the food hygiene ratings, the Land Registry
+# OpenStreetMap (businesses; streets' widths; bridges' kinds), the food hygiene ratings, the Land Registry
 # parcels and the listed railings and walls, kept whole
-OTHER = ["osm", "osm-roads", "fsa", "parcels", "listed"]
+OTHER = ["osm", "osm-roads", "osm-bridges", "fsa", "parcels", "listed"]
 # Overture properties no tool reads: where each feature came from, the road network's connectors
 # and rules, and places' contact details. Everything else is kept as it is.
 DROP = {"sources", "version", "connectors", "addresses", "websites", "socials", "phones", "emails",
