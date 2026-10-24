@@ -299,6 +299,7 @@ def main():
             inside = sum(corr[int(k)].intersection(ln).length for k in ctree.query(ln))
             if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
         fit_together(m, tag, note, f)
+        under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts)
         return found
 
     # the files are checked a few at once (each on its own), and their failures gathered in order
@@ -315,6 +316,133 @@ def main():
         for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:int(os.environ.get("SHOW", 6))]:
             print(f"           {where[0]:>8s} ({where[1]:>6},{where[2]:>6})  {what}")
     if not totals: print("  none")
+
+
+KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+GAME_RW = dict(RW, trunk=18, pedestrian=12)    # (map.ts's roadHalf table, doubled)
+
+
+def deck_sides(r):
+    """How far a bridge's deck reaches left and right of its line, as the game builds it (map.ts's
+    deckSides: `dk` where the map gives it, else the street and its pavements)."""
+    dk = r.get("dk")
+    if isinstance(dk, list) and len(dk) == 2: return dk[0], dk[1]
+    if isinstance(dk, list): return max(dk), max(dk)
+    if dk: return dk, dk
+    own = (r["w"] / 2) if r.get("w") else GAME_RW.get(r["c"], 4) / 2
+    pave = max([0] + list(r.get("pv") or [1.7, 1.7])) if r["c"] in KERBED else (0 if r.get("w") else 0.3)
+    h = max(GAME_RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED else 0.3), own + pave)
+    return h, h
+
+
+def bridge_spans(roads, marks, rail_pts, ground):
+    """Every span: (what, its points, the deck's top at each, its reach left and right, the deck's
+    depth). A span runs from the point before its first marked point to the one after its last,
+    where the game puts its abutments."""
+    spans = []
+    for r, mk in zip(roads, marks):
+        if r.get("held") or not any(v == 1 for v in mk): continue
+        p = r["p"]; k = 0
+        while k < len(p):
+            if mk[k] != 1: k += 1; continue
+            e = k
+            while e + 1 < len(p) and mk[e + 1] == 1: e += 1
+            a, z = max(0, k - 1), min(len(p) - 1, e + 1); k = e + 1
+            tops = [q[2] if mk[a + i] else ground(q[0], q[1]) for i, q in enumerate(p[a:z + 1])]
+            spans.append((f"{r['c']} {r['n']!r}", [q[:2] for q in p[a:z + 1]], tops, deck_sides(r), 0.9))
+    for tp in rail_pts:
+        k = 0
+        while k < len(tp):
+            if tp[k][3] != 1: k += 1; continue
+            e = k
+            while e + 1 < len(tp) and tp[e + 1][3] == 1: e += 1
+            a, z = max(0, k - 1), min(len(tp) - 1, e + 1); k = e + 1
+            spans.append(("railway", [q[:2] for q in tp[a:z + 1]], [q[2] for q in tp[a:z + 1]], (2.4, 2.4), 1.2))
+    return spans
+
+
+def under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts):
+    """Rule 10: what stands in the gap under each span, and whether there is a gap at all.
+
+    A span's banks are its first and last 2.5 m. The floor under it is the ground, or the water's
+    surface where it is over water. Something stands under the deck if it is inside the deck's
+    outline and its foot is more than 0.3 m below the deck's underside (0.9 m under its top, as
+    world.ts builds it; 1.2 m under the railway's, as railway.ts does)."""
+    sq = box(*m["b"])
+    wps = [w for w in m["wp"] if len(w["r"][0]) >= 3]
+    wz = [w["z"] for w in wps]
+    wtree = shapely.STRtree(water_all)
+    blds = [h for h in m["bl"] if len(h["r"][0]) >= 3]
+    homes = [Polygon(h["r"][0]) for h in blds]
+    homes = [g if g.is_valid else g.buffer(0) for g in homes]
+    htree = shapely.STRtree(homes)
+    bars = [x for x in m["br"] if len(x["p"]) > 1]
+    btree = shapely.STRtree([LineString([q[:2] for q in x["p"]]) for x in bars])
+    items = ([("tree", q[0], q[1], q[2]) for q in m["tr"]] + [("shrub", q[0], q[1], q[2]) for q in m.get("sb") or []]
+             + [("street item", q[1], q[2], q[3]) for q in m.get("fx") or [] if q[0] != "car"])
+    itree = shapely.STRtree(shapely.points(np.asarray([q[1:3] for q in items], float).reshape(-1, 2))) if items else None
+
+    def floor(x, y):
+        g = ground(x, y)
+        for w in wtree.query(Point(x, y)):
+            if water_all[int(w)].contains(Point(x, y)): g = max(g, wz[int(w)])
+        return g
+
+    for what, xy, tops, (hl, hr), depth in bridge_spans(roads, marks, rail_pts, ground):
+        line = LineString(xy)
+        L = line.length
+        if L < 3: continue
+        mid = line.interpolate(0.5, normalized=True)
+        if not sq.contains(mid): continue      # (each span is judged in the square its middle is in)
+        cum = [0.0]
+        for u, v in zip(xy, xy[1:]): cum.append(cum[-1] + math.dist(u, v))
+        top_at = lambda s: float(np.interp(s, cum, tops))
+        where = (tag, round(mid.x), round(mid.y))
+        outline = line.buffer(max(0.1, hl * 0.98), single_sided=True, cap_style=2).union(
+            line.buffer(-max(0.1, hr * 0.98), single_sided=True, cap_style=2))
+        inner = outline.difference(Point(xy[0]).buffer(2.5)).difference(Point(xy[-1]).buffer(2.5))
+        if inner.is_empty: continue
+        # the opening: the deck's clearance over its floor, along it and across it
+        clear = []
+        for s in np.arange(2.5, L - 2.49, 1.0):
+            c, d, u = line.interpolate(s), line.interpolate(min(L, s + 0.5)), line.interpolate(max(0, s - 0.5))
+            tx, ty = d.x - u.x, d.y - u.y; tl = math.hypot(tx, ty) or 1
+            nx_, ny_ = -ty / tl, tx / tl
+            under = top_at(s) - depth
+            clear.append([under - floor(c.x + nx_ * o, c.y + ny_ * o) for o in (hl * 0.8, 0, -hr * 0.8)])
+        if not clear: continue
+        best = max(max(c) for c in clear)
+        if best < 1.0:
+            note("10 no open gap under a bridge", 1.0 - best, where, f"{what} {L:.0f} m, at most {best:.1f} m clear")
+        elif what != "railway":     # (a viaduct's run crosses its embankments, and railway.ts builds only where it stands clear)
+            # the ground rising into the opening: a point with no room under it between two that have it
+            hump = 0.0
+            for o in range(3):
+                col = [c[o] for c in clear]
+                for i in range(1, len(col) - 1):
+                    if col[i] < 0.3 and max(col[:i]) > 1.5 and max(col[i + 1:]) > 1.5: hump = max(hump, 0.3 - col[i])
+            if hump > 0: note("10 ground in the gap under a bridge", hump, where, f"{what} {L:.0f} m")
+        # what stands in it
+        def under_deck(x, y, foot):
+            return foot < top_at(line.project(Point(x, y))) - depth - 0.3
+        for j in btree.query(inner):
+            bl = bars[int(j)]
+            x = LineString([q[:2] for q in bl["p"]]).intersection(inner)
+            if x.length < 1.0: continue
+            c = x.interpolate(0.5, normalized=True)
+            foot = min(bl["p"], key=lambda q: math.dist(q[:2], (c.x, c.y)))[2]
+            if under_deck(c.x, c.y, foot): note("10 wall under a bridge", x.length, (tag, round(c.x), round(c.y)), f"{bl['c']} {x.length:.0f} m under {what}")
+        # (a railway's arches may have buildings in them, and a bridge built over with shops along
+        # both sides of its deck carries them)
+        built = sum(homes[int(j)].intersection(outline).area for j in htree.query(outline))
+        if what != "railway" and built < 0.3 * outline.area:
+            for j in htree.query(inner):
+                x = homes[int(j)].intersection(inner)
+                if x.area > 2 and under_deck(x.centroid.x, x.centroid.y, blds[int(j)].get("g", -1e9)): note("10 building under a bridge", x.area, (tag, round(x.centroid.x), round(x.centroid.y)), f"{x.area:.0f} m2 under {what}")
+        if itree is not None:
+            for j in itree.query(inner, predicate="contains"):
+                kind, x, y, foot = items[int(j)]
+                if under_deck(x, y, foot): note(f"10 {kind} under a bridge", 1, (tag, round(x), round(y)), f"under {what}")
 
 
 @functools.lru_cache(maxsize=24)
