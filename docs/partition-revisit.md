@@ -911,3 +911,19 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   abutments, the parapets run on along the approach, the deck sides stopping at the underside
   away from the abutments, and the per-side standing reach. The kinds and the pier clearance need
   the map fields.
+
+## Merging Spencer's canal and bridge work
+
+- [ ] **A bridge's pieces are joined end to end before it is built** (main's `joinSpans`), and the
+  joined bridge carries every piece's `uo` stretches, moved along by where that piece starts on the
+  joined line and turned round where the piece runs the other way. Its kind (`bt`), deck reach
+  (`dk`, left and right swapped where that piece is turned round) and widths are the longest
+  piece's: the others are mostly steps or ramps at its ends. Trade-off: a bridge whose pieces are
+  mapped as different kinds is built all as one kind.
+- [ ] **Main's bridge rules ported to `structures.py`**: 2.8 m over the water under a canal bridge,
+  residential and unclassified streets no steeper than 1 in 4, half a metre to spare on a dip's
+  headroom, and a span run on a few metres past a way crossing right at its end. The pass-1
+  structures were rerun with them (`out/once-merge`, linking `out/once-tidy`'s fits). Not ported:
+  main's paths carried over a lock on its coping, the ramp down off a deck that ends in the air, and
+  digging the ground out under a dipped path (the writer's `lay_ground` does its own); check those
+  against main's once the shots have been looked at.

@@ -37,7 +37,7 @@ KERBED_RD = {"primary", "secondary", "tertiary", "residential", "unclassified", 
 NARROW = {"footway", "steps", "cycleway", "path"}
 VIADUCT = 40
 CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.8, 35.0
-CANAL_HEAD = 2.6
+CANAL_HEAD = 2.8     # metres of air over the water under a canal bridge (and enough over the towpath beside it)
 LOCK_REACH, BESIDE = 15.0, 8.0
 TOW_UP = 0.4      # the canal's banks stand this far above the water
 TOW_REACH = 6.0   # metres out from the water's edge that the towpath may run
@@ -46,7 +46,7 @@ RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, 
 SIGMA = 6.0       # metres: how far along a road its heights are evened out
 GRADE = 0.18      # the steepest a road is laid where the hill under it is gentler than that
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
-            "residential": 0.3, "unclassified": 0.3, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
+            "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
 
 
 # ---- which stretches of which street are structures --------------------------------------------
@@ -821,10 +821,22 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 under = min(near) if near else deck
                 if not solid and not 3 < line.project(x) < line.length - 3:
                     continue
+                # a bridge reaches right over what goes under it: where that crosses at its very end,
+                # its span runs on a few metres past, rather than the road coming down off its deck
+                # onto an embankment the way under runs into
+                to_a, to_b = math.dist(run[st[0]][:2], (x.x, x.y)), math.dist(run[st[-1]][:2], (x.x, x.y))
+                if min(to_a, to_b) < 5:
+                    near_i = min(range(len(run)), key=lambda i: math.dist(run[i][:2], (x.x, x.y)))
+                    step = -1 if to_a < to_b else 1
+                    end = st[0] if step < 0 else st[-1]
+                    for i in range(end, near_i + step * 2 + step, step):
+                        if 0 <= i < len(run) and i not in r["deck"]:
+                            r["span"].add(i)
+                            r["solid"].add(i)
                 if o["c"] in PATHS and line.length < VIADUCT and st[0] not in r["solid"] and abs(deck - under) < 1.0:
                     continue
                 dips.append((j, x))
-                head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.3
+                head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.5
                 dipped += ease_roads(x.x, x.y, head, own_road(k, line))
     # 3b. and under the railway's bridges and viaducts
     for track in rail_tracks:
