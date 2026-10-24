@@ -1631,10 +1631,11 @@ def pedestrian_frontage(part, peds, br=()):
     street is. The partition fits the street's corridor narrower than the gap between its buildings
     and gives the rest to plots and open ground, which left grass along Union Street.
 
-    A plot or open face wholly within `PEDESTRIAN_FRONTAGE` of the street is paved whole. Open ground
-    reaching further back (a yard behind a row, a square) is paved only to `PEDESTRIAN_HALF`, the
-    width of a shopping street, and a plot reaching further back is someone's yard and is left. A
-    face walled, fenced or hedged off from the street is left too."""
+    A plot or open face wholly within `PEDESTRIAN_FRONTAGE` of the street is paved whole. One reaching
+    further back (a yard behind a row, a square, a plot running back past its house) is paved only to
+    `PEDESTRIAN_HALF`, the width of a shopping street: with nothing standing along its front, the
+    ground before the house is the street's. A face walled, fenced or hedged off from the street is
+    left whole."""
     if not peds:
         return Polygon()
     reach = unary_union([l.buffer(PEDESTRIAN_FRONTAGE) for l, _ in peds])
@@ -1659,7 +1660,7 @@ def pedestrian_frontage(part, peds, br=()):
                 continue
         if g.intersection(reach).area >= 0.95 * g.area:
             out.append(g)
-        elif f["cls"] == "open":
+        else:
             near_edge = edge.buffer(0.1)
             out += [q for q in getattr(g.intersection(band), "geoms", [g.intersection(band)])
                     if q.geom_type == "Polygon" and q.intersects(near_edge)]
@@ -3290,8 +3291,12 @@ def car_level(x, y, a, ground):
     return across < 0.25 and mid < 0.15
 
 
-def parked_car_rows(rd, fx, br, gt, houses, ground, dv=()):
-    """The `fx` rows for parked cars, and a Counter of how many were placed and left out."""
+def parked_car_rows(rd, fx, br, gt, houses, ground, dv=(), no_parking=None):
+    """The `fx` rows for parked cars, and a Counter of how many were placed and left out.
+
+    `no_parking` is the railway, the water and the ground under and over each bridge's deck: a car
+    placed along a bridge is set on the ground beneath it, which put cars on the line under the
+    Linear Park's bridge."""
     solid = ([LineString([q[:2] for q in b["p"]]).buffer(0.15) for b in br if len(b["p"]) > 1] + list(houses)
              + [Point(f[1], f[2]).buffer(0.3) for f in fx if f[0] != "car"])
     stree = STRtree(solid) if solid else None
@@ -3306,6 +3311,8 @@ def parked_car_rows(rd, fx, br, gt, houses, ground, dv=()):
             count["walls"] += 1
         elif dtree is not None and len(dtree.query(pt, predicate="within")):
             count["gate"] += 1
+        elif no_parking is not None and no_parking.intersects(car_box(x, y, a)):
+            count["off_street"] += 1
         elif not car_level(x, y, a, ground):
             count["bank"] += 1
         else:
@@ -3561,7 +3568,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                         dv=dv, carriageway=drawn_carriageway(tile["sf"]))
     clear_under_decks(tile, gaps, gone)
     # placed after the clash pass, which would take a car for a thing standing in the road
-    cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground, dv)
+    no_parking = unary_union([g for g in (blocked_ground([], tile, rail_tracks, canal, sq),) if g is not None]
+                             + [g[0] for g in gaps])
+    cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground, dv,
+                                      None if no_parking.is_empty else no_parking)
     tile["fx"] += cars + drive_cars
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
@@ -3583,7 +3593,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         print(f"  copied: t, bl ({len(tile.get('bl') or [])}), and every decoration field but cars")
         print(f"  cars: {len(cars)} parked of {car_count['placed']} placed; left out "
               f"{car_count['walls']} touching a wall or building, {car_count['gate']} across a gate, "
-              f"{car_count['bank']} half up a bank")
+              f"{car_count['bank']} half up a bank, {car_count['off_street']} on a bridge, the railway or the water")
         if any(gone.values()) or any(moved.values()):
             print(f"  decoration where the new layout contradicts it: dropped "
                   + (", ".join(f"{k} {v}" for k, v in gone.items() if v) or "none")
