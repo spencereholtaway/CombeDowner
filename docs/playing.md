@@ -51,6 +51,9 @@ Bath's great buildings are modelled by hand:
   cast-iron lamps that light up after dark.
 - **The Empire Hotel** on Orange Grove: its domed octagonal tower, and the roofline of a castle, a
   house and a cottage.
+- **The Dundas Aqueduct** at Monkton Combe: Rennie's Bath-stone aqueduct carrying the canal over
+  the Avon on one great arch between paired Doric pilasters, with the railway through its smaller
+  arch, a deep cornice at the towpaths and balustrades at the ends. Walk the towpaths across it.
 - **Sham Castle** on Bathampton Down: Ralph Allen's folly, all front, with an arch you can walk
   through.
 - **Prior Park** above Combe Down: Allen's Palladian mansion, its giant portico looking down the
@@ -123,6 +126,49 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 - Sound: music, sound effects, background (the traffic, birds and wind round you) and voice chat volumes.
 - Reset to defaults puts them all back.
 
+### Game controllers
+
+A PS5 pad (over Bluetooth or a cable), an Xbox pad or any other the browser sees plays the whole
+game, with no mouse or keyboard. Press a button on it once the page is open so the browser sees it:
+the game says "Controller connected" (and the Controls list on the menu says so too). A PS5 or PS4
+pad works even in a browser that passes its buttons on in their own order; for a pad the game
+doesn't know it guesses, and says the buttons may be muddled. F3 shows each pad the browser sees and
+what's held on it. It shakes a little when you fire and more when you're hit.
+
+Holding the right stick right over for a moment turns you faster, so you can swing round quickly and
+still aim finely with small pushes. Once a pad's been seen, Settings (and the mines' pause menu) has
+a Controller section: look speed side to side and up and down, invert up and down, the faster turn,
+the stick's dead zone and rumble, all usable with the pad itself.
+
+You can move any button to another in Settings, Controller, Buttons: pick a row, then press the new
+button. Whatever was on that button swaps to the one you left, and getting out of a car always keeps
+a button. While you play with the pad, the prompts show the pad's buttons instead of keys.
+
+| Button | On foot | Driving |
+|---|---|---|
+| Left stick | walk (pushed right forward, run) | steer |
+| Right stick | look | look |
+| R2 | shoot (kick, bowl) | accelerate |
+| L2 | aim, held | brake and reverse |
+| Cross | jump (a ride's verb and trick) | handbrake |
+| Square | use, get in or out (E) | get out |
+| Circle | crouch, again to lie down, again to stand | driver's seat or chase camera |
+| Triangle | reload | |
+| L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
+| L3 | a ride's grind or manual (Shift) | |
+| R3, held | radio | radio |
+| D-pad | up torch, down ride, left binoculars, right mark the spot | left and right indicate |
+| Create, held | the scores | the scores |
+| Touchpad | the map | the map |
+| Options | pause | pause |
+
+On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
+change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
+A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Down the mines,
+R2 swings or shoots, L2 is the healing light, Square uses, L1 and R1 go through what you carry and
+the d-pad picks the first four. The browser still wants one click or key before it plays sound or
+holds the mouse.
+
 **The debug panel** (F3, or Debug info in the pause menu on a phone or iPad) shows where you are
 (game coordinates, latitude and longitude, OS grid reference, which way you face and which square
 you're in), the frame rate and draw calls, whether the sound is running (and any sound that went
@@ -137,7 +183,9 @@ and round again), and L steps the draw distance through 600 to 6000 m.
 **The minimap and the big map** (M, or tap the minimap) show the ground at the same detail all
 over Bath. The big map zooms with the wheel, + and −, or a pinch, and drags about. Its key says
 what everything is; click a row to hide that kind of thing on all the maps, and again to bring it
-back. Other players show as arrows in their colour, with a red ring while they're shooting; on the
+back. The squares you've cleared of the Flag Lads' flags are washed faintly green, with a pint on
+each pub you've won back, and a line in the map's corner says how much of Bath is yours; point at or tap
+a square for what you've done there. Other players show as arrows in their colour, with a red ring while they're shooting; on the
 minimap anyone out of range sits on the rim in their direction. Doors into the minigames are a
 white star in a cyan ring, and the cable car is a red and white line.
 
@@ -164,7 +212,10 @@ Rides turn up round the streets, pink on the minimap: a racing bike, a BMX, roll
 skateboard, a scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have
 it and press X (Ride) to get on or off.
 
-A and D steer, W and S speed up and slow down, and the hills are the whole game: downhill the wind
+A and D (or the left stick) steer, as in a car, and the mouse only looks about: leave it be for a
+moment, or push on, and the view comes back round to the way you're going. A pogo stick is the odd
+one out: you bounce about on it as you walk, the way you look. W and S speed up and slow down, and
+the hills are the whole game: downhill the wind
 roars and the view widens, uphill it bleeds away. Space (Jump) does each ride's move: the racing
 bike tucks, the BMX bunny hops, the skateboard ollies, the rollerblades jump, the scooter kicks for
 a burst, the pogo stick bounces (time it on landing for a perfect one) and on a trolley you hop on
@@ -219,7 +270,9 @@ Rover pulls away smartly and keeps up with anything on the road, fields, verges 
 same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
-top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
+top deck is the place to be). W and S drive and brake, A and D steer (the mouse just looks about, and
+the camera swings back behind half a second after you leave it, or as soon as you put your foot
+down), Space is the handbrake (with
 some lock on, a donut), H, the up arrow or a click is the horn, siren or chimes, and E gets out. Slow down for a corner and it turns as
 tight as a real car does; take one too fast and the front tyres squeal and run wide, scrubbing off
 speed, until you lift off or brake and the nose tucks in. The left and right arrows (◀ and ▶ on a
@@ -263,20 +316,35 @@ shoot him and he complains about that too.
 
 The Kennet and Avon Canal runs round the east of the map, from the Avon at Widcombe up the six
 locks of the Widcombe flight, through Sydney Gardens' tunnels, past Bathampton and Claverton and
-over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. The canal cuts
+over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin leaving it in a
+wide basin at the end of the aqueduct, room to pass and turn round. The canal cuts
 through the land as it was built to, whatever the hillside does: stone coping along the water's
 edge, then a level bank on each side, the towpath on one of them, and a grass verge, or a retaining
 wall where the ground beyond climbs into a cutting or drops away (above the railway at Bathwick),
 down or up to the ground. The towpath stays level with the water's coping, going under the bridges
 rather than up to them, and through both Sydney Gardens tunnels on a ledge beside the water: you
-can walk through on it, and see from one portal to the other; the streets over the tunnels run
-over the top on the tunnels' own cover. Below each lock its stone walls run on past the bottom gates, and the towpath
+can walk through on it, and see from one portal to the other. Each tunnel is buried in its hill,
+which closes over the arch and meets the top of each stone portal, with the cutting's walls
+rising to meet it; the streets over the tunnels run over the top. Below each lock its stone walls run on past the bottom gates, and the towpath
 climbs gently beside them on flagstones to the top of the chamber, the banks carrying on under the
-lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks work:
+lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks are Bath
+stone, like the bridges; a footbridge over a lock's gates rests on its walls, and a path along a
+lock runs down its paving beside the water. Woods along the canal stop at its banks, so nothing
+hangs low over the water. The boats moored along the banks are where the survey saw boats
+moored (the long rows at Bathampton, Darlington Wharf, Claverton and below Bathwick). The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
-empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
-at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers
-slowly, so steer early and straighten early.
+empties. Narrowboats chug along, leaving a wake that spreads out to the banks, and wait at each lock. Hop aboard to ride on the roof, or press E
+at the stern to take the tiller: W and S set the throttle, A and D put the tiller over, H or ↑ rings
+the boat's little bell (Fire on a touch screen), and ← and → wave to people on the bank with your
+left or right hand (◀ ▶ on a touch screen). It answers
+slowly, so steer early and straighten early. Your view turns with the boat, and you can look about
+with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) swaps the
+back deck for a chase camera high up behind, to see the whole boat, yourself at the tiller, and the cut ahead. Any boat moored by the bank is yours too: press E at
+its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). At the
+tiller you're above it all: no naughty boy, team or Flag Lad will come for you or lay a finger on
+you. Every
+bridge clears a boat's roof; the steerer ducks under the low ones, and if you're stood up on the
+roof a low bridge knocks you into the cut, so lie flat (Z) to go under.
 
 ### Trains and the cable car
 
@@ -553,8 +621,8 @@ for the low ones, turn to shred, and everyone nearby hears your solo.
 
 Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Now and
 then a ball turns up on one (a white dot on the map): a penalty or a shot from the edge of the box,
-a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim, W and S
-set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
+a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim (a tap for a
+fine nudge, hold to swing round quickly), W and S set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
 allow for. Score and a prize lands: Bucks Fizz, a sniper rifle, rounds, or Lucozade, which doubles
 your damage for 30 seconds. Then the telly takes over, with replays in letterbox and slow motion.
 
@@ -634,7 +702,7 @@ and some arrive in a Nova. Get spotted and they chase you: faster than a walk, s
 sprint, and they give up if you get away or out of sight. If they catch you they hit you.
 
 Nobody dies. Splat one enough and he goes over, then picks himself up and legs it, far faster than
-you can run, shouting something on his way, and fades away once he's well off: he's had enough,
+you can run, shouting something on his way in a voice gone high with fright, and fades away once he's well off: he's had enough,
 that's all. The same goes for the teams and the Flag Lads. Hit one with a car and he's sent
 sprawling to the side, then gets up and runs off square to the way you were going.
 

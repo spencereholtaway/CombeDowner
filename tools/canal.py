@@ -32,9 +32,12 @@ centre and heights in metres above sea level:
   (the water between them is the lock's own width)}.
 - tunnels: {"n": name, "a": [x, y], "b": [x, y], "tw": the towpath's side through it, 1 left
   (looking from the run's start), -1 right, 0 none} portal to portal.
-- moor: boats moored along the bank, [x, y, angle (radians, east is 0, north a quarter turn), length, paint].
+- moor: boats moored along the bank, [x, y, angle (radians, east is 0, north a quarter turn), length, paint]:
+  where the lidar saw boats moored (data/<map>/moorings.json, tools/moorings.py), or else in rows
+  here and there on the long pound.
 """
 import json, math, os, random, sys
+from collections import defaultdict
 import numpy as np
 import shapely
 from shapely.geometry import shape, Point, LineString
@@ -82,6 +85,9 @@ STEP = 4.0                 # metres between points along the water
 TUNNEL_HALF = 2.6          # half a tunnel's width of water
 AQUEDUCT = 3.0             # metres the ground drops below the water for the canal to be on an aqueduct
 SPAN = 16.0                # metres an aqueduct's arches span, at least
+BASIN_HALF, BASIN_REACH = 14.0, 26.0   # a junction's basin: the water's half width at the junction, and how far out the stretches widen into it
+AQUEDUCT_HALF = 2.8        # half the water's width in an aqueduct's trough, at most (landmarks/dundas.ts)
+REACH_ON, CLEAR_ON = 6, 6.0   # an aqueduct runs on up to this many points to take in a railway or road passing under the canal this close
 TAIL = 2.2                 # how far a lock's walls run past each pair of gates (canal.ts)
 WING = 6.0                 # below a lock, its wing walls and the towpath beside them come down a metre in this many
 WIDEN = 0.25               # how fast the water may narrow or widen along the canal, metres each side a metre
@@ -272,8 +278,15 @@ def main():
             j = i
             while j + 1 < len(p) and low[j + 1]: j += 1
             a, b = max(0, i - 1), min(len(p) - 1, j + 1)
+            # and on over a railway or a road passing under the canal just beyond where the survey's
+            # ground comes up (the survey reads the aqueduct's own end as ground): it goes under
+            # the aqueduct's last arch, not into the canal's bank
+            while a > 0 and a > i - 1 - REACH_ON and under.distance(Point(p[a - 1][0], p[a - 1][1])) < CLEAR_ON: a -= 1
+            while b < len(p) - 1 and b < j + 1 + REACH_ON and under.distance(Point(p[b + 1][0], p[b + 1][1])) < CLEAR_ON: b += 1
+            if a > 0 and under.distance(Point(p[a][0], p[a][1])) < CLEAR_ON: a -= 1
+            if b < len(p) - 1 and under.distance(Point(p[b][0], p[b][1])) < CLEAR_ON: b += 1
             if b - a >= 2:
-                for q in p[a:b + 1]: q[6] |= 2
+                for q in p[a:b + 1]: q[6] |= 2; q[2] = min(q[2], AQUEDUCT_HALF)     # (the trough is narrower than the cut either side)
                 # piers between the arches, about SPAN apart, moved off anything passing underneath
                 last = a
                 for t in range(a + 1, b):
@@ -282,6 +295,30 @@ def main():
                         last = t
                 print(f"  aqueduct at {p[(a + b) // 2][:2]}: {(b - a) * STEP:.0f} m, {sum(1 for q in p[a:b + 1] if q[6] & 4)} piers, {lv - min(q[3] for q in p[a:b + 1]):.1f} m up")
             i = j + 1
+
+    # ---- junctions: a basin where three stretches meet ------------------------------------------
+    # Where the canal branches (the Somerset Coal Canal leaving the Kennet and Avon at Dundas) it
+    # opens out into a basin, wide open water where boats pass and turn, not three channels meeting
+    # at a point: each stretch widens out over its last BASIN_REACH metres to BASIN_HALF at the
+    # junction, their waters running into one another (works.ts gives the water there priority over
+    # any stretch's bank). An aqueduct's trough stays as it is.
+    jends = defaultdict(list)
+    for i, r in enumerate(runs):
+        for e in (0, -1): jends[(round(r["p"][e][0]), round(r["p"][e][1]))].append((i, e))
+    lock_ends = {(round(x), round(y)) for lk in locks for x, y in (lk["lo"], lk["hi"])}
+    for spot, here in jends.items():
+        # (a real branch, every stretch a length of canal, not a side pound between locks)
+        if len(here) < 3 or spot in lock_ends or any(sum(math.dist(a[:2], b[:2]) for a, b in zip(runs[i]["p"], runs[i]["p"][1:])) < 100 for i, _ in here): continue
+        node = runs[here[0][0]]["p"][here[0][1]][:2]
+        for i, e in here:
+            p = runs[i]["p"]
+            for q in (p if e == 0 else reversed(p)):
+                d = math.dist(q[:2], node)
+                if d >= BASIN_REACH: break
+                if q[6] & 3: continue
+                f = 1 - d / BASIN_REACH; f = f * f * (3 - 2 * f)
+                q[2] = r1(max(q[2], q[2] + (BASIN_HALF - q[2]) * f))
+        print(f"  basin at the junction at {[r1(v) for v in node]}")
 
     # ---- the banks: which side the towpath is on, and how wide each bank is ---------------------
     # The canal is laid as it was built, not as the survey's ground happens to lie: each side of the
@@ -397,7 +434,33 @@ def main():
     near_avoid = unary_union([p.buffer(70) for p in avoid] + ([crossings.buffer(25)] if crossings is not None and not crossings.is_empty else []))
     rnd = random.Random(1810)
     moor = []
-    for k in keep:
+    # where the lidar saw boats moored (tools/moorings.py), if it's been looked at for this map:
+    # each stretch filled with boats nose to tail, from the long pound's levels or any other
+    seen = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", map_id, "moorings.json")
+    if os.path.exists(seen):
+        for x0, y0, x1, y1, side in json.load(open(seen)):
+            mid = Point((x0 + x1) / 2, (y0 + y1) / 2)
+            k = min(keep, key=lambda k: chains[k].distance(mid))
+            c, pts = chains[k], runs[index[k]]["p"]
+            if c.distance(mid) > 8: continue
+            d0, d1 = sorted((c.project(Point(x0, y0)), c.project(Point(x1, y1))))
+            # (the side as the chain runs, which may be the other way from x0, y0 to x1, y1)
+            if c.project(Point(x0, y0)) > c.project(Point(x1, y1)): side = -side
+            d = d0
+            while d1 - d >= 6.5:
+                room = d1 - d + 1.0
+                L = rnd.choice([v for v in (21, 20, 18, 17, 15, 12) if v <= room] or [round(min(room, 10.0), 1)])
+                i0 = int(d / c.length * (len(pts) - 1))
+                half = pts[min(len(pts) - 1, i0)][2]
+                m, a, b = c.interpolate(d + L / 2), c.interpolate(d), c.interpolate(d + L)
+                ang = math.atan2(b.y - a.y, b.x - a.x)
+                off = side * (half - 1.15)
+                nx, ny = -math.sin(ang), math.cos(ang)
+                if rnd.random() < 0.5: ang += math.pi
+                moor.append([r1(m.x + nx * off), r1(m.y + ny * off), round(ang, 3), L, rnd.randrange(PAINTS)])
+                d += L + rnd.uniform(0.6, 1.5)
+        print(f"moorings: {len(moor)} boats where the lidar saw them moored")
+    for k in (keep if not moor else []):
         if abs(level[k] - level0) > 0.01: continue
         c, pts = chains[k], runs[index[k]]["p"]
         d = 40.0

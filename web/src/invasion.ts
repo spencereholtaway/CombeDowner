@@ -53,8 +53,8 @@
 // pages), confetti and a moment of slow-motion when you clear a square, and a callout for shots
 // from a ride or mid-grind.
 //
-// The flags you shoot and the squares you clear go on your map (yourmap.ts), and the day's pubs,
-// with the Gaffer and how close each one came, into tomorrow's paper (paper.ts). The "out" message
+// The flags you shoot and the squares you clear are kept as yours (yours.ts), shown on the big map,
+// and the day's pubs, with the Gaffer and how close each one came, go into tomorrow's paper (paper.ts). The "out" message
 // carries those extras; older pages ignore them.
 //
 // The Flag Lads hold off while the room is busy: when every player still up is on a job, a race, a
@@ -95,7 +95,7 @@ import { show } from "./show";
 import { FlagJuice } from "./flagjuice";
 import { missionActive, missionStage } from "./missionscreens";
 import * as Paper from "./paper";
-import * as Yours from "./yourmap";
+import * as Yours from "./yours";
 
 /** What the game lends the invasion. */
 export interface InvasionWorld {

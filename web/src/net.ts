@@ -14,7 +14,7 @@ import type { Room, MessageAction } from "trystero";
 
 export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf", "tfw", "tfx", "tfp", "vk", "bd", "bhit", "cn", "cnu", "trh",
   "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver", "mk", "qe", "ow", "bv",
-  "dk", "dg", "clk", "ldr", "lds", "gtr", "wd", "wdq", "bl", "scr", "pl", "so", "sd", "sg", "no"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
+  "dk", "dg", "clk", "ldr", "lds", "gtr", "wd", "wdq", "bl", "scr", "pl", "so", "sd", "sg", "no", "bel"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 
@@ -130,6 +130,7 @@ class TrysteroNet implements Net {
   private actions = new Map<MessageType, MessageAction<any>>();
   private handlers = new Map<MessageType, Handler[]>();
   private present = new Set<string>();
+  private met = new Set<string>();                    // everyone who's ever been linked in this room
   private closed = false;
   private toldOld = false;
   private toldBehind = false;
@@ -160,11 +161,14 @@ class TrysteroNet implements Net {
   constructor(code: string) {
     this.room = joinRoom({ appId: APP_ID, turnConfig: TURN, relayConfig: { urls: RELAYS } }, code, {
       // Trystero tries several times and reports every failed try, even when a later one gets
-      // through. So only say so if that player still isn't here after a few more seconds.
+      // through. So only say so if that player still isn't here after a few more seconds. And only
+      // about someone who never got in: a player we've already been playing with is linking up
+      // again after a hiccup (often just after a train ride, when they're in another town and we
+      // can't see them anyway), and if they really have gone the game says they've left.
       onJoinError: (d) => {
-        if (d.peerId && this.present.has(d.peerId)) return;
+        if (d.peerId && (this.present.has(d.peerId) || this.met.has(d.peerId))) return;
         setTimeout(() => {
-          if (this.closed || (d.peerId && this.present.has(d.peerId))) return;
+          if (this.closed || (d.peerId && (this.present.has(d.peerId) || this.met.has(d.peerId)))) return;
           this.onError("Couldn't connect to a player. Their network may block direct connections.");
         }, 10000);
       },
@@ -185,6 +189,7 @@ class TrysteroNet implements Net {
     };
     this.room.onPeerJoin = (id) => {
       this.present.add(id);
+      this.met.add(id);
       this.send("ver", BUILD, id);
       setTimeout(() => { if (!this.closed && this.present.has(id) && !versions.has(id)) this.behind(); }, 10000);
       this.onJoin(id);

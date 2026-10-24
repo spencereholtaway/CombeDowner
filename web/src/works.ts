@@ -23,7 +23,7 @@
 //
 // Nothing here goes over the network: every player builds the same banks from the same canal file.
 import * as THREE from "three";
-import type { CanalData } from "./canal";
+import { lockAt, type CanalData } from "./canal";
 
 const UP = 0.4;          // the coping and the banks stand this far above the water
 const BED = 1.2;         // the bed is this far below it
@@ -34,6 +34,7 @@ const LOCK_PAVED = 2.15 + 1.2 + 4.5 + 0.3;   // and its coping and paving reach 
 const DECK = 0.9;         // a bridge's deck, top to underside (world.ts)
 const WALL_STEP = 0.5;   // a wall taller than this above the bank stops you walking up it
 const APRON = 3;         // how far out the apron lies under the ground beyond the banks' edge (metres, one row a metre)
+const OVERLAP = 0.3;      // a stretch reaches this far into the next, past the line across they share
 const FAR = 10;          // how far inside or outside a grid point is counted, at most
 const WATER = 2.6;       // half the water's width in a tunnel (tools/canal.py, canal.ts)
 const LEDGE = 1.3;       // the towpath's ledge through a tunnel
@@ -61,7 +62,6 @@ interface Bore { ax: number; ay: number; bx: number; by: number; len: number; lv
 interface Seg {
   a: Station; b: Station; len: number; ux: number; uy: number;
   capA: boolean; capB: boolean;     // it stops at that end (a lock, a tunnel's portal, the end of the canal)
-  boreA: boolean; boreB: boolean;   // at a tunnel's portal
 }
 
 export interface Grid { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number }
@@ -83,7 +83,7 @@ export class CanalWorks {
   /** under: the lowest bridge deck (or road on one's approach) over data (x, y), above sea level,
    *  or null: the banks' walls stand no higher than its underside, so a road over the canal
    *  crosses clear of them. */
-  constructor(canal: CanalData, readonly G: Grid, ground: (x: number, y: number) => number, under?: (x: number, y: number) => number | null) {
+  constructor(private readonly canal: CanalData, readonly G: Grid, ground: (x: number, y: number) => number, under?: (x: number, y: number) => number | null) {
     const x0 = G.x0, y0 = G.y0, x1 = G.x0 + (G.nx - 1) * G.dx, y1 = G.y0 + (G.ny - 1) * G.dy;
     // beside a lock, its walls, coping and paving stand on the canal's banks (canal.ts): the banks
     // run on right up to it and alongside it, just under the paving's height (coming down with its
@@ -154,7 +154,7 @@ export class CanalWorks {
         if (len < 0.05) continue;
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         if (mx < x0 - 20 || mx > x1 + 20 || my < y0 - 20 || my > y1 + 20) continue;
-        this.segs.push({ a, b, len, ux: (b.x - a.x) / len, uy: (b.y - a.y) / len, capA: !st[k - 1], capB: !st[k + 2], boreA: k > 0 && !!(p[k - 1][6] & 1), boreB: k + 2 < n && !!(p[k + 2][6] & 1) });
+        this.segs.push({ a, b, len, ux: (b.x - a.x) / len, uy: (b.y - a.y) / len, capA: !st[k - 1], capB: !st[k + 2] });
       }
     }
     this.sd = new Float32Array(G.nx * G.ny).fill(FAR);
@@ -192,6 +192,7 @@ export class CanalWorks {
       const side = k === 0 ? 1 : -1, ta = s.a.top[k] - s.a.bank, tb = s.b.top[k] - s.b.bank;
       if (Math.max(ta, tb) < WALL_STEP) continue;
       const oa = (s.a.half + s.a.w[k]) * side, ob = (s.b.half + s.b.w[k]) * side;
+      if (this.water((s.a.x + s.a.nx * oa + s.b.x + s.b.nx * ob) / 2, (s.a.y + s.a.ny * oa + s.b.y + s.b.ny * ob) / 2, s)) continue;
       this.walls.push([s.a.x + s.a.nx * oa, s.a.y + s.a.ny * oa, s.b.x + s.b.nx * ob, s.b.y + s.b.ny * ob, Math.max(s.a.top[k], s.b.top[k])]);
     }
   }
@@ -216,9 +217,22 @@ export class CanalWorks {
     return null;
   }
 
-  /** Where (x, y) is on seg s: how far along (0 to 1, not clamped) and across (to the left, signed). */
+  /** Where (x, y) is on seg s: how far along (0 to 1, not clamped) and across (to the left, signed).
+   *  Along is measured as the banks are drawn: across the stretch on the line from its middle along
+   *  the way across there (turning from one end's to the other's), so the stretch's ends are its
+   *  points' own lines across, slanted at a bend, which the stretches either side share, and the
+   *  ground's cut follows the drawn banks exactly. */
   private place(s: Seg, x: number, y: number): [number, number] {
-    const t = ((x - s.a.x) * s.ux + (y - s.a.y) * s.uy) / s.len;
+    const A = s.a, B = s.b;
+    let t = ((x - A.x) * s.ux + (y - A.y) * s.uy) / s.len;
+    // where the line across through (x, y) meets the middle: (x, y) - middle(t) lies along across(t)
+    const Dx = x - A.x, Dy = y - A.y, Ex = B.x - A.x, Ey = B.y - A.y, Gx = B.nx - A.nx, Gy = B.ny - A.ny;
+    const c0 = Dx * A.ny - Dy * A.nx, c1 = Dx * Gy - Dy * Gx - (Ex * A.ny - Ey * A.nx), c2 = -(Ex * Gy - Ey * Gx);
+    if (Math.abs(c2) < 1e-9) { if (Math.abs(c1) > 1e-9) t = -c0 / c1; }
+    else {
+      const disc = c1 * c1 - 4 * c2 * c0;
+      if (disc >= 0) { const r = Math.sqrt(disc), t1 = (-c1 + r) / (2 * c2), t2 = (-c1 - r) / (2 * c2); t = Math.abs(t1 - t) < Math.abs(t2 - t) ? t1 : t2; }
+    }
     const tt = Math.min(1, Math.max(0, t));
     const nx = s.a.nx + (s.b.nx - s.a.nx) * tt, ny = s.a.ny + (s.b.ny - s.a.ny) * tt, nl = Math.hypot(nx, ny) || 1;
     const cx = s.a.x + (s.b.x - s.a.x) * tt, cy = s.a.y + (s.b.y - s.a.y) * tt;
@@ -234,7 +248,7 @@ export class CanalWorks {
     // past the end of a stretch: cut off square where it stops (at a tunnel's portal or a lock),
     // and where it carries on into the next, left to that one after a little overlap
     const past = Math.max(-t * s.len, (t - 1) * s.len);
-    if (past > 0) d = Math.max(d, (t < 0 ? s.capA : s.capB) ? past : past - 2.5);
+    if (past > 0) d = Math.max(d, (t < 0 ? s.capA : s.capB) ? past : past - OVERLAP);
     return d;
   }
 
@@ -249,6 +263,9 @@ export class CanalWorks {
       if (d < bd) { bd = d; best = s; [bt, bo] = this.place(s, x, y); }
     }
     if (!best) return null;
+    // (where stretches run into one another, at a junction's basin, the water wins over any bank)
+    const wet = this.water(x, y);
+    if (wet) return wet.a.lv - BED;
     const t = Math.min(1, Math.max(0, bt)), A = best.a, B = best.b, k = bo >= 0 ? 0 : 1, ao = Math.abs(bo);
     const L = (a: number, b: number) => a + (b - a) * t;
     const half = L(A.half, B.half), lv = L(A.lv, B.lv), w = L(A.w[k], B.w[k]), v = L(A.v[k], B.v[k]);
@@ -258,10 +275,25 @@ export class CanalWorks {
     return top + (g - top) * Math.min(1, (ao - half - w) / (v || 1));
   }
 
+  /** The stretch whose water data (x, y) is over (other than not), if any. */
+  private water(x: number, y: number, not?: Seg): Seg | null {
+    const G = this.G, list = this.cells.get(Math.floor((y - G.y0) / G.dy) * G.nx + Math.floor((x - G.x0) / G.dx));
+    if (!list) return null;
+    for (const k of list) {
+      const s = this.segs[k];
+      if (s === not) continue;
+      const [t, o] = this.place(s, x, y);
+      if (t < 0 || t > 1) continue;
+      if (Math.abs(o) < s.a.half + (s.b.half - s.a.half) * t - 0.05) return s;
+    }
+    return null;
+  }
+
   /** Is the middle of quad P inside the banks somewhere (where the apron would lie over another
-   *  stretch's water, at a junction or a lock)? */
+   *  stretch's water, at a junction, or over a lock's chamber)? */
   private within(P: number[][]): boolean {
-    return this.height((P[0][0] + P[1][0] + P[2][0] + P[3][0]) / 4, (P[0][1] + P[1][1] + P[2][1] + P[3][1]) / 4) !== null;
+    const x = (P[0][0] + P[1][0] + P[2][0] + P[3][0]) / 4, y = (P[0][1] + P[1][1] + P[2][1] + P[3][1]) / 4;
+    return this.height(x, y) !== null || lockAt(this.canal, x, y) !== null;
   }
 
   /** If data (x, y) is over the canal's water or on its banks (the towpath), the banks' height
@@ -291,7 +323,25 @@ export class CanalWorks {
     const STONE = new THREE.Color("#b3a37f"), COPING = new THREE.Color("#a89c86"), TOWPATH = new THREE.Color("#a39478"), GRASS = new THREE.Color("#6e7f4c");
     const vert = (x: number, y: number, h: number, c: THREE.Color, u: number, w: number) => { pos.push(x, h - z0, -y); col.push(c.r, c.g, c.b); uv.push(u, w); };
     // a quad from four points [x, y, height], with the ground texture laid flat (or up a wall)
+    let cur: Seg | null = null, crowded = false;
     const quad = (P: number[][], c: THREE.Color | THREE.Color[], wall = false) => {
+      if (crowded && cur) {
+        // where stretches run into one another (a junction's basin) a stretch's banks are laid
+        // a metre at a time, leaving out whatever lies over the other's water
+        const len = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]), nu = Math.max(1, Math.ceil(len)), nv = wall ? 1 : 2;
+        const lerp = (a: number[], b: number[], f: number) => a.map((v, i) => v + (b[i] - v) * f);
+        const at = (u: number, v: number) => lerp(lerp(P[0], P[1], u), lerp(P[3], P[2], u), v);
+        const Cs = Array.isArray(c) ? c : null;
+        const was = crowded;
+        crowded = false;
+        for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
+          const u0 = i / nu, u1 = (i + 1) / nu, v0 = j / nv, v1 = (j + 1) / nv, m = at((u0 + u1) / 2, (v0 + v1) / 2);
+          if (this.water(m[0], m[1], cur)) continue;
+          quad([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)], Cs ? Cs[0] : c, wall);
+        }
+        crowded = was;
+        return;
+      }
       const C = Array.isArray(c) ? c : [c, c, c, c];
       const U = P.map((p, i) => wall ? [(i === 0 || i === 3 ? 0 : 1) * Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) / 7, p[2] / 7] : [p[0] / 7, -p[1] / 7]);
       for (const i of [0, 1, 2, 0, 2, 3]) vert(P[i][0], P[i][1], P[i][2], C[i], U[i][0], U[i][1]);
@@ -311,6 +361,9 @@ export class CanalWorks {
     for (const s of this.segs) {
       const A = s.a, B = s.b;
       const at = (S: Station, o: number): [number, number] => [S.x + S.nx * o, S.y + S.ny * o];
+      // (does another stretch's water reach its banks? at a junction's basin)
+      cur = s;
+      crowded = [A, B].some((S) => [1, -1].some((side) => [S.half + 0.5, S.half + S.w[side > 0 ? 0 : 1] + S.v[side > 0 ? 0 : 1]].some((o) => this.water(S.x + S.nx * o * side, S.y + S.ny * o * side, s))));
       for (const k of [0, 1]) {
         const side = k === 0 ? 1 : -1;
         const P = (S: Station, o: number, h: number) => { const [x, y] = at(S, o * side); return [x, y, h]; };
@@ -359,10 +412,11 @@ export class CanalWorks {
           }
         }
       }
-      // and past each end where the banks stop square (at a lock, or the canal's end; not at a
-      // tunnel's portal, where it would close the tunnel's mouth), across the whole outline
-      for (const [S, stop, bore, dir] of [[A, s.capA, s.boreA, -1], [B, s.capB, s.boreB, 1]] as const) {
-        if (!stop || bore) continue;
+      // and past each end where the banks stop square (at a lock, under its paving; at a tunnel's
+      // portal, on the hill over its mouth, which canal.ts tunnelHills keeps well over the arch; or
+      // at the canal's end), across the whole outline
+      for (const [S, stop, dir] of [[A, s.capA, -1], [B, s.capB, 1]] as const) {
+        if (!stop) continue;
         const l = S.half + S.w[0] + S.v[0], r = S.half + S.w[1] + S.v[1], steps = Math.max(1, Math.ceil((l + r) / 2));
         for (let i = 0; i < steps; i++) for (let j = 0; j < APRON; j++) {
           const pt = (o: number, d: number): number[] => {

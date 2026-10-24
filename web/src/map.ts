@@ -9,13 +9,13 @@ import { unpackSurfaces } from "./sfpack";
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
 import { loadGroundKinds, type GroundKinds } from "./groundkinds";
-import type { CanalData } from "./canal";
+import { tunnelHills, aqueductBeds, type CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
 import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
-import { maskSetPieces } from "./landmarks/setpieces";
+import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
@@ -399,6 +399,9 @@ export class GameMap {
     // the canal's banks (works.ts): its ground where it runs through this map's grid, and the
     // retaining walls along them you can't walk up
     const canal = this.canalData ?? (this.canal as { d?: CanalData } | null)?.d;
+    // the hill over its tunnels, closing over the bores and meeting the portals (canal.ts)
+    // and the ground under its aqueduct's arches
+    if (canal && d.t.nx > 1) { tunnelHills(canal, d.t); aqueductBeds(canal, d.t, d.centre ? (x, y) => aqueductSetPieceAt(d.centre!, x, y) : undefined); }
     if (canal && d.t.nx > 1) {
       // (the decks over it: bridges, and the roads leading on to them)
       const under = (x: number, y: number) => {
@@ -416,6 +419,19 @@ export class GameMap {
       const T = d.t, w = new CanalWorks(canal, T, (x, y) => this.bareGround(x, -y) + this.z0, under);
       if (!w.empty) {
         this.works = w;
+        // and no wood canopy over the water or the banks: it's laid over the ground under it,
+        // and over the canal that's the bed, so it would hang over the water like a low roof
+        if (d.cn) {
+          const C = d.cn, raw = atob(C.h), H = new Uint8Array(raw.length), r = C.step / 2;
+          for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
+          let cut = false;
+          for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+            if (!H[j * C.nx + i]) continue;
+            const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
+            if ([[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => w.across(x + u, y + v) !== null)) { H[j * C.nx + i] = 0; cut = true; }
+          }
+          if (cut) { let out = ""; for (let k = 0; k < H.length; k++) out += String.fromCharCode(H[k]); C.h = btoa(out); }
+        }
         for (const [ax, ay, bx, by, top, foot] of w.walls) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0, foot === undefined ? -Infinity : foot - this.z0);
       }
     }
@@ -724,6 +740,25 @@ export class GameMap {
       }
     }
     return best;
+  }
+
+  /** The lowest bridge deck over scene (x, z) whose top is above y: its top (scene Y), or null.
+   *  For a boat going under: its deck and arch hang a metre or so below that (world.ts). */
+  overhead(x: number, z: number, y: number): number | null {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.overhead(x, z, y);
+    let low: number | null = null;
+    for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const { p, half } = this.decks[k];
+      for (let i = 0; i < p.length - 1; i++) {
+        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        const h = a[2] + (b[2] - a[2]) * t;
+        if (h > y && (low === null || h < low)) low = h;
+      }
+    }
+    return low;
   }
 
   /** The full-detail square loaded at scene (x, z), outside this map's own grid, if any. */

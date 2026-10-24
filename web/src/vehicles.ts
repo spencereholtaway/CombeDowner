@@ -6,7 +6,8 @@
 // Mr D's chip van (chipvan.ts) is parked at the top of Old Bond Street, by Milsom Street.
 //
 // E gets in and out: the driver's seat if it's free, otherwise a passenger seat, where you can look
-// about and shoot. W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn,
+// about and shoot. W and S drive, A and D steer (the mouse only looks about, and the view comes back
+// behind once you leave it: game.ts, settleRate in player.ts), Space is the handbrake and H (or a click) the horn,
 // or the siren on the police car, or Greensleeves on the ice cream van. C switches between the chase camera and
 // the driver's own view from the seat, over the dash (cockpit.ts). Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them

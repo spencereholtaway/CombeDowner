@@ -1,7 +1,7 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
 // Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School,
-// the Bell Inn on Walcot Street, Grenville's monument on Lansdown and Bath Spa station) standing in for the plain
+// the Bell Inn on Walcot Street, Grenville's monument on Lansdown, Bath Spa station and the Dundas Aqueduct) standing in for the plain
 // scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
@@ -100,6 +100,17 @@ export interface SetPiece {
   sink?: Sink[];
   /** It's a pub, and hangs its own sign: the map's sign for it stays, marked as its own. */
   pub?: boolean;
+  /** The street it carries through it, which the map has in pieces that don't agree (a pedestrian
+   *  street paved wall to wall here, a lane with no pavements there, each its own width): every
+   *  piece of a street with one of these names, from x0 to x1 along its frame and within zMax of
+   *  its middle, is laid as one street, a carriageway carriage metres wide with a kerbed pavement
+   *  each side, as wide as pave says for where it is ([from x, to x, width], the pieces split
+   *  where that changes), or, past x0 where the street is wider, what's left of its own width
+   *  either side of the carriageway, so it runs on with the same kerbs from end to end.
+   *  It's then a street with traffic, as it is (the map has buses-only streets as pedestrian). */
+  street?: { names: string[]; x0: number; x1: number; zMax: number; carriage: number; pave: [number, number, number][] };
+  /** It stands in for one of the canal's aqueducts, which the canal then doesn't draw (canal.ts). */
+  aqueduct?: boolean;
   /** It has a yard of its own: the service lanes inside it go with everything else. */
   yard?: boolean;
 }
@@ -119,6 +130,9 @@ export const SET_PIECES: SetPiece[] = [
     // landmarks/pulteney.ts. The origin: the middle of the bridge, at the river's level.
     name: "Pulteney Bridge", kind: "pulteney", at: [-2.357923, 51.38304], bearing: 60,
     height: (c) => c.water ?? 15.6,
+    // its street, from Bridge Street over the bridge and along Argyle Street to Laura Place: one
+    // carriageway between the shopfronts and the terraces, with a pavement each side
+    street: { names: ["Bridge Street", "Argyle Street"], x0: -20.4, x1: 117, zMax: 6, carriage: 6.0, pave: [[-20.4, 20.4, 1.75], [20.4, 117, 3.0]] },
     outline: [[-25.3, -10.4], [20.9, -10.4], [20.9, 12.2], [-20.7, 12.2], [-20.7, -3.2], [-25.3, -3.2]],
     covers: [[-24.9, 20.4, -9.8, -3.4], [-20.4, 20.4, 6.1, 10.5]],
     args: (c, h) => {
@@ -249,9 +263,61 @@ export const SET_PIECES: SetPiece[] = [
     outline: [[-32, -13], [-8.5, -13], [-8.5, -16.5], [14, -16.5], [14, 11], [-32, 11]],
     covers: BOA_COVERS,
   },
+  {
+    // landmarks/dundas.ts. The origin: the middle of the aqueduct, at the canal's water (the long
+    // pound's level, tools/canal.py); x runs along the canal from the south-east end towards the
+    // junction with the Somerset Coal Canal. The canal draws no aqueduct of its own under it
+    // (canal.ts), nor lowers the ground for one (aqueductBeds).
+    name: "Dundas Aqueduct", kind: "dundas", at: [-2.3107931, 51.3614621], bearing: 290.04, height: 35.2,
+    outline: [[-48, -9.5], [48, -9.5], [48, 9.5], [-48, 9.5]],
+    covers: [[-42, 42, -5.5, 5.5]],
+    aqueduct: true,
+  },
 ];
 
+/** Does a set piece standing in for one of the canal's aqueducts (aqueduct: true) cover data
+ *  (x, y), on the map whose centre is [lon0, lat0]? */
+export function aqueductSetPieceAt(centre: [number, number], x: number, y: number): boolean {
+  const [lon0, lat0] = centre, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574;
+  for (const sp of SET_PIECES) {
+    if (!sp.aqueduct) continue;
+    const ox = (sp.at[0] - lon0) * kx, oy = (sp.at[1] - lat0) * ky;
+    const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
+    const lx = (x - ox) * ux + (y - oy) * uy, lz = (x - ox) * uy - (y - oy) * ux;
+    if (inRing(sp.outline, lx, lz)) return true;
+  }
+  return false;
+}
+
 // ---- the masking --------------------------------------------------------------------------------
+
+/** Lay the pieces of a set piece's street as one street (SetPiece.street). local: its frame's x, z of data x, y. */
+function layStreet(d: MapData, st: NonNullable<SetPiece["street"]>, local: (x: number, y: number) => [number, number]) {
+  const paveAt = (x: number) => st.pave.find(([a, b]) => x >= a && x < b)?.[2];
+  const out: Road[] = [];
+  for (const r of d.rd) {
+    const loc = r.p.map((q) => local(q[0], q[1]));
+    // (the pieces of it here: most of their points along its line, within its ends' reach)
+    const along = loc.filter(([x, z]) => Math.abs(z) < st.zMax && x > st.x0 - 40 && x < st.x1 + 1).length;
+    if (!st.names.includes(r.n) || FOOTPATHS.has(r.c) || along < loc.length / 2) { out.push(r); continue; }
+    // split where its pavements change width (sharing the point there)
+    const pieces: number[][][] = [];
+    let cur: number[][] = [r.p[0]], was = paveAt(loc[0][0]);
+    for (let i = 1; i < r.p.length; i++) {
+      cur.push(r.p[i]);
+      const now = paveAt(loc[i][0]);
+      if (now !== was && i < r.p.length - 1) { pieces.push(cur); cur = [r.p[i]]; }
+      was = now;
+    }
+    pieces.push(cur);
+    for (const p of pieces) {
+      const xs = p.map((q) => local(q[0], q[1])[0]), mid = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const pave = paveAt(mid) ?? Math.max(st.pave[0][2], Math.min(4, ((r.w ?? 0) - st.carriage) / 2));
+      out.push({ ...r, p, c: "unclassified", w: st.carriage, pv: [pave, pave] });
+    }
+  }
+  d.rd = out;
+}
 
 const FOOTPATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track"]);
 
@@ -291,6 +357,8 @@ export function maskSetPieces(d: MapData) {
     const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
     const at = (lx: number, lz: number): [number, number] => [ox + ux * lx + uy * lz, oy + uy * lx - ux * lz];
     const local = (x: number, y: number): [number, number] => [(x - ox) * ux + (y - oy) * uy, (x - ox) * uy - (y - oy) * ux];
+    // the street it carries, laid as one street from end to end whatever pieces the map has it in
+    if (sp.street) layStreet(d, sp.street, local);
     const rings = [sp.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
     const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
     const mx0 = Math.min(...xs), mx1 = Math.max(...xs), my0 = Math.min(...ys), my1 = Math.max(...ys);

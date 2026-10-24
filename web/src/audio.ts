@@ -1402,6 +1402,17 @@ export function bell(n: number, distance = 0, pan = 0) {
   clink(d, t, 0.3, f * 6);
 }
 
+/** A narrowboat's little brass bell by the tiller: ting-ting, bright and short. */
+export function boatBell(distance = 0, pan = 0) {
+  if (!ctx || distance > 80) return;
+  const t = now(), f = 1480 * vary(0.02);
+  const d = out(0.5 * fall(distance, 10), pan, distance, 0.3);
+  for (const at of [t, t + 0.16]) {
+    for (const [m, v, dur] of [[1, 0.5, 0.9], [2.32, 0.2, 0.5], [3.9, 0.1, 0.3], [5.4, 0.05, 0.18]]) tone(d, at, dur, v, f * m);
+    clink(d, at, 0.25, f * 3);
+  }
+}
+
 let fuzz: Float32Array<ArrayBuffer> | null = null;
 /** A note on the heavenly guitar you get with the angel's wings (wings.ts): a screaming, fuzzed-up
  *  lead note at f (Hz), held for dur seconds, bent up bend semitones as it sounds, with vibrato on the

@@ -16,7 +16,8 @@ import { Vehicles } from "./vehicles";
 import { buildTunnels, mouths } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
-import { Canal, lockPits, canalBores } from "./canal";
+import { Canal, lockPits, canalBores, lockAt } from "./canal";
+import { aqueductSetPieceAt } from "./landmarks/setpieces";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
@@ -860,6 +861,55 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
   }
   type Pt = { x: number; y: number; s: number; top: number; g: number; nx: number; ny: number };
+  /** A bridge's pieces joined end to end, so each bridge is built whole: the data often splits a
+   *  footbridge into its steps, its deck and its steps again, and built a piece at a time it
+   *  would have an abutment at every joint, standing in the water, with only a slot of an arch
+   *  over the middle piece. Two pieces are joined where they meet on the span, and only there
+   *  (not where three or more meet). */
+  function joinSpans(rd: Road[]): Road[] {
+    const list = rd.filter((r) => r.bridge && !r.held && r.p.length > 1);
+    const key = (q: number[]) => `${Math.round(q[0] * 3)},${Math.round(q[1] * 3)}`;
+    const ends = new Map<string, number[]>();
+    list.forEach((r, i) => { for (const q of [r.p[0], r.p[r.p.length - 1]]) { const k = key(q); const e = ends.get(k); if (e) e.push(i); else ends.set(k, [i]); } });
+    const next = (i: number, q: number[]): number | null => {
+      const e = ends.get(key(q));
+      if (!e || e.length !== 2 || q[3] !== 1) return null;
+      const j = e[0] === i ? e[1] : e[0];
+      return j === i ? null : j;
+    };
+    const used = new Set<number>(), out: Road[] = [];
+    const length = (p: number[][]) => p.reduce((t, q, k) => (k ? t + Math.hypot(q[0] - p[k - 1][0], q[1] - p[k - 1][1]) : 0), 0);
+    const chain = (start: number) => {
+      // from the start's free end (or either end of a loop), along the pieces
+      const r0 = list[start], fwd0 = next(start, r0.p[0]) === null;
+      let pts = (fwd0 ? r0.p : [...r0.p].reverse()).slice(), i = start;
+      const pieces = [{ r: r0, fwd: fwd0, s0: 0, len: length(r0.p) }];
+      used.add(start);
+      for (;;) {
+        const j = next(i, pts[pts.length - 1]);
+        if (j === null || used.has(j)) break;
+        const q = list[j].p, fwd = key(q[0]) === key(pts[pts.length - 1]);
+        pieces.push({ r: list[j], fwd, s0: length(pts), len: length(q) });
+        pts = pts.concat((fwd ? q : [...q].reverse()).slice(1));
+        used.add(j); i = j;
+      }
+      // what passes under each piece, measured along the joined line instead
+      const uo = pieces.flatMap(({ r, fwd, s0, len }) => (r.uo ?? []).map(([u0, u1]) => (fwd ? [s0 + u0, s0 + u1] : [s0 + len - u1, s0 + len - u0])));
+      // the kind and the deck's reach are the longest piece's: the others are mostly the steps or
+      // ramps at its ends, mapped as their own pieces
+      const main = pieces.reduce((m, q) => (q.len > m.len ? q : m));
+      const r = main.r, flip = !main.fwd;
+      out.push({
+        ...r, p: pts, uo: uo.length ? uo : undefined,
+        ...(flip && Array.isArray(r.dk) ? { dk: [r.dk[1], r.dk[0]] } : {}),
+        ...(flip && r.pv ? { pv: [r.pv[1], r.pv[0]] } : {}),
+        ...(flip && r.ow ? { ow: -r.ow } : {}),
+      });
+    };
+    list.forEach((r, i) => { if (!used.has(i) && (next(i, r.p[0]) === null || next(i, r.p[r.p.length - 1]) === null)) chain(i); });
+    list.forEach((_, i) => { if (!used.has(i)) chain(i); });
+    return out;
+  }
   function bridgeStructures(rd: Road[], g: Geo, steel: Geo) {
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
@@ -906,12 +956,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         // across the deck (a skew bridge's too), with no pier in them and no wall down to the
         // water, and an arch springing from the banks over them
         const openings: { a: number; b: number; bank: number }[] = [];
-        if (map.works) {
+        const canalData = map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null);
+        if (map.works || canalData?.locks.length) {
           let run: { a: number; b: number; bank: number } | null = null;
           for (const q of P) {
             let bank: number | null = null;
             for (let o = -W; o <= W + 0.01; o += W / 2) {
-              const h = map.works.across(q.x + q.nx * o, q.y + q.ny * o);
+              const h = map.works?.across(q.x + q.nx * o, q.y + q.ny * o) ?? lockAt(canalData, q.x + q.nx * o, q.y + q.ny * o);
               if (h !== null) bank = Math.max(bank ?? -Infinity, h - Z0);
             }
             if (bank === null) run = null;
@@ -1111,6 +1162,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
     const faced = !!sf && SURFACES;
     if (faced) yield* surfaceFaces(sf!, geo);
+    const spans = own ? joinSpans(rd.filter(own)) : [];
     for (let k = 0; k < rd.length; k += 15) {
       const part = rd.slice(k, k + 15).filter((r) => !faced || own?.(r)), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
@@ -1122,7 +1174,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
       strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
-      if (own) bridgeStructures(part, geo.bridge, geo.steel);
+      yield;
+    }
+    // what holds the bridges up, each built whole (joinSpans)
+    for (let k = 0; k < spans.length; k += 15) {
+      bridgeStructures(spans.slice(k, k + 15), geo.bridge, geo.steel);
       yield;
     }
     const out: THREE.Mesh[] = [];
@@ -1230,7 +1286,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // the canal draws its own water at the right levels (canal.ts): its lines and pieces in the map are left out
   if (core && map.canalData) {
     if (map.canal instanceof Canal) for (const m of map.canal.moored) { const k = map.movers.indexOf(m); if (k >= 0) map.movers.splice(k, 1); }
-    const canal = new Canal(map.canalData, scene as THREE.Scene, Z0);
+    const centre = map.d.centre as [number, number] | undefined;
+    const canal = new Canal(map.canalData, scene as THREE.Scene, Z0, centre ? (x, y) => aqueductSetPieceAt(centre, x, y) : undefined);
     map.canal = canal;
     map.movers.push(...canal.moored);
   }

@@ -60,7 +60,9 @@ input {
   background: #fff; color: var(--paper-ink); border: 2px solid var(--paper-ink); border-radius: 0; padding: 8px 10px; width: 100%;
 }
 input:focus { outline: 3px solid var(--accent); outline-offset: 0; box-shadow: inset 0 0 0 2px var(--paper-ink); }
-button:focus-visible { outline: 3px solid transparent; background: var(--accent); color: var(--paper-ink); box-shadow: 0 -2px var(--accent), 0 4px var(--paper-ink); }
+button:focus-visible, button.padfocus { outline: 3px solid transparent; background: var(--accent); color: var(--paper-ink); box-shadow: 0 -2px var(--accent), 0 4px var(--paper-ink); }
+/* picked with a game controller's d-pad (gamepad.ts), where the browser shows no focus ring */
+.padfocus:not(button) { outline: 3px solid var(--accent); outline-offset: 2px; }
 
 .overlay {
   position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
@@ -145,6 +147,9 @@ details summary { cursor: pointer; color: var(--link); text-decoration: underlin
 details[open] .keys { border-left: 5px solid var(--paper-line); padding-left: 14px; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 10px 0 0; font-size: 14px; align-items: center; }
 .keys dt { display: flex; gap: 3px; }
+.keys .padkey { display: flex; gap: 3px; margin-left: 6px; opacity: 0.75; }
+.padbuttons { display: grid; gap: 4px; }
+.padbuttons .padbind { display: flex; justify-content: space-between; align-items: center; gap: 10px; text-align: left; }
 .keys dd { margin: 0; }
 kbd {
   font-family: var(--f-hud); font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -306,6 +311,9 @@ kbd {
 #hud:has(#touch:not([hidden])):has(#compass:not([hidden])) #t-pause { top: 50px; }
 #hud:has(#touch:not([hidden])):has(#compass:not([hidden])) #np { top: 104px; }
 #bigmap p { margin: 0; color: var(--ink); font-size: 16px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+/* how much of the place is yours, or what you've done in the square you're pointing at (yours.ts) */
+#bigmap p#bigmapmine { position: absolute; right: 8px; bottom: 8px; max-width: min(70%, 520px); padding: 3px 8px 2px; background: rgba(14, 16, 18, 0.72); font-size: 13px; letter-spacing: 0.06em; line-height: 1.25; text-align: right; pointer-events: none; }
+#bigmap p#bigmapmine:empty, #hud.pubmode #bigmapmine { display: none; }
 
 /* Kill feed */
 #feed { position: absolute; right: 16px; top: 214px; display: grid; gap: 4px; justify-items: end; font-size: 17px; font-weight: 600; letter-spacing: 0.02em; }
@@ -378,8 +386,6 @@ kbd {
 /* the Chronicle, pinned up on every noticeboard (daily.ts) */
 #paperbtn { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); pointer-events: auto; font: 700 15px var(--f-hud); letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 14px 5px; }
 #paperbtn[hidden] { display: none; }
-#yourmapbtn { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 18px 6px; }
-#hud.pubmode:not(:has(#bigmap.yours)) #yourmapbtn { display: none; }
 
 /* Bendy's health, across the top (under the Now Playing amp) while he's near */
 #boss { top: 92px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 340px)); text-align: center; }

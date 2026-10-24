@@ -35,7 +35,7 @@
     <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
     <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
-    <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div></div><div class="bigmapbar"><p id="bigmaphint">Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
+    <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div><p id="bigmapmine"></p></div><div class="bigmapbar"><p id="bigmaphint">Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
     <div id="feed"></div>
     <div id="notices" aria-live="polite"></div>
     <div id="watch" aria-hidden="true"><b class="gs-brand">G-SHOCK</b><div class="gs-face"><span class="gs-l">LIGHT</span><span class="gs-r">SHOCK RESIST</span><canvas id="watchlcd"></canvas></div><b class="gs-prot">PROTECTION</b></div>
@@ -202,6 +202,7 @@
             <dt><kbd>G</kbd></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
             <dt><kbd>,</kbd><kbd>.</kbd></dt><dd>Previous and next music track</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
+            <dt>Controller</dt><dd id="padnote">Press a button on your controller to wake it up</dd>
           </dl>
         </details>
         <p class="credit">Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft.
@@ -274,6 +275,17 @@
         <fieldset class="setgroup">
           <legend>Controls</legend>
           <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+        </fieldset>
+        <fieldset class="setgroup padsettings" hidden>
+          <legend>Controller</legend>
+          <label class="slider">Look speed, side to side <input id="pad-lookx" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+          <label class="slider">Look speed, up and down <input id="pad-looky" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+          <label class="check"><input id="pad-invert" type="checkbox"> Invert up and down</label>
+          <label class="check"><input id="pad-boost" type="checkbox" checked> Turn faster when the stick is held right over</label>
+          <label class="slider">Stick dead zone <input id="pad-dead" type="range" min="0.05" max="0.35" step="0.01" value="0.12"></label>
+          <label class="check"><input id="pad-rumble" type="checkbox" checked> Rumble</label>
+          <p class="hint">Buttons: choose one with ✕, then press the button to put it on (○ calls it off). Options and the sticks stay put.</p>
+          <div class="padbuttons"></div>
         </fieldset>
         <fieldset class="setgroup">
           <legend>Play</legend>

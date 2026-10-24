@@ -146,12 +146,17 @@ export class Avatar {
   private hairTop: THREE.Mesh | null = null;
   private rattle!: THREE.Mesh;
   private wiggle = Math.random() * 10;
+  private waveT = 0;
   /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
   seated = false;
   /** Show their name tag over their head (not on the characters page). */
   tagged = true;
   /** Carrying a gun (the streets). In the mines they carry something else, put in their hand by the mines game. */
   armed = true;
+  /** Stood still on something that's moving (a narrowboat's back deck): feet planted, however fast it goes. */
+  still = false;
+  /** Waving: 1 the left hand, 2 the right, 3 both. */
+  wave = 0;
   private snaps: Snap[] = [];
   alive = true;
   private deadT = 0;
@@ -446,6 +451,19 @@ export class Avatar {
     if (this.snaps.length > 30) this.snaps.shift();
   }
 
+  /** Draw them here (the back deck of the boat they're steering) instead of where their messages put them. */
+  pin(x: number, y: number, z: number) {
+    this.x = x; this.y = y; this.z = z;
+    this.root.position.set(x, y, z);
+  }
+
+  /** Put them straight here, with no snapshots to blend: your own steerer, seen from the chase camera. */
+  hold(x: number, y: number, z: number, yaw: number, pitch: number, crouch: number) {
+    this.snaps = [];
+    this.ix = x; this.iy = y; this.iz = z;
+    Object.assign(this, { yaw, pitch, crouch, prone: 0 });
+  }
+
   /** Jump straight to a position (respawns), dropping old snapshots. */
   teleport() { this.snaps = this.snaps.slice(-1); }
 
@@ -513,7 +531,7 @@ export class Avatar {
     this.label.visible = this.alive && this.tagged;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
-    this.gun.visible = this.armed && pr <= 0.5 && !this.axe;
+    this.gun.visible = this.armed && pr <= 0.5 && !this.axe && !(this.wave & 2);
     if (dt > 0) this.animate(dt);
   }
 
@@ -523,7 +541,8 @@ export class Avatar {
     const rx = (this.ix - this.lastX) / dt, ry = (this.iy - this.lastY) / dt, rz = (this.iz - this.lastZ) / dt;
     this.lastX = this.ix; this.lastY = this.iy; this.lastZ = this.iz;
     const ease = Math.min(1, dt * 10);
-    if (Math.hypot(rx, rz) < 20 && Math.abs(ry) < 30) {
+    if (this.still) { this.vx = this.vy = this.vz = 0; }
+    else if (Math.hypot(rx, rz) < 20 && Math.abs(ry) < 30) {
       this.vx += (rx - this.vx) * ease; this.vy += (ry - this.vy) * ease; this.vz += (rz - this.vz) * ease;
     }
     if (!this.alive) return;
@@ -587,6 +606,13 @@ export class Avatar {
       arm(lu, ll, _t, RADIO_ELBOW, false);
     } else if (this.armed) arm(lu, ll, FOREND, LEFT_ELBOW, false);
     else arm(lu, ll, _t.set(-0.29, -0.56, Math.sin(this.phase) * 0.3 * Math.min(1, speed / 2)), BEHIND, false);
+    // a hand up over their head, waving side to side
+    if (this.wave && pr <= 0) {
+      this.waveT += dt;
+      const sway = Math.sin(this.waveT * 11) * 0.13;
+      if (this.wave & 1) reach(lu, ll, UPPER_ARM, FOREARM, _t.set(-0.42 + sway, 0.4, -0.1), _a.set(-1, -0.3, 0.3));
+      if (this.wave & 2) reach(ru, rl, UPPER_ARM, FOREARM, _t.set(0.42 - sway, 0.4, -0.1), _a.set(1, -0.3, 0.3));
+    } else this.waveT = 0;
     // a blink every few seconds, and a moving mouth while they talk
     this.blink -= dt;
     if (this.blink < -0.12) this.blink = 2 + Math.random() * 4;

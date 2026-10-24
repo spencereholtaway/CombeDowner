@@ -215,10 +215,11 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
     // the railings round the basement areas, at the pavement's edge
     if (!style) k.quad(iron, (x0 + x1) / 2, y0 + 0.6, z(1.7), x1 - x0, 2.0, ry, 0, 0, (x1 - x0) / 2, 1);
   }
-  // the level street, paved from front to front
+  // the level street, paved from front to front, its top just under the street's own surface: the
+  // game lays the carriageway and its pavements on it (setpieces.ts, Pulteney Bridge's street)
   if (pave) {
     const flags = stone("#b9b1a2");
-    for (const s of paving(pave)) k.slab(flags, s.x0, s.x1, s.y - 1.5, s.y + 0.15, pave.z0, pave.z1, 2);
+    for (const s of paving(pave)) k.slab(flags, s.x0, s.x1, s.y - 1.5, s.y - 0.12, pave.z0, pave.z1, 2);
   }
   for (const w of wings) {
     k.slab(G, w.x0, w.x1, w.top - 30, w.top, w.z0, w.z1, 3.4);

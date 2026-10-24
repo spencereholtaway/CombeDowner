@@ -1,6 +1,7 @@
 // The Kennet and Avon Canal (laid out by tools/canal.py): its water at the right level all the way
 // along, the six locks of the Widcombe flight, the two short tunnels through Sydney Gardens, the
-// Dundas Aqueduct, rows of narrowboats moored along the bank, and a few chugging along it.
+// Dundas Aqueduct, rows of narrowboats moored along the bank, and a few chugging along it, each
+// with its wake behind it (drawn by every screen from where the boats are).
 //
 // Locks work. Lean on a balance beam (E by a lock) and its gates swing shut, the paddles go up and
 // the chamber fills or empties, then the gates at the other end swing open. Boats coming along
@@ -20,6 +21,7 @@ import * as THREE from "three";
 import { model, Part } from "./furniture";
 import type { Mover, Pond } from "./map";
 import { compact } from "./railway";
+import { wall } from "./textures";
 
 export interface CanalData {
   runs: { lv: number; p: number[][] }[];
@@ -31,6 +33,7 @@ export interface CanalData {
 const HW = 1.04;                       // half a narrowboat's beam (7 ft)
 const CRUISE = 1.8, TOP = 2.8, ASTERN = 1.2;   // m/s: about 4 mph, flat out, and going backwards
 const COUNT = 4;                       // boats under way at once
+const MOOR = 2e9;                      // a moored boat cast off is boat MOOR + its place in the canal file's list
 const NEAR = 150, FAR = 520, GONE = 800;
 const SWING = 5;                       // seconds for a pair of gates to swing
 const FILL = 4;                        // seconds a lock takes to fill or empty, a metre of rise
@@ -68,20 +71,30 @@ const wingTop = (lk: CanalData["locks"][number], u: number) =>
 
 const key = (x: number, z: number) => `${Math.round(x * 2)},${Math.round(z * 2)}`;
 const smooth = (t: number) => t * t * (3 - 2 * t);
+let stoneTex: THREE.Texture | undefined;    // the Bath stone the bridges are built of (textures.ts), shared
 
-/** Flat-shaded geometry from quads, with a colour per quad. */
+/** Flat-shaded geometry from quads, with a colour per quad, and the stone's coursing laid on
+ *  each (2.5 m to a repeat of the texture, as on the bridges: flat across the top of the coping and
+ *  the paving, in courses up a wall). */
 class Mesher {
-  pos: number[] = []; col: number[] = [];
+  pos: number[] = []; col: number[] = []; uv: number[] = [];
   quad(a: number[], b: number[], c: number[], d: number[], hex: string) {
     const k = new THREE.Color(hex), cc = [k.r, k.g, k.b];
     this.pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     for (let i = 0; i < 6; i++) this.col.push(...cc);
+    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], nl = Math.hypot(n[0], n[1], n[2]) || 1;
+    let tx = -n[2], tz = n[0];
+    const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+    const flat = Math.abs(n[1]) / nl > 0.7;
+    for (const p of [a, b, c, a, c, d]) this.uv.push(flat ? p[0] / 2.5 : (p[0] * tx + p[2] * tz) / 2.5, flat ? p[2] / 2.5 : p[1] / 2.5);
   }
   build(): THREE.BufferGeometry | null {
     if (!this.pos.length) return null;
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
@@ -232,6 +245,85 @@ export function canalBores(d: CanalData | null | undefined, z0: number, x0: numb
   return { a, b };
 }
 
+/** If data (x, y) is between a lock's walls (in its chamber, or between the wing walls below it),
+ *  the height of its coping there (above sea level), else null: what a bridge over a lock (the
+ *  walkway at its gates) leaves open under it. */
+export function lockAt(d: CanalData | null | undefined, x: number, y: number): number | null {
+  for (const lk of d?.locks ?? []) {
+    const [lx, ly] = lk.lo, [hx, hy] = lk.hi, L = Math.hypot(hx - lx, hy - ly) || 1;
+    const ux = (hx - lx) / L, uy = (hy - ly) / L, u = (x - lx) * ux + (y - ly) * uy, v = Math.abs(-(x - lx) * uy + (y - ly) * ux);
+    if (v < LOCK_HALF + COPE && u > -wingLength(lk) && u < L + TAIL) return u < -TAIL ? wingTop(lk, u) : lk.zh + 0.45;
+  }
+  return null;
+}
+
+/** The ground under the aqueduct's arches, brought down to a good way under each arch, so the
+ *  arches stand open over the river and the railway (the survey's ground can rise into them, where
+ *  it took in a bank or the aqueduct itself), and nothing more: what runs under an arch (the
+ *  railway) keeps its ground. The arches as Canal.aqueduct builds them; it only ever lowers the
+ *  ground, in the square's grid T (decimetres above T.z0). */
+export function aqueductBeds(d: CanalData | null | undefined, T: { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[] }, skip?: (x: number, y: number) => boolean) {
+  for (const r of d?.runs ?? []) {
+    const p = r.p;
+    for (let k = 0; k < p.length; k++) {
+      if (!(p[k][6] & 2)) continue;
+      let j = k;
+      while (j + 1 < p.length && p[j + 1][6] & 2) j++;
+      if (skip?.(p[(k + j) >> 1][0], p[(k + j) >> 1][1])) { k = j; continue; }     // (a set piece's: its own arches)
+      const half = Math.max(...p.slice(k, j + 1).map((q) => q[2])), out = half + 2.6 + 0.4 + 1;
+      const piers = [k, ...p.slice(k + 1, j).map((q, i) => (q[6] & 4 ? k + 1 + i : -1)).filter((i) => i >= 0), j];
+      for (let n = 0; n < piers.length - 1; n++) {
+        const A = p[piers[n]], B = p[piers[n + 1]], L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L;
+        const span = L - 3, soffit = r.lv - 1.6, low = Math.min(A[3], B[3]);
+        if (span <= 1) continue;
+        const rise = Math.max(1, Math.min(span / 2, soffit - low - 0.5)), spring = soffit - rise;
+        const arch = (s: number) => spring + rise * Math.sqrt(Math.max(0, 1 - ((s - L / 2) / (span / 2)) ** 2));
+        const i0 = Math.max(0, Math.floor((Math.min(A[0], B[0]) - out - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(A[0], B[0]) + out - T.x0) / T.dx));
+        const j0 = Math.max(0, Math.floor((Math.min(A[1], B[1]) - out - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(A[1], B[1]) + out - T.y0) / T.dy));
+        for (let jj = j0; jj <= j1; jj++) for (let ii = i0; ii <= i1; ii++) {
+          const x = T.x0 + ii * T.dx - A[0], y = T.y0 + jj * T.dy - A[1], s = x * ux + y * uy, v = Math.abs(-x * uy + y * ux);
+          if (s < 1.5 || s > L - 1.5 || v > out) continue;
+          const q = jj * T.nx + ii, lo = Math.round((Math.max(spring - 0.3, arch(s) - 2.5) - T.z0) * 10);
+          if (T.h[q] > lo) T.h[q] = lo;
+        }
+      }
+      k = j;
+    }
+  }
+}
+
+/** The land over and round the canal's tunnels, as the canal's builders left it: the hill closes
+ *  over the whole bore with a good metre of earth on its arch (where the survey has the ground
+ *  lower, over the Sydney Gardens tunnel's north half, the brick barrel would show through), meets
+ *  the top of each portal's face just under its coping, and falls away from there at one in two,
+ *  round the sides and down along the cutting in front, where the canal's banks build their
+ *  retaining walls up to it (works.ts). It only ever raises the ground, in the square's grid T
+ *  (heights in decimetres above T.z0). */
+export function tunnelHills(d: CanalData | null | undefined, T: { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[] }) {
+  for (const t of d?.tunnels ?? []) {
+    const [ax, ay] = t.a, [bx, by] = t.b, x1 = T.x0 + (T.nx - 1) * T.dx, y1 = T.y0 + (T.ny - 1) * T.dy;
+    if (Math.max(ax, bx) < T.x0 - 60 || Math.min(ax, bx) > x1 + 60 || Math.max(ay, by) < T.y0 - 60 || Math.min(ay, by) > y1 + 60) continue;
+    let lv = 0, dir = 1, best = Infinity;
+    for (const r of d!.runs) for (let k = 0; k < r.p.length - 1; k++) {
+      const q = r.p[k], dd = Math.hypot(q[0] - (ax + bx) / 2, q[1] - (ay + by) / 2);
+      if (dd < best) { best = dd; lv = r.lv; const n = r.p[k + 1]; dir = (n[0] - q[0]) * (bx - ax) + (n[1] - q[1]) * (by - ay) >= 0 ? 1 : -1; }
+    }
+    const L = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / L, uy = (by - ay) / L;
+    const bore = tunnelBore(t, lv), off = bore.mid * dir;
+    const crown = bore.wall + bore.rise, top = crown + 1.5 - 0.2, face = Math.max(7, bore.half + 3.5);
+    const reach = face + (top - lv) * 2 + 4;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
+    const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(ay, by) + reach - T.y0) / T.dy));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = T.x0 + i * T.dx - (ax - uy * off), y = T.y0 + j * T.dy - (ay + ux * off);
+      const s = x * ux + y * uy, v = Math.abs(-x * uy + y * ux);
+      const want = top - 0.5 * (Math.max(0, v - face) + Math.max(0, -s, s - L));
+      const k = j * T.nx + i, h = Math.round((want - T.z0) * 10);
+      if (h > T.h[k]) T.h[k] = h;
+    }
+  }
+}
+
 class Lock {
   /** Which end it's set for: 0 the bottom, 1 the top. The gates and water follow. */
   want = 0;
@@ -291,6 +383,7 @@ class Boat implements Mover {
   waitT = 0;
   helm = "";         // who's at the tiller ("" its own crew)
   throttle = 0; steer = 0; helmAt = 0; leftAt = -1e9;
+  castT = -1e9;      // when it was cast off from its mooring, here
   gas = 0;
   readonly root = new THREE.Group();
   readonly boater: THREE.Mesh;
@@ -307,6 +400,118 @@ class Boat implements Mover {
   get name() { return NAMES[this.n % NAMES.length]; }
 }
 
+// ---- the wake ---------------------------------------------------------------------------------
+
+const WAKE_N = 26;               // marks along each boat's wake (the boat where it is now, then where it's been)
+const WAKE_LIFE = 12;            // seconds a mark takes to smooth over
+const WAKE_STEP = 0.8;           // metres a boat goes between marks
+const WAKE_BOATS = 8;            // boats with a wake at once (more than are ever under way)
+const WAKE_FAR = 250;            // further off than this, a boat's wake isn't drawn
+
+/** Where a boat was: its stern and bow, across its beam, the water's height, when, how hard it was going, and how far along its wake. */
+interface Mark { sx: number; sz: number; bx: number; bz: number; ux: number; uz: number; y: number; t: number; s: number; d: number }
+
+/**
+ * The wake behind every boat under way: the bow wave spreading out behind it in a V towards both
+ * banks, and churned water behind the stern, fading over a few seconds and stronger the faster it
+ * goes. Every screen draws it from where the boats are, so nothing goes over the network, and
+ * all of it is one mesh, so a canal full of wakes is one draw.
+ */
+class Wake {
+  readonly mesh: THREE.Mesh;
+  private pos: Float32Array;
+  private col: Float32Array;
+  private uv: Float32Array;
+  private trails = new Map<Boat, Mark[]>();
+  private clock = 0;
+  private used = 0;                // boats drawn last frame
+
+  constructor() {
+    // three ribbons a boat: the wash behind the stern, and the bow wave's two arms
+    const ribbons = WAKE_BOATS * 3, verts = ribbons * WAKE_N * 2;
+    this.pos = new Float32Array(verts * 3);
+    this.col = new Float32Array(verts * 4).fill(1);
+    this.uv = new Float32Array(verts * 2);
+    const normal = new Float32Array(verts * 3);
+    for (let i = 0; i < verts; i++) { normal[i * 3 + 1] = 1; this.col[i * 4 + 3] = 0; }
+    const index: number[] = [];
+    for (let r = 0; r < ribbons; r++) for (let i = 0; i < WAKE_N - 1; i++) {
+      const a = (r * WAKE_N + i) * 2;
+      index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("color", new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("uv", new THREE.BufferAttribute(this.uv, 2).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
+    g.setIndex(index);
+    const map = foamTexture();
+    map.repeat.set(1, 0.25);
+    this.mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
+    this.mesh.frustumCulled = false;   // it moves about every frame, and is always near a boat
+    this.mesh.visible = false;
+  }
+
+  /** Where a boat is now, as a mark. */
+  private mark(b: Boat, d: number): Mark {
+    const c = Math.cos(b.a), sn = Math.sin(b.a);
+    return { sx: b.x - c * b.hl, sz: b.z + sn * b.hl, bx: b.x + c * b.hl, bz: b.z - sn * b.hl, ux: sn, uz: c, y: b.y + 0.54, t: this.clock, s: Math.min(1, Math.abs(b.v) / CRUISE), d };
+  }
+
+  update(dt: number, boats: Iterable<Boat>, px: number, pz: number) {
+    this.clock += dt;
+    const live = new Set<Boat>();
+    let k = 0;
+    for (const b of boats) {
+      live.add(b);
+      let m = this.trails.get(b);
+      if (!m) this.trails.set(b, (m = []));
+      const last = m[0], now = this.mark(b, last ? last.d : 0);
+      const gone = last ? Math.hypot(now.sx - last.sx, now.sz - last.sz) : Infinity;
+      now.d += Number.isFinite(gone) ? gone : 0;
+      // a new mark every so often as it goes (none while it's sat still, so the old ones fade)
+      if (gone > WAKE_STEP && now.s > 0.05) m.unshift(now);
+      while (m.length > WAKE_N - 1 || (m.length && this.clock - m[m.length - 1].t > WAKE_LIFE)) m.pop();
+      if (k < WAKE_BOATS && m.length && Math.hypot(b.x - px, b.z - pz) < WAKE_FAR) this.lay(k++, now, m);
+    }
+    for (const b of this.trails.keys()) if (!live.has(b)) this.trails.delete(b);
+    // boats no longer drawn: their ribbons go clear
+    for (let j = k; j < this.used; j++) for (let r = 0; r < 3; r++) for (let i = 0; i < WAKE_N * 2; i++) this.col[(((j * 3 + r) * WAKE_N) * 2 + i) * 4 + 3] = 0;
+    this.used = k;
+    this.mesh.visible = k > 0;
+    if (!k) return;
+    const g = this.mesh.geometry;
+    g.attributes.position.needsUpdate = g.attributes.color.needsUpdate = g.attributes.uv.needsUpdate = true;
+  }
+
+  /** Boat k's three ribbons, from the boat as it is now back along its marks. */
+  private lay(k: number, now: Mark, m: Mark[]) {
+    for (let r = 0; r < 3; r++) {
+      const base = (k * 3 + r) * WAKE_N * 2;
+      for (let i = 0; i < WAKE_N; i++) {
+        const at = i === 0 ? now : m[Math.min(i - 1, m.length - 1)];
+        const age = this.clock - at.t, fade = i > m.length ? 0 : Math.max(0, 1 - age / WAKE_LIFE);
+        // the wash: churned water off the propeller, widening as it settles. The arms: the bow
+        // wave, rolling out from the bow towards the banks (or the lock's or tunnel's walls, which hide it)
+        let cx: number, cz: number, half: number, alpha: number;
+        if (r === 0) {
+          cx = at.sx; cz = at.sz; half = Math.min(2.2, 0.7 + age * 0.15); alpha = at.s * fade * fade * 0.6;
+        } else {
+          const side = r === 1 ? 1 : -1, off = Math.min(HW + 2.6, HW + 0.15 + age * (0.25 + 0.45 * at.s));
+          cx = at.bx + at.ux * off * side; cz = at.bz + at.uz * off * side; half = 0.16 + age * 0.03; alpha = at.s * fade * 0.7;
+        }
+        if (i === 0) alpha = 0;   // it starts at the boat's own hull, not on top of it
+        for (let e = 0; e < 2; e++) {
+          const v = base + i * 2 + e, sgn = e ? 1 : -1;
+          this.pos[v * 3] = cx + at.ux * half * sgn; this.pos[v * 3 + 1] = at.y; this.pos[v * 3 + 2] = cz + at.uz * half * sgn;
+          this.col[v * 4 + 3] = alpha;
+          this.uv[v * 2] = e; this.uv[v * 2 + 1] = at.d * (r ? 0.5 : 0.25);
+        }
+      }
+    }
+  }
+}
+
 export class Canal {
   readonly legs: Leg[] = [];
   private nodes = new Map<string, { leg: number; end: 0 | 1 }[]>();
@@ -319,13 +524,19 @@ export class Canal {
   private serial = 1 + Math.floor(Math.random() * 1e6) * 1000;
   private boatGeo: THREE.BufferGeometry[] = [];
   private crewGeo = boaterGeometry();
+  private wake = new Wake();
   private boatMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   /** The moored boats, as boxes you can stand on and bump into. */
   readonly moored: Mover[] = [];
+  /** Each moored boat, by its place in the canal file's list: where it lies, its instance in the
+   *  drawing, its box, and whether it's out (cast off as a boat under way: castOff). */
+  private moorings: { x: number; z: number; a: number; len: number; paint: number; lv: number; im: THREE.InstancedMesh; k: number; mover: Mover; out: boolean }[] = [];
   /** Something to hear: a lock filling or emptying (vol 0..1), at scene (x, y, z). */
   onWater?: (i: number, x: number, y: number, z: number, vol: number) => void;
 
-  constructor(readonly d: CanalData, private scene: THREE.Scene, private z0: number) {
+  /** skipAqueduct: whether a set piece stands in for the aqueduct at data (x, y) (the Dundas
+   *  Aqueduct: landmarks/setpieces.ts), which this then doesn't build. */
+  constructor(readonly d: CanalData, private scene: THREE.Scene, private z0: number, private skipAqueduct?: (x: number, y: number) => boolean) {
     for (let k = 0; k < PAINTS.length; k++) this.boatGeo.push(boatGeometry(k));
     // the stretches of water, and the locks between them
     d.runs.forEach((r, i) => {
@@ -348,6 +559,7 @@ export class Canal {
     for (const L of this.legs) L.dead = (this.nodes.get(L.a)?.length ?? 0) < 2 || (this.nodes.get(L.b)?.length ?? 0) < 2;
     this.build();
     scene.add(this.group);
+    scene.add(this.wake.mesh);
   }
 
   private addLeg(L: Leg) {
@@ -377,7 +589,7 @@ export class Canal {
   private build() {
     const z0 = this.z0, d = this.d;
     const waterMat = new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-    const stoneMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const stoneMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: stoneTex ??= wall("stone", false) });
     const STONE = "#c3ae84", COPING = "#a89c86", DARK = "#4a3f33", BRICK = "#5a3c2e";
     const add = (o: THREE.Object3D, range = 700) => {
       this.group.add(o);
@@ -421,7 +633,8 @@ export class Canal {
         if (!(p[k][6] & 2)) { k++; continue; }
         let j = k;
         while (j + 1 < p.length && p[j + 1][6] & 2) j++;
-        this.aqueduct(st, r, L, k, j, STONE, COPING);
+        const mid = p[(k + j) >> 1];
+        if (!this.skipAqueduct?.(mid[0], mid[1])) this.aqueduct(st, r, L, k, j, STONE, COPING);
         k = j + 1;
       }
     });
@@ -430,15 +643,19 @@ export class Canal {
     const sg = st.build();
     if (sg) {
       // in pieces, so the far ones can be skipped
-      const pos = sg.getAttribute("position").array as Float32Array, col = sg.getAttribute("color").array as Float32Array;
-      const buckets = new Map<string, { p: number[]; c: number[] }>();
+      const pos = sg.getAttribute("position").array as Float32Array, col = sg.getAttribute("color").array as Float32Array, uv = sg.getAttribute("uv").array as Float32Array;
+      const buckets = new Map<string, { p: number[]; c: number[]; u: number[] }>();
       for (let t = 0; t < pos.length; t += 9) {
         const bk = `${Math.floor(pos[t] / 400)},${Math.floor(pos[t + 2] / 400)}`;
-        const b = buckets.get(bk) ?? buckets.set(bk, { p: [], c: [] }).get(bk)!;
+        const b = buckets.get(bk) ?? buckets.set(bk, { p: [], c: [], u: [] }).get(bk)!;
         for (let q = 0; q < 9; q++) { b.p.push(pos[t + q]); b.c.push(col[t + q]); }
+        for (let q = 0; q < 6; q++) b.u.push(uv[(t / 3) * 2 + q]);
       }
       for (const b of buckets.values()) {
-        const m = new THREE.Mesh(compact(b.p, b.c), stoneMat);
+        const g = compact(b.p, b.c), u = new THREE.Float32BufferAttribute(b.u, 2);
+        u.onUpload(() => { (u as { array: unknown }).array = null; });
+        g.setAttribute("uv", u);
+        const m = new THREE.Mesh(g, stoneMat);
         m.receiveShadow = true; m.castShadow = true;
         add(m);
       }
@@ -480,17 +697,20 @@ export class Canal {
       this.poseLock(lk);
     }
 
-    // the moored boats: one instanced mesh for each livery
-    const byPaint = new Map<number, number[][]>();
-    for (const m of d.moor) (byPaint.get(m[4]) ?? byPaint.set(m[4], []).get(m[4])!).push(m);
-    const lv = d.runs.reduce((a, r) => (r.p.length > a.n ? { n: r.p.length, lv: r.lv } : a), { n: 0, lv: 0 }).lv;
+    // the moored boats: one instanced mesh for each livery, each on its own stretch's water
+    const byPaint = new Map<number, number[]>();
+    d.moor.forEach((m, i) => (byPaint.get(m[4]) ?? byPaint.set(m[4], []).get(m[4])!).push(i));
+    const long = d.runs.reduce((a, r) => (r.p.length > a.n ? { n: r.p.length, lv: r.lv } : a), { n: 0, lv: 0 }).lv;
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
     for (const [paint, list] of byPaint) {
       const im = new THREE.InstancedMesh(this.boatGeo[paint % this.boatGeo.length], this.boatMat, list.length);
-      list.forEach(([x, y, ang, len], k) => {
+      list.forEach((i, k) => {
+        const [x, y, ang, len] = d.moor[i], at = this.nearest(x, -y), lv = at ? d.runs[at.run].lv : long;
         M.compose(new THREE.Vector3(x, lv - z0, -y), Q.setFromAxisAngle(Y, ang), new THREE.Vector3(len / 18, 1, 1));
         im.setMatrixAt(k, M);
-        this.moored.push({ x, z: -y, a: ang, hl: len / 2, hw: HW, y: lv - z0 - 0.5, top: lv - z0 + 1.75, waist: lv - z0 + 1.0 });
+        const mover = { x, z: -y, a: ang, hl: len / 2, hw: HW, y: lv - z0 - 0.5, top: lv - z0 + 1.75, waist: lv - z0 + 1.0 };
+        this.moored.push(mover);
+        this.moorings[i] = { x, z: -y, a: ang, len, paint, lv, im, k, mover, out: false };
       });
       im.castShadow = im.receiveShadow = true;
       im.computeBoundingSphere();
@@ -825,6 +1045,7 @@ export class Canal {
     const b = new Boat(n, len, paint, this.boatGeo[paint % this.boatGeo.length], this.crewGeo, this.boatMat);
     this.boats.set(n, b);
     this.scene.add(b.root);
+    if (n >= MOOR) this.moor(n - MOOR, true);
     return b;
   }
 
@@ -833,11 +1054,69 @@ export class Canal {
     if (!b) return;
     this.boats.delete(n);
     this.scene.remove(b.root);
+    // (a moored boat taken out goes back on its mooring once nobody's about)
+    if (n >= MOOR) this.moor(n - MOOR, false);
     for (const lk of this.locks) { if (lk.inside === n) lk.inside = 0; if (lk.claim === n) lk.claim = 0; }
+  }
+
+  /** Moored boat m out (under way: its instance hidden and its box gone) or back on its mooring. */
+  private moor(m: number, out: boolean) {
+    const o = this.moorings[m];
+    if (!o || o.out === out) return;
+    o.out = out;
+    const M = new THREE.Matrix4();
+    if (out) M.makeScale(0, 0, 0);
+    else M.compose(new THREE.Vector3(o.x, o.lv - this.z0, o.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), o.a), new THREE.Vector3(o.len / 18, 1, 1));
+    o.im.setMatrixAt(o.k, M);
+    o.im.instanceMatrix.needsUpdate = true;
+    // (its box sinks out of the way while it's out, so nothing bumps into a boat that isn't there)
+    o.mover.y = (out ? -1e4 : o.lv - this.z0 - 0.5); o.mover.top = (out ? -1e4 : o.lv - this.z0 + 1.75); o.mover.waist = (out ? -1e4 : o.lv - this.z0 + 1.0);
+  }
+
+  /** A moored boat whose tiller is within reach of feet at scene (x, y, z): its place in the list, or -1. */
+  mooredNear(x: number, y: number, z: number): number {
+    for (let m = 0; m < this.moorings.length; m++) {
+      const o = this.moorings[m];
+      if (!o || o.out || Math.abs(o.x - x) > o.len || Math.abs(o.z - z) > o.len) continue;
+      const back = o.len / 2 - 0.6, tx = o.x - Math.cos(o.a) * back, tz = o.z + Math.sin(o.a) * back;
+      if (Math.hypot(tx - x, tz - z) < 2.4 && Math.abs(o.lv - this.z0 + 1 - y) < 2) return m;
+    }
+    return -1;
+  }
+  /** The name a moored boat goes by (as it will under way). */
+  mooredName(m: number): string { return NAMES[(MOOR + m) % NAMES.length]; }
+
+  /** Moored boat m cast off: a boat under way where it lay, number MOOR + m, which everyone makes
+   *  the same from the canal file (the host's updates then carry it like any other). */
+  castOff(m: number): Boat | null {
+    const live = this.boats.get(MOOR + m);
+    if (live) return live;
+    const o = this.moorings[m];
+    if (!o) return null;
+    // the stretch it lies on, how far along, which way it faces along it and how far off the middle
+    let best: { leg: number; s: number; tx: number; tz: number; x: number; z: number } | null = null, bd = Infinity;
+    this.legs.forEach((L, leg) => {
+      if (L.lock >= 0) return;
+      for (let i = 0; i < L.pts.length - 1; i++) {
+        const a = L.pts[i], b = L.pts[i + 1], vx = b.x - a.x, vz = b.z - a.z, l2 = vx * vx + vz * vz || 1;
+        const t = Math.max(0, Math.min(1, ((o.x - a.x) * vx + (o.z - a.z) * vz) / l2)), px = a.x + vx * t, pz = a.z + vz * t, dd = Math.hypot(o.x - px, o.z - pz);
+        if (dd < bd) { const l = Math.sqrt(l2); bd = dd; best = { leg, s: a.s + (b.s - a.s) * t, tx: vx / l, tz: vz / l, x: px, z: pz }; }
+      }
+    });
+    if (!best || bd > 20) return null;
+    const B = best as { leg: number; s: number; tx: number; tz: number; x: number; z: number };
+    const dir = Math.cos(o.a) * B.tx - Math.sin(o.a) * B.tz >= 0 ? 1 : -1, hx = B.tx * dir, hz = B.tz * dir;
+    const b = this.make(MOOR + m, o.len, o.paint);
+    b.leg = B.leg; b.s = B.s; b.dir = dir; b.v = 0; b.next = -2;
+    b.lat = b.latT = (o.x - B.x) * hz + (o.z - B.z) * -hx;
+    b.leftAt = performance.now(); b.castT = performance.now();
+    this.place(b, 0);
+    return b;
   }
 
   /** Someone wants the tiller of boat n: theirs if nobody has it. */
   take(n: number, id: string): boolean {
+    if (!this.boats.has(n) && n >= MOOR && n - MOOR < this.moorings.length) this.castOff(n - MOOR);
     const b = this.boats.get(n);
     if (!b || (b.helm && b.helm !== id)) return false;
     for (const o of this.boats.values()) if (o.helm === id && o !== b) o.helm = "";
@@ -888,7 +1167,8 @@ export class Canal {
       if (b.leg !== leg || b.dir !== dir || Math.abs(b.s - s) > 5) { b.leg = leg; b.s = s; } else b.s += (s - b.s) * 0.4;
       b.dir = dir; b.latT = lat; b.v = v; b.mode = mode; b.turn = turn; b.helm = ""; b.rel = Number.isFinite(rel) ? rel : 0;
     }
-    for (const n of [...this.boats.keys()]) if (!seen.has(n)) this.drop(n);
+    // (a moored boat we've just cast off ourselves isn't in the host's updates for a moment yet)
+    for (const [n, b] of [...this.boats]) if (!seen.has(n) && !(n >= MOOR && performance.now() - b.castT < 3000)) this.drop(n);
     if (Array.isArray(d.h)) for (let k = 0; k + 1 < d.h.length; k += 2) { const b = this.boats.get(d.h[k] as number); if (b) b.helm = String(d.h[k + 1]); }
     this.locks.forEach((lk, i) => {
       const [w, f, g0, g1] = d.l.slice(i * 4, i * 4 + 4);
@@ -908,6 +1188,7 @@ export class Canal {
       }
       this.place(b, dt);
     }
+    this.wake.update(dt, this.boats.values(), px, pz);
     // the sound of water rushing through the paddles
     for (const lk of this.locks) {
       const fl = lk.flow;

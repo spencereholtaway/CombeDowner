@@ -91,7 +91,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
   low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
-  catches the next one, and a long grind wobbles: tap the opposite way to steady it. Grinds, jumps and
+  catches the next one, and a long grind wobbles: tap the opposite way to steady it. On every ride and in
+  every vehicle A and D (or the left stick) steer and the mouse only looks about, swinging back to the
+  way you're going as soon as you leave it be or speed up. Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
@@ -110,12 +112,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
-- **Your map**: press M, then Your map (or Y), or pick it from the pause menu. Every square of the map
-  is coloured by what you've done there: green where you've cleared it of flags, blue where you've
-  been, red where the Flag Lads hold it today, ringed amber where a scar's waiting, and a pint on each
-  pub you've won back. Beside it: how much of the map is yours (squares you've cleared), squares
-  visited, pubs won back, flags shot all time, your best combo and scars to fix. Point at or tap a
-  square for its name and what you did there. It's yours, kept on your device from day to day.
+- **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
+  streets, with a small pint on each pub you've won back and a thin amber ring where a scar's
+  waiting; the Flag Lads' red still shows where they hold a square today. A line in the map's
+  corner says how much of Bath is yours (the squares you've cleared). Point at or tap a square for
+  its name and what you've done there. "Squares you've cleared" in the map's key switches it off.
+  It's kept on your device from day to day.
 - **The Chronicle**: the game's newspaper, named after the map you're on ("The Combe Down
   Chronicle"), as one big front page with no tabs. Down the main column are today's three jobs and
   how the Flag Lads are doing, then "Yesterday in ...": yesterday's lead story with its photo (the
@@ -131,6 +133,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.
+
+- **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
+  knows, and the game says when it sees one. Left stick walks (all the way forward runs), right stick looks, R2 shoots and L2 aims; Cross
+  jumps, Square uses (E), Circle crouches, Triangle reloads, L1 and R1 change weapon. In a car R2 and
+  L2 are the pedals, the left stick steers and R1 is the horn. Options pauses, and on the menus the
+  d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
+  dead zone and rumble once one's connected, and you can move any button to another in Settings,
+  Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in
+  [docs/playing.md](docs/playing.md#game-controllers). It works down the mines too.
 
 ## Run it
 
@@ -177,6 +188,7 @@ pip3 install numpy shapely pillow scipy scikit-image
 MAP=combe-down
 python3 -I tools/mapdata.py unpack $MAP        # the repository's copy -> data/raw/$MAP/wide
 # the canal and railways first: the squares cut the ground to the levels these work out
+# (the canal moors its boats where data/$MAP/moorings.json says: tools/moorings.py finds them in the lidar)
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force

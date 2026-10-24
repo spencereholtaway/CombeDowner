@@ -104,9 +104,10 @@ if (synth) {
  * Say a line out loud, distance metres away. seed gives each of them a voice of their own. One at a
  * time, and never over your own one-liners (quips.ts): while anything is being said, they keep quiet.
  * own: a voice set by hand instead (breakdown.ts): which of the voices (counting round if there are
- * fewer), at this pitch. woman: a woman's voice (a naughty girl), pitched a bit higher.
+ * fewer), at this pitch. woman: a woman's voice (a naughty girl), pitched a bit higher. pitch: their
+ * own voice, but this high (1.5 for one legging it, scared).
  */
-export function speak(text: string, seed: number, distance: number, own?: { voice: number; pitch: number; rate?: number }, woman = false) {
+export function speak(text: string, seed: number, distance: number, own?: { voice: number; pitch: number; rate?: number }, woman = false, pitch?: number) {
   if (!synth || distance > 55 || document.hidden || synth.speaking || synth.pending) return;
   const r = (k: number) => { const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
   const u = new SpeechSynthesisUtterance(text);
@@ -114,7 +115,7 @@ export function speak(text: string, seed: number, distance: number, own?: { voic
   const v = pool.length ? pool[own ? own.voice % pool.length : Math.floor(r(3) * pool.length)] : null;
   if (v) u.voice = v;
   u.lang = v?.lang ?? "en-GB";
-  u.pitch = own?.pitch ?? (woman ? 1.05 + r(1) * 0.35 : 0.65 + r(1) * 0.4);
+  u.pitch = pitch ?? own?.pitch ?? (woman ? 1.05 + r(1) * 0.35 : 0.65 + r(1) * 0.4);
   u.rate = own?.rate ?? 0.95 + r(2) * 0.15;
   u.volume = Math.min(1, 10 / (distance + 10)) * SFX.effectsVolume();
   if (u.volume === 0) return;

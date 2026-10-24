@@ -9,6 +9,7 @@ import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
+import { B, GamepadControls, key, mouse, padActions, padPress, padSettings, padText, tap } from "../gamepad";
 import * as Telemetry from "../telemetry";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -111,7 +112,7 @@ function pickClass() {
     b.innerHTML = `<b></b><span></span><small></small>`;
     b.querySelector("b")!.textContent = c.name;
     b.querySelector("span")!.textContent = c.blurb;
-    b.querySelector("small")!.textContent = `${c.hp} health. ${c.how}`;
+    b.querySelector("small")!.textContent = padText(`${c.hp} health. ${c.how}`);
     if (id === last) b.classList.add("last");
     b.onclick = () => {
       store.set("cd-class", id);
@@ -233,11 +234,40 @@ if (GO) { if (roomParam && roomParam !== "SOLO") play(roomParam); else solo(); }
 const backdrop = new THREE.Scene();
 backdrop.background = new THREE.Color("#030202");
 
+// A game controller (gamepad.ts): its buttons press the mouse and keys that do the same down here
+const pad = new GamepadControls(() => game && {
+  playing: () => !!game?.active && $("pause").hidden && $("classpick").hidden,
+  player: () => game!.player,
+  look: (dx, dy) => game!.player.look(dx, dy, 1),
+  driving: () => false,
+  button: padPress,
+}, (text) => game?.toast(text, 4));
+const hold = (code: string) => (down: boolean) => key(code, down);
+const wheel = (deltaY: number) => (down: boolean) => { if (down) dispatchEvent(new WheelEvent("wheel", { deltaY })); };
+const slot = (n: number) => (down: boolean) => { if (down) tap(`Digit${n}`); };
+padActions([
+  { id: "fire", name: "Swing, draw or cast", button: B.r2, keys: ["Mouse0"], run: (down) => mouse(0, down) },
+  { id: "heal", name: "Healing light", button: B.l2, keys: ["Mouse2"], run: (down) => { if (down) mouse(2, true); } },
+  { id: "jump", name: "Jump", button: B.cross, keys: ["Space"], run: hold("Space") },
+  { id: "use", name: "Use, or hold to pick a friend up", button: B.square, keys: ["KeyE"], run: hold("KeyE") },
+  { id: "crouch", name: "Crouch", button: B.circle, keys: ["KeyC"], run: hold("KeyC") },
+  { id: "prev", name: "Previous weapon", button: B.l1, keys: ["Wheel"], run: wheel(-40) },
+  { id: "next", name: "Next weapon", button: B.r1, keys: ["Wheel"], run: wheel(40) },
+  { id: "radio", name: "Talk on the radio", button: B.r3, keys: ["KeyV"], run: hold("KeyV") },
+  { id: "map", name: "Whole map", button: B.touchpad, keys: ["KeyM"], run: (down) => { if (down) tap("KeyM"); } },
+  { id: "slot1", name: "First weapon", button: B.up, keys: ["Digit1"], run: slot(1) },
+  { id: "slot2", name: "Second weapon", button: B.down, keys: ["Digit2"], run: slot(2) },
+  { id: "slot3", name: "Third weapon", button: B.left, keys: ["Digit3"], run: slot(3) },
+  { id: "slot4", name: "Fourth weapon", button: B.right, keys: ["Digit4"], run: slot(4) },
+], "cd-padbuttons-mines");
+padSettings();
+
 let last = performance.now();
 let frames = 0, fpsT = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  pad.poll(dt);
   if (game) { game.update(dt); post.render(game.scene, game.weaponScene); }
   else post.render(backdrop, null);
   frames++; fpsT += raw;

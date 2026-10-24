@@ -1,7 +1,10 @@
 // First-person movement: mouse look, WASD, sprint, jump, climbing walls, crouch, lying on your
 // front (Z, the streets only), gravity and collision. And riding (rides.ts): on a bike, a board,
-// blades and the rest you roll along the way you're heading rather than walking, steering towards
-// where you look (or with A and D), speeding up downhill, slowing uphill and bogging down on grass.
+// blades and the rest you roll along the way you're heading rather than walking, steered with A and
+// D (or the stick) as a car is, while the mouse only looks about and the view comes back round to the
+// way you're going once you leave it be (settleRate, shared with the vehicles in game.ts). You speed
+// up downhill, slow uphill and bog down on grass. A pogo stick is the odd one out: you hop about on it
+// as you walk, the way you look.
 // Each ride's verb is on Space, its trick is Space again in the air, and Shift grinds a kerb or a
 // low wall alongside or rides a manual; what you pull off goes out as events for the score
 // (ridetricks.ts). While you grind, the way you hold the stick picks the grind (none, forward, back,
@@ -89,10 +92,21 @@ const CLIMB = 2.6;        // metres a second up or down a ladder
 const FLY = 12;           // metres a second flying, with wings on
 const CEILING = 120;      // and flaps lose their lift towards this high off the ground
 
+/**
+ * How much of the way back round to dead ahead the view comes this frame (0: it stays put), on a ride
+ * or in a vehicle alike. It waits a moment after you stop looking about (idle, milliseconds since you
+ * last did) and you're on the move, or comes round as soon as you speed up, as in a driving game.
+ */
+export function settleRate(idle: number, moving: boolean, speeding: boolean, dt: number): number {
+  return (moving && idle > 450) || (speeding && idle > 100) ? Math.min(1, dt * 3) : 0;
+}
+
 export class Player {
   pos = new THREE.Vector3();      // feet
   vel = new THREE.Vector3();
   yaw = 0; pitch = 0;
+  /** When you last looked about (performance.now()), for the view coming back round on a ride or in a vehicle. */
+  lookedAt = -1e9;
   onGround = false;
   crouch = 0;                     // 0 standing .. 1 crouched, eased
   sensitivity = 0.0022;
@@ -125,6 +139,9 @@ export class Player {
   ride: RideSpec | null = null;
   heading = 0;
   rideV = 0;
+  /** How far A and D (or the stick) have the ride turning, -1 left .. 1 right, eased: the handlebars show it. */
+  steer = 0;
+  private pushOn = false;
   /** Set for a frame when you come off a ride: how fast you were going, and whether it was into something. */
   crashed = 0;
   crashWall = false;
@@ -199,6 +216,7 @@ export class Player {
 
   look(dx: number, dy: number, zoom: number) {
     const s = this.sensitivity * zoom;
+    if (dx || dy) this.lookedAt = performance.now();
     this.yaw -= dx * s;
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * s));
     // pulling your aim down makes up for the kick yourself (pulling ahead of it during a burst
@@ -224,7 +242,8 @@ export class Player {
   get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch + (PRONE_EYE - EYE) * this.prone + (this.ride ? this.ride.lift - this.dip : 0); }
   get sprinting() {
     if (this.ride) return false;
-    const stick = this.joy.y < -0.95;   // joystick pushed all the way forward
+    // the stick pushed all the way, forward or forward and to the side, as Shift with W and A or D
+    const stick = Math.hypot(this.joy.x, this.joy.y) > 0.9 && this.joy.y < -0.4;
     return (stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"))) && this.crouch < 0.5 && this.prone < 0.5 && this.onGround;
   }
 
@@ -489,7 +508,7 @@ export class Player {
     this.jumpBuf = 0; this.coyote = 0; this.jumpRise = false;
   }
 
-  /** Riding: you roll the way the ride's heading, steered towards where you look. */
+  /** Riding: you roll the way the ride's heading, which only A and D (or the stick) turn. */
   private rideUpdate(dt: number, active: boolean) {
     const s = this.ride!, k = this.keys;
     this.crouch += (0 - this.crouch) * Math.min(1, dt * 12);
@@ -511,6 +530,8 @@ export class Player {
       if (k.has("KeyD") || k.has("ArrowRight")) side += 1;
       if (!fwd && !side && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fwd = -this.joy.y; side = this.joy.x; }
     }
+    this.pushOn = fwd > 0;
+    this.steer += (side - this.steer) * Math.min(1, dt * 8);
     // Space (or the jump button): held, just pressed, just let go
     const held = control && (k.has("Space") || this.jumpHeld);
     const press = control && !this.prevHeld && (held || this.wantJump);
@@ -554,18 +575,18 @@ export class Player {
       if (this.grind) { this.rideDone(sx, sz, dt, s); return; }
     } else {
       const air = !this.onGround;
-      // steering: A and D turn you (and the view); otherwise it comes round to where you look.
-      // In the air it turns as fast as you can spin it.
+      // A and D steer; in the air they spin it as fast as it'll go round
       const turn = this.tumble > 0 ? 0 : air ? s.spin : s.turn * Math.min(1, 0.35 + Math.abs(this.rideV) / 4) * (this.verbOn ? 0.6 : 1);
-      if (side) this.yaw -= side * turn * dt;
-      const diff = wrap(this.yaw - this.heading), before = this.heading;
-      this.heading += Math.max(-turn * dt, Math.min(turn * dt, diff));
+      const before = this.heading;
+      this.heading -= side * turn * dt;
       if (air) this.airSpin += this.heading - before;
-      // a trolley's wonky wheel (worse with you riding on the back)
+      // a trolley's wonky wheel (worse with you riding on the back), which you steer against
       if (s.wobble && !air) {
         this.wobble = this.wobble * Math.max(0, 1 - dt * 0.6) + (Math.random() - 0.5) * dt * 6;
         this.heading += this.wobble * s.wobble * (this.verbOn ? 1.5 : 1) * dt * Math.min(1, Math.abs(this.rideV) / 4);
       }
+      // you turn with it, and still look wherever you were looking from there
+      this.yaw += this.heading - before;
       const hx = -Math.sin(this.heading), hz = -Math.cos(this.heading);
       let v = this.rideV;
       if (this.onGround) {
@@ -678,6 +699,11 @@ export class Player {
 
   /** The end of every ride frame. */
   private rideDone(sx: number, sz: number, dt: number, s: RideSpec) {
+    if (!s.pogo && this.tumble <= 0) {
+      // the view comes back round to the way you're going (a landing or a grind can leave it off)
+      const k = settleRate(performance.now() - this.lookedAt, Math.abs(this.rideV) > 1.5, this.pushOn, dt);
+      this.yaw -= wrap(this.yaw - this.heading) * k;
+    }
     this.speed = Math.hypot(this.pos.x - sx, this.pos.z - sz) / Math.max(dt, 1e-4);
     if (s.pogo && this.onGround) this.bob += this.speed * dt * 1.9;
     this.landKick *= Math.max(0, 1 - dt * 8);

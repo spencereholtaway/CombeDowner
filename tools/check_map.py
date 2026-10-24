@@ -43,6 +43,9 @@ RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 6, "footway": 1.6, "steps": 1.8, "cycleway": 2,
       "path": 1.4, "track": 2.8, "bridleway": 2}
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
+# the steepest each kind of road is laid (tools/prep_map.py STEEPEST: drives and yards up to 1 in 3)
+STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
+            "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
 VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown"}
 
 
@@ -99,7 +102,7 @@ def main():
             for a, b in zip(p, p[1:]):
                 d = math.dist(a[:2], b[:2]) or 0.01
                 g = abs(b[2] - a[2]) / d
-                if g > 0.25 and d > 1: note("1 road too steep", g, (tag, round(a[0]), round(a[1])), f"{r['c']} {r['n']!r} 1 in {1 / g:.1f}")
+                if g > STEEPEST.get(r["c"], 0.25) + 0.02 and d > 1: note("1 road too steep", g, (tag, round(a[0]), round(a[1])), f"{r['c']} {r['n']!r} 1 in {1 / g:.1f}")
             for a, b, c in zip(p, p[1:], p[2:]):
                 d1, d2 = math.dist(a[:2], b[:2]) or 0.01, math.dist(b[:2], c[:2]) or 0.01
                 if d1 < 1.5 or d2 < 1.5: continue

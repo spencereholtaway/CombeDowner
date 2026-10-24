@@ -79,6 +79,10 @@ function sections(): [string, Row[]][] {
         g.fillStyle = "rgba(214,40,52,0.6)"; g.fillRect(s * 0.1, s * 0.1, s * 0.4, s * 0.8);
         g.fillStyle = "rgba(79,209,139,0.6)"; g.fillRect(s * 0.5, s * 0.1, s * 0.4, s * 0.8);
       } },
+      { layer: "yours", label: "Squares you've cleared", note: "faint green; a pint on each pub you've won back, an amber ring where a scar's waiting", icon: (g, s) => {
+        g.fillStyle = "rgba(120,224,160,0.35)"; g.fillRect(s * 0.1, s * 0.1, s * 0.8, s * 0.8);
+        g.strokeStyle = "#d79a2b"; g.lineWidth = s / 14; g.strokeRect(s * 0.16, s * 0.16, s * 0.68, s * 0.68);
+      } },
       { layer: "streets", label: "Street names", icon: (g, s) => {
         g.fillStyle = "#f4f1ea"; g.font = `600 ${s * 0.6}px "Barlow Condensed", system-ui, sans-serif`;
         g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("Abc", s / 2, s / 2);

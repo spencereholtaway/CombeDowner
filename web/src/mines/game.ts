@@ -14,6 +14,7 @@
 import * as Telemetry from "../telemetry";
 import * as THREE from "three";
 import * as SFX from "../audio";
+import { keyLabel, padText, rumble } from "../gamepad";
 import { Avatar, colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Player } from "../player";
@@ -811,7 +812,7 @@ export class MineGame {
     $("pkname").textContent = r.name;
     $("pkblurb").textContent = r.blurb;
     const k = this.loadout.indexOf(item);
-    $("pkhint").textContent = item in WEAPONS ? `In your hands now. ${k + 1} or the mouse wheel to switch` : r.once ? "Used on the spot" : r.cursed ? "Cursed. It won't come off" : "In your pack";
+    $("pkhint").textContent = item in WEAPONS ? padText(`In your hands now. ${keyLabel(`Digit${k + 1}`)} or the mouse wheel to switch`) : r.once ? "Used on the spot" : r.cursed ? "Cursed. It won't come off" : "In your pack";
     const card = $("pickup");
     card.classList.toggle("cursed", !!r.cursed);
     card.classList.remove("show");
@@ -900,6 +901,7 @@ export class MineGame {
     this.hp -= dmg;
     this.hurtT = 0.4;
     SFX.hurt();
+    rumble(0.6, 0.4, 160);
     if (this.hp <= 0) {
       this.hp = 0;
       this.down = true;
@@ -1319,7 +1321,7 @@ export class MineGame {
     let hint = t?.text ?? "";
     if (this.reviving) hint += ` <span class="prog"><i style="width:${Math.round(this.reviveT * 100)}%"></i></span>`;
     if (this.down && W.ph === 0) hint = "You're down. A friend can pick you up";
-    $("usehint").innerHTML = hint;
+    $("usehint").innerHTML = padText(hint);
     $("usehint").hidden = !hint;
     // walk over a pint to drink it
     for (const [id, o] of this.pints) {
@@ -1601,6 +1603,7 @@ export class MineGame {
 
   sign(text: string) { $("where").textContent = text; this.signT = 5; }
   toast(text: string, secs = 2) {
+    text = padText(text);
     const el = $("toast");
     if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
     el.textContent = text;

@@ -3,7 +3,8 @@
 // its own way (rideSpecs below; the riding itself is in player.ts, the score in ridetricks.ts): a
 // bike flies along the roads but bogs down on grass, a skateboard picks up speed downhill and
 // stops dead on rough ground, a pogo stick bounces over fences, and a trolley steers like a
-// shopping trolley. Bath's hills are the whole game: downhill builds speed, uphill bleeds it.
+// shopping trolley. Bath's hills are the whole game: downhill builds speed, uphill bleeds it. A and D
+// (or the stick) steer every one but the pogo stick, as in a car, and the mouse only looks about.
 //
 // Each ride has one thing it does on Space (its verb): the racing bike tucks down for speed, the
 // BMX bunny hops (hold to crouch, let go to hop), the skateboard ollies, the rollerblades jump,

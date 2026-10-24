@@ -2,7 +2,7 @@
 // they catch. They run faster than you walk but slower than you sprint, and give up once you're far
 // enough away, have been out of sight for a few seconds, or they've run a while without catching
 // you. Shoot one and he comes for you. Splat one enough and he goes over, then picks himself up and
-// legs it, far faster than you can run, shouting as he goes, and fades away once he's well off: he's
+// legs it, far faster than you can run, shouting as he goes (high and scared), and fades away once he's well off: he's
 // had enough, that's all. Run one over and he's sent sprawling to the side, then gets up and runs off
 // square to the way the car was going.
 //
@@ -106,7 +106,7 @@ const GONE = 0, ALIVE = 1, DEAD = 2;
  *  someone arriving, and when the next one turns out anyway. */
 interface Ground { kind: number; spots: { x: number; z: number }[]; on: (x: number, z: number) => boolean; met: Map<string, number>; owed: boolean; next: number }
 /** A player the naughty boys might go for. */
-/** passive: they've passive mode on (settings.ts), so nobody here goes for them. */
+/** passive: they've passive mode on (settings.ts), or they're at a narrowboat's tiller, so nobody here goes for them. */
 export interface Target { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
 export interface NaughtyBoyState { s: number[]; t: string[] }
 /** A gang's look: its kind times 16, plus which kit (for the teams), plus BOSS for a ringleader. */
@@ -679,7 +679,7 @@ export class NaughtyBoys {
   /** A naughty boy throws a punch. */
   onSwing: (x: number, y: number, z: number, voice: number) => void = () => {};
   /** A naughty boy spots someone and shouts. kind is NAUGHTY, RUGBY or CRICKET; the posh ones say line. */
-  onShout: (x: number, y: number, z: number, voice: number, kind: number, line: string) => void = () => {};
+  onShout: (x: number, y: number, z: number, voice: number, kind: number, line: string, scared?: boolean) => void = () => {};
   /** A naughty boy's foot comes down (speed in m/s). */
   onStep: (x: number, y: number, z: number, speed: number) => void = () => {};
   /**
@@ -1333,11 +1333,11 @@ export class NaughtyBoys {
       if (c.state === ALIVE || (c.state === DEAD && c.deadAnim < OUT_SECS)) {
         fig.root.visible = true;
         const fleeing = c.state === DEAD && c.deadAnim > OFF_SECS, going = c.state === ALIVE || fleeing;
-        // up on his feet: he shouts as he legs it
+        // up on his feet: he shouts as he legs it, his voice gone high with fright
         if (c.state === DEAD && was <= OFF_SECS && fleeing) {
           const said = legIt(c.kind);
           fig.say(said);
-          this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said);
+          this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said, true);
         }
         const down = fig.pose(c.dx, c.dy, c.dz, c.dyaw, going ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
         fig.fade(c.state === DEAD ? (OUT_SECS - c.deadAnim) / FADE_SECS : 1);

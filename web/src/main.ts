@@ -5,8 +5,8 @@ import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
+import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
 import { PubMap } from "./pubmap";
-import { YourMap } from "./yourmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
@@ -172,9 +172,6 @@ function startReady(): Promise<void> {
 $("loading").hidden = true;
 $("menuform").hidden = false;
 $(roomParam ? "play" : "code").focus();
-// back from updating to the new version (freshReload), or a link with join=1: straight on into
-// that game, once the squares round where everyone starts are in (Play waits for them till then)
-if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) void startReady().then(() => play(roomParam));
 
 const list = $("maplist");
 for (const m of choices) {
@@ -661,25 +658,13 @@ $("gopub").onclick = () => pubMap.open();
 $("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
 $("trophybtn").onclick = () => openCabinet(() => showCompletion());
 
-// your map and the Chronicle's news: from the pause menu, the big map (Y) and the noticeboards (N)
-const yourMap = new YourMap(() => game);
+// the Chronicle's news: from the pause menu and the noticeboards (N)
 function pauseButton(id: string, text: string, onclick: () => void) {
   const b = document.createElement("button");
   b.type = "button"; b.id = id; b.textContent = text; b.onclick = onclick;
   $("trophybtn").after(b);
 }
 pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
-pauseButton("yourmapbtn2", "Your map", () => yourMap.open(false));
-const yourBtn = document.createElement("button");
-yourBtn.type = "button"; yourBtn.id = "yourmapbtn"; yourBtn.textContent = "Your map (Y)";
-yourBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-yourBtn.onclick = () => toggleYours();
-document.querySelector("#bigmap .bigmapbar")?.prepend(yourBtn);
-$("bigmap").addEventListener("pointerdown", (e) => { if ((e.target as HTMLElement).closest("#yourpanel")) e.stopPropagation(); }, true);
-function toggleYours() {
-  if (!game || pubMap.isOpen) return;
-  if (yourMap.isOpen) yourMap.back(); else yourMap.open($("pause").hidden);
-}
 const paperHud = document.createElement("button");
 paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
 paperHud.onclick = () => readPaper();
@@ -711,8 +696,7 @@ setInterval(() => {
 }, 300);
 addEventListener("keydown", (e) => {
   if (!game || e.repeat || e.target instanceof HTMLInputElement) return;
-  if (e.code === "KeyY" && !$("bigmap").hidden) toggleYours();
-  else if (e.code === "KeyN" && game.active && game.quests.atBoard()) readPaper();
+  if (e.code === "KeyN" && game.active && game.quests.atBoard()) readPaper();
 });
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
@@ -735,11 +719,64 @@ settingsPage({
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
 });
 
+// A game controller: what each button does here, mostly the key that does it (gamepad.ts). Each row
+// can be moved to another button in Settings; the rows "at the wheel" take over their button while
+// you drive.
+const pad = new GamepadControls(() => game && {
+  playing: () => !!game?.active && $("pause").hidden,
+  player: () => game!.player,
+  look: (dx, dy) => game!.look(dx, dy),
+  driving: () => game!.driving,
+  button: padPress,
+}, (text) => game?.toast(text, 4));
+const hold = (code: string) => (down: boolean) => key(code, down);
+// toggles are tapped, so getting in or out of a car between press and let-go can't leave one held
+const press = (code: string) => (down: boolean) => { if (down) tap(code); };
+const weapon = (by: 1 | -1) => (down: boolean) => {
+  if (!down || !game) return;
+  if (game.busMenuUp) game.callBus(by < 0 ? "minibus" : "bus");
+  else game.cycleWeapon(by);
+};
+padActions([
+  { id: "fire", name: "Shoot", button: B.r2, keys: ["Mouse0"], foot: true,
+    run: (down) => { if (!game) return; if (!down) game.firing = false; else { game.firing = true; game.shootOnce = true; } } },
+  { id: "aim", name: "Aim", button: B.l2, keys: ["Mouse2"], foot: true,
+    run: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } } },
+  { id: "jump", name: "Jump, or the handbrake", button: B.cross, keys: ["Space"], run: hold("Space") },
+  { id: "use", name: "Use, get in or out", button: B.square, keys: ["KeyE"], live: true, run: hold("KeyE") },
+  { id: "reload", name: "Reload", button: B.triangle, keys: ["KeyR"], run: press("KeyR") },
+  { id: "crouch", name: "Crouch, then lie down", button: B.circle, keys: ["KeyC"], foot: true,
+    run: (down) => {
+      const p = game?.player;
+      if (!down || !p) return;
+      // crouch, then down on your front, then up again, as the touch Crouch button does
+      if (p.proneLatch) p.proneLatch = false;
+      else if (p.crouchLatch && p.canProne) { p.crouchLatch = false; p.proneLatch = true; }
+      else p.crouchLatch = !p.crouchLatch;
+    } },
+  { id: "prev", name: "Previous weapon (or a minibus)", button: B.l1, keys: ["Digit1", "Wheel"], foot: true, run: weapon(-1) },
+  { id: "next", name: "Next weapon (or a double-decker)", button: B.r1, keys: ["Digit2", "Digit3", "KeyQ", "Wheel"], foot: true, run: weapon(1) },
+  { id: "trick", name: "Trick or grind on a ride", button: B.l3, keys: ["ShiftLeft"], run: (down) => { if (game) game.player.trickHeld = down; } },
+  { id: "radio", name: "Talk on the radio", button: B.r3, keys: ["KeyV"], live: true, run: hold("KeyV") },
+  { id: "scores", name: "Scores", button: B.create, keys: ["Tab"], live: true, run: hold("Tab") },
+  { id: "map", name: "Full map", button: B.touchpad, keys: ["KeyM"], live: true, run: press("KeyM") },
+  { id: "torch", name: "Torch", button: B.up, keys: ["KeyF"], run: press("KeyF") },
+  { id: "ride", name: "On or off a ride, put up a ladder", button: B.down, keys: ["KeyX"], run: press("KeyX") },
+  { id: "bino", name: "Binoculars", button: B.left, keys: ["KeyB"], foot: true, run: press("KeyB") },
+  { id: "mark", name: "Mark the spot", button: B.right, keys: ["KeyG"], foot: true, run: press("KeyG") },
+  { id: "horn", name: "Horn, siren or chimes", button: B.r1, keys: ["KeyH"], wheel: true, run: hold("KeyH") },
+  { id: "view", name: "Inside or chase camera", button: B.circle, keys: ["KeyC"], wheel: true, run: (down) => { if (down) game?.toggleView(); } },
+  { id: "left", name: "Indicate left", button: B.left, keys: ["ArrowLeft"], wheel: true, run: press("ArrowLeft") },
+  { id: "right", name: "Indicate right", button: B.right, keys: ["ArrowRight"], wheel: true, run: press("ArrowRight") },
+], "cd-padbuttons", () => !!game?.driving);
+padSettings();
+
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  pad.poll(dt);
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();
@@ -768,3 +805,8 @@ void startReady().then(() => {
 (window as any).__trophies = Trophies;
 (window as any).__renderer = renderer;
 (window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs
+
+// back from updating to the new version (freshReload), or a link with join=1: straight on into
+// that game, once the squares round where everyone starts are in (Play waits for them till then).
+// Last of all, so everything starting a game uses is set up by then.
+if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) void startReady().then(() => play(roomParam));

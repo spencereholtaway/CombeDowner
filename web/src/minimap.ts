@@ -9,14 +9,14 @@
 // round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
 // with its stops along it and the next one picked out. A race's route
 // and its checkpoints (race.ts) are drawn on every map while it's on, and the pencil lines
-// (signals.ts) on the big map. Your map (yourmap.ts)
-// borrows the big map to colour every square in by what you've done there.
+// (signals.ts) on the big map. The big map also washes the squares you've cleared faintly green and
+// puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { PencilLine } from "./signals";
 import type { WideChunk } from "./wide";
 import { GROUND } from "./groundkinds";
-import { drawOwn, type Own } from "./yourmap";
+import { drawMinePubs, drawMineUnder, type Mine } from "./yours";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
@@ -362,8 +362,8 @@ export class Minimap {
   pencil: PencilLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
-  /** Your map (yourmap.ts) while it's open: every square coloured by what you've done there, in place of the tint. */
-  own: Own[] | null = null;
+  /** The squares you've cleared, today's scars and the pubs you've won back (yours.ts), for the big map. */
+  mine: Mine | null = null;
   /** The bus stops round about (scene x, z), and the bus route you're driving, if you are. */
   stops: { x: number; z: number }[] = [];
   bus: BusLine | null = null;
@@ -379,7 +379,7 @@ export class Minimap {
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
   private field: number;                    // half the width of a square round the whole force field
   private fx: number; private fy: number;   // and that square's middle, data coords (map.fieldFrame)
-  private full?: { canvas: HTMLCanvasElement; size: number; scale: number; streets: boolean };
+  private full?: { canvas: HTMLCanvasElement; names: HTMLCanvasElement; size: number; scale: number; streets: boolean };
   private fullAt?: HTMLCanvasElement;
   private wide?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number };
   private local?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; cx: number; cy: number };
@@ -629,44 +629,53 @@ export class Minimap {
     if (!css) return;
     const S = Math.round(css * dpr);
     if (c.width !== S) { c.width = c.height = S; }
-    // the static part (map and street names) is drawn once per size
+    // the static part (map, and the street names on a sheet of their own so the squares' tints go under them) is drawn once per size
     const streets = !this.off.has("streets");
     if (!this.full || this.full.size !== S || this.full.streets !== streets) {
-      const fc = document.createElement("canvas");
-      fc.width = fc.height = S;
-      const g = fc.getContext("2d")!;
+      const fc = document.createElement("canvas"), nc = document.createElement("canvas");
+      fc.width = fc.height = nc.width = nc.height = S;
+      const g = fc.getContext("2d")!, n = nc.getContext("2d")!;
       const span = this.field * 2.08, scale = S / span;   // screen px per metre
       const cx = (this.fx - this.x0) / this.mpp, cy = (this.y1 - this.fy) / this.mpp;   // the field's centre in base px
       g.fillStyle = "#1c2329"; g.fillRect(0, 0, S, S);
       const wd = this.wide;
       if (wd) g.drawImage(wd.canvas, S / 2 - (this.fx - wd.x0) * scale, S / 2 - (wd.y1 - this.fy) * scale, BASE * wd.mpp * scale, BASE * wd.mpp * scale);
       else g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
-      g.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
-      g.textAlign = "center"; g.textBaseline = "middle";
-      g.lineJoin = "round";
+      n.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
+      n.textAlign = "center"; n.textBaseline = "middle";
+      n.lineJoin = "round";
       for (const l of streets ? this.labels : []) {
-        const w = g.measureText(l.name).width;
+        const w = n.measureText(l.name).width;
         if (w > l.len * scale * 1.1) continue;    // longer than the street at this size
         let a = l.angle;
         if (a > Math.PI / 2) a -= Math.PI; else if (a < -Math.PI / 2) a += Math.PI;
-        g.save();
-        g.translate(S / 2 + (l.x - this.fx) * scale, S / 2 - (l.y - this.fy) * scale);
-        g.rotate(a);
-        g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
-        g.strokeText(l.name, 0, 0);
-        g.fillStyle = "#f4f1ea";
-        g.fillText(l.name, 0, 0);
-        g.restore();
+        n.save();
+        n.translate(S / 2 + (l.x - this.fx) * scale, S / 2 - (l.y - this.fy) * scale);
+        n.rotate(a);
+        n.strokeStyle = "rgba(20,24,28,0.85)"; n.lineWidth = 3 * dpr;
+        n.strokeText(l.name, 0, 0);
+        n.fillStyle = "#f4f1ea";
+        n.fillText(l.name, 0, 0);
+        n.restore();
       }
-      this.full = { canvas: fc, size: S, scale, streets };
+      this.full = { canvas: fc, names: nc, size: S, scale, streets };
     }
     this.fullAt = c;
     // zoomed in, it's painted fresh each frame round wherever it's been moved to
     const g = c.getContext("2d")!, scale = this.full.scale * this.zoom, [vx, vy] = this.centre ?? [this.fx, this.fy];
-    if (this.zoom === 1 && !this.centre) g.drawImage(this.full.canvas, 0, 0);
-    else this.backdrop(g, S, S, vx, vy, 1 / scale, dpr, () => {});
     const P = (sx: number, sz: number) => [S / 2 + (sx - vx) * scale, S / 2 + (sz + vy) * scale];
     const on = (layer?: string) => !layer || !this.off.has(layer);
+    // the pub menu's pints stand alone, so yours aren't drawn while it has the map
+    const mine = on("yours") && !this.pins.length ? this.mine : null;
+    const under = () => {
+      if (mine) {
+        const held = new Set(on("flags") ? this.tint.filter((t) => t.a > 0.1 || t.free).map((t) => `${Math.round(t.x0)},${Math.round(t.z0)}`) : []);
+        drawMineUnder(g, mine, P, scale, dpr, (x0, z0) => held.has(`${Math.round(x0)},${Math.round(z0)}`));
+      }
+      if (on("flags")) drawTint(g, this.tint, P, scale);
+    };
+    if (this.zoom === 1 && !this.centre) { g.drawImage(this.full.canvas, 0, 0); under(); g.drawImage(this.full.names, 0, 0); }
+    else this.backdrop(g, S, S, vx, vy, 1 / scale, dpr, () => {}, under);
     for (const b of blips) {
       if (!on(b.layer)) continue;
       const [bx, by] = P(b.x, b.z);
@@ -674,11 +683,10 @@ export class Minimap {
     }
     if (on("cable") && this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
-    if (this.own) drawOwn(g, this.own, P, scale, dpr);
-    else if (on("flags")) drawTint(g, this.tint, P, scale);
     drawRoutes(g, this.routes, P, dpr);
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
     drawPencil(g, this.pencil, P, dpr);
+    if (mine) drawMinePubs(g, mine, P, dpr);
     this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the bus stops (zoomed in), and the route you're driving, its next stop named
     if (on("stops") && this.zoom >= 2.5) for (const st of this.stops) { const [sx, sy] = P(st.x, st.z); stopIcon(g, sx, sy, 1.2 * dpr); }
@@ -809,8 +817,8 @@ export class Minimap {
 
   /** The map round data point (cx, cy) at mpp metres to the pixel on g, W by H pixels, with the
    *  street names that fit: a sharper picture of round there is painted once it stops moving, and
-   *  redraw is called when it's ready. */
-  private backdrop(g: CanvasRenderingContext2D, W: number, H: number, cx: number, cy: number, mpp: number, dpr: number, redraw: () => void) {
+   *  redraw is called when it's ready. under: drawn over the ground, beneath the street names. */
+  private backdrop(g: CanvasRenderingContext2D, W: number, H: number, cx: number, cy: number, mpp: number, dpr: number, redraw: () => void, under = () => {}) {
     const P = (x: number, y: number): [number, number] => [W / 2 + (x - cx) / mpp, H / 2 - (y - cy) / mpp];
     const image = (img: CanvasImageSource, x0: number, y1: number, m: number, size: number) => {
       const [ax, ay] = P(x0, y1);
@@ -835,6 +843,7 @@ export class Minimap {
         this.sharpT = window.setTimeout(() => { this.sharpKey = ""; this.paintSharp(cx, cy, mpp, span * 2); redraw(); }, 150);
       }
     }
+    under();
     // street names that fit along their streets at this size
     g.font = `600 ${Math.round(13 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";

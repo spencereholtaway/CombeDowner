@@ -7,7 +7,8 @@
 // Passive mode also has a tickbox of its own on the main menu, under the game name, kept in step with this one.
 //
 // Picture: draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
-// used by game.ts), shadows, and the debug panel (debug.ts, also F3). Controls: mouse sensitivity.
+// used by game.ts), shadows, and the debug panel (debug.ts, also F3). Controls: mouse sensitivity, and
+// once a controller's been seen, its own look speeds, dead zone, turn boost and rumble (gamepad.ts keeps those).
 // Sound: music, sound effects, background (traffic, birds, wind) and voice chat volumes (audio.ts). Play: passive mode, where nothing in the
 // game comes for anyone (cats, naughty boys and the teams, the Flag Lads, Bendy, seagull muck). It's for
 // the whole game and the host's setting is the one that counts: game.ts sends it round. ?view=, ?fx=0 and ?res=full in the
@@ -15,6 +16,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import type { DebugPanel } from "./debug";
+import { resetPadSettings } from "./gamepad";
 import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
 import { FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, setFov, setView, view } from "./view";
 
@@ -127,6 +129,7 @@ export function settingsPage(h: Hooks) {
     h.debug.toggle(false);
     setPassive(false);
     setSens(SENS);
+    resetPadSettings();
     SFX.setMusicVolume(MUSIC); keep("cd-music", MUSIC);
     SFX.setSfxVolume(SFX_VOL); keep("cd-sfx", SFX_VOL);
     SFX.setBackgroundVolume(BACKGROUND); keep("cd-bg", BACKGROUND);

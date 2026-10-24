@@ -2,7 +2,8 @@
 // ?debug=1 in the address opens it from the start). It shows where you are (game coordinates, the
 // real place as latitude and longitude and an OS grid reference, and which square of Bath you're
 // in), how fast the game is drawing, whether the sound is running (and any sound that went wrong
-// and was cut off, audio.ts), and how your links to the other players are doing: whether
+// and was cut off, audio.ts), each game controller the browser shows (its name, how it lays it out
+// and what's held on it, gamepad.ts), and how your links to the other players are doing: whether
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
 // Shift+F3, or the Copy button, puts your position on the clipboard, with a link that brings you
 // back to that spot facing the same way (?at=east,north,bearing,tilt: data metres, then degrees
@@ -23,6 +24,7 @@ import * as THREE from "three";
 import type { Game } from "./game";
 import type { LinkStats } from "./net";
 import { soundState } from "./audio";
+import { padReport } from "./gamepad";
 import { clockKind, clockText, dayText, skipHours } from "./daylight";
 import { VIEW_STEPS, setView, view } from "./view";
 
@@ -318,8 +320,10 @@ export class DebugPanel {
       const ids = new Set([...net.peers(), ...d.players.map((q) => q.id)]);
       for (const id of ids) {
         const pl = d.players.find((q) => q.id === id), l = this.links.find((q) => q.id === id), rt = this.rates.get(id);
-        const who = `${esc(pl?.name ?? "?")}${id === d.host ? " · host" : ""}`;
-        rows.push(`  <b>${who}</b> ${esc(id.slice(0, 8))}${pl ? `  heard ${ms(pl.seen)} ago` : "  no hello yet"}${d.elsewhere.includes(id) ? " (other map)" : ""}`);
+        // someone on another map in the same game is connected and fine, just not drawn here: say where they are
+        const away = d.elsewhere.find((q) => q.id === id);
+        const who = `${esc(pl?.name ?? away?.name ?? "?")}${id === d.host ? " · host" : ""}`;
+        rows.push(`  <b>${who}</b> ${esc(id.slice(0, 8))}${pl ? `  heard ${ms(pl.seen)} ago` : away ? `  on ${esc(away.map)}, heard ${ms(away.seen)} ago` : "  no hello yet"}`);
         // their game's version against this one's (build times, vite.config.ts): a minute either way is the same version
         const b = net.buildOf(id), age = b === undefined ? null : (b - net.build) / 60000;
         rows.push(`    version ${age === null ? `<span class="warn">not said (an old page?)</span>` : Math.abs(age) <= 1 ? "same as yours"
@@ -328,6 +332,7 @@ export class DebugPanel {
         // stale: a seat the host's list still gives them though they say they're out (once, that hid their body and left a
         // floating name tag), or nothing heard from them for a while (they're stood frozen where they were last)
         if (pl?.staleSeat) rows.push(`    <span class="warn">STALE SEAT ${pl.staleFor.toFixed(1)} s: the host's list has them in ${esc(pl.staleSeat)}, they say they're out</span>`);
+        if (away && away.seen > 2000) rows.push(`    <span class="warn">STALE: nothing heard from them for ${(away.seen / 1000).toFixed(0)} s</span>`);
         if (pl && pl.seen > 2000) rows.push(`    <span class="warn">STALE: nothing heard from them for ${(pl.seen / 1000).toFixed(0)} s</span>`);
         if (!l) continue;
         const route = l.route === "relay" ? `<span class="warn">relayed</span>` : l.route === "direct" ? "direct" : l.route;
@@ -341,6 +346,9 @@ export class DebugPanel {
         }
       }
     }
+    rows.push("");
+    rows.push(`<b>Controllers</b>`);
+    for (const line of padReport()) rows.push(esc(line));
     rows.push("");
     rows.push(`<b>Drawing</b>`);
     rows.push(`${(info.render.triangles / 1000).toFixed(0)}k triangles; in memory ${info.memory.geometries} geometries, ${info.memory.textures} textures${mem ? `, JS ${(mem.usedJSHeapSize / 1048576).toFixed(0)} of ${(mem.jsHeapSizeLimit / 1048576).toFixed(0)} MB` : ""}`);

@@ -24,7 +24,7 @@ def carry_profile(z, d, on, free, fixed=(None, None), least=None, fit=True):
     would stand on a shelf and then plunge). d: distance along; free: points whose height may be
     changed; fixed: the heights a stretch running off either end must meet there (or None);
     least: the lowest each point's deck may be (over the canal, clear of a boat): where the
-    straight line doesn't clear it, the deck humps up over it, no steeper than 1 in 4. fit False:
+    straight line doesn't clear it, the deck rises over it in a smooth crest, out over its approaches. fit False:
     a tunnel's, whose ends are taken as they are (the survey rises over a tunnel, onto the hill
     over it, where over a bridge it dips)."""
     n, m, out = len(z), 0, 0
@@ -54,9 +54,21 @@ def carry_profile(z, d, on, free, fixed=(None, None), least=None, fit=True):
         da, db = d[max(0, i0)], d[min(n - 1, i1)]
         for j in range(m, e + 1): z[j] = za + (zb - za) * (d[j] - da) / ((db - da) or 1)
         if least is not None:
-            low = [i for i in range(m, e + 1) if least[i] > z[i]]
-            for j in range(m, e + 1):
-                for i in low: z[j] = max(z[j], least[i] - abs(d[j] - d[i]) * 0.25)
+            # a hump over what has to be cleared, as a smooth crest: each point that's too low is
+            # lifted, and the lift eases away either side over a run long enough that the road
+            # never climbs it steeper than about 1 in 16, out over its approaches too (not a step
+            # up onto a level shelf and a step down off it)
+            lifts = [(i, least[i] - z[i]) for i in range(m, e + 1) if least[i] > z[i]]
+            if lifts:
+                add = [0.0] * n
+                for i, dz in lifts:
+                    R = max(8.0, dz * 24)
+                    for j in range(n):
+                        x = abs(d[j] - d[i])
+                        if x >= R or not (free[j] or m <= j <= e): continue
+                        t = x / R
+                        add[j] = max(add[j], dz * (1 - t * t * (3 - 2 * t)))
+                for j in range(n): z[j] += add[j]
         out += 1
         m = e + 1
     return out

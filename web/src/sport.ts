@@ -6,8 +6,8 @@
 // - On a cricket field, at the bowler's end of the wicket: bowl it down the wicket and knock the
 //   stumps over at the other end. Pitch it short and it bounces over them, too full and it's over
 //   the bails, and one that bounces more than once doesn't count.
-// Walk up to the ball to line up: A and D (or the stick) aim, W and S set the power, Space or a click
-// kicks or bowls it and E walks off. Dots show the start of the ball's flight, as it would go on a
+// Walk up to the ball to line up: A and D (or the stick) aim, slowly on a tap and faster the longer
+// they're held, W and S set the power, Space or a click kicks or bowls it and E walks off. Dots show the start of the ball's flight, as it would go on a
 // still day; but each ball has its own wind, and you have to allow for it. Do it and a prize lands
 // on the ground under the posts or behind the stumps (see Pickups.bonus).
 //
@@ -76,6 +76,9 @@ const REACH = 1.5;               // this close to the ball, you line up
 const LEAVE = 2.6;               // after walking off, this far away before it'll have you again
 const POWER = 0.7;               // how fast the power changes (per s)
 const SETTLE = 0.3;              // seconds lined up before a click counts
+const SWING = 2.2;               // how fast the aim turns (rad per s) once A or D has been held a while
+const NUDGE = 0.25;              // seconds of fine aim on a held key before it starts to speed up
+const SPEED_UP = 0.6;            // seconds after that to reach full swing
 const WAIT_LIFE = 120;           // seconds a ball waits for you
 const FADE = 3;                  // seconds a ball lies about once it stops
 const DOWN = 8;                  // seconds before knocked-over stumps are put back up
@@ -167,6 +170,8 @@ export class Sports {
   private flights: Flight[] = [];
   private knocked: Knocked[] = [];
   private aim = 0;
+  private held = 0;               // seconds A or D (or the stick) has been held one way
+  private heldWay = 0;
   private lineT = 0;
   private away = false;           // walked off: don't line up again until you've stepped back
   private wait = rand(4, 12);     // seconds on a pitch before the next ball turns up
@@ -839,6 +844,7 @@ export class Sports {
           Telemetry.begin("ball:" + b.sport);
           this.lineT = 0;
           this.aim = player.yaw;
+          this.held = 0;
           this.power = 0.5;
           player.vel.x = player.vel.z = 0;
           player.pitch = Math.min(player.pitch, -0.35);   // look down at the ball, with the posts or stumps still in view
@@ -852,8 +858,14 @@ export class Sports {
     if (this.lining) {
       const ball = this.ball!;
       this.lineT += dt;
-      // the ball and your view turn together, so what's in the middle of the screen is where it's going
-      const turn = Math.max(-1, Math.min(1, input.turn)) * RULES[ball.sport].turn * dt;
+      // the ball and your view turn together, so what's in the middle of the screen is where it's going.
+      // A tap turns at the sport's fine rate; keep holding and it speeds up, so walking up from the
+      // wrong side you can swing round quickly, then let go and tap to settle it.
+      const way = Math.max(-1, Math.min(1, input.turn)), fine = RULES[ball.sport].turn;
+      this.held = way && Math.sign(way) === this.heldWay ? this.held + dt : 0;
+      this.heldWay = Math.sign(way);
+      const ramp = Math.min(1, Math.max(0, (this.held - NUDGE) / SPEED_UP));
+      const turn = way * (fine + (SWING - fine) * ramp * ramp) * dt;
       this.aim -= turn;
       player.yaw -= turn;
       this.power = Math.max(0, Math.min(1, this.power + Math.max(-1, Math.min(1, input.power)) * POWER * dt));

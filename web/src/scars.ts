@@ -44,7 +44,7 @@
 // doesn't know "scr", or "hit", just sees no scars, or no progress. The race and the digging are
 // yours alone: only the claim goes round.
 // Each player's morning paper (paper.ts) notes the scars it hears of and the ones put right, and
-// your map (yourmap.ts) rings the squares that have one.
+// the big map rings the squares that have one (yours.ts).
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { clearSpot } from "./haunts";
@@ -344,7 +344,7 @@ export class Scars {
     if (this.run?.id === id) this.run = null;
   }
 
-  /** Today's scars, in words, for your map and the morning paper (yourmap.ts, paper.ts). */
+  /** Today's scars, in words, for the big map and the morning paper (yours.ts, paper.ts). */
   marks() { return this.list.map((s) => ({ x: s.x, z: s.z, what: SAID[s.k](s.n) })); }
 
   /** The maps' grey "!" for each. */

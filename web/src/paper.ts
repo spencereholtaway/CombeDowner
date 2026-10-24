@@ -30,7 +30,7 @@ import type * as THREE from "three";
 import type { GameMap } from "./map";
 import { snapshot } from "./snapshot";
 import { morningGaffer } from "./invasion";
-import { nameOf, scars, squareOf } from "./yourmap";
+import { nameOf, scars, squareOf } from "./yours";
 
 const DAY = 24 * 3600 * 1000;
 const today = () => Math.floor(Date.now() / DAY);
@@ -476,7 +476,7 @@ function render(ed: Log | null, no: number): News {
       by: "By our chief reporter",
       body: [
         "They say they're \"taking the streets back\". Nobody is quite sure from whom. The Crier asked one of them what the flags were for. \"I'm not being funny, but,\" he said, and then didn't finish.",
-        "Residents can help: shoot the flags off the lamp posts to clear a square, and when the phone goes, get down the pub they've taken over and see them off. Each square you clear goes on your map (M, then Your map).",
+        "Residents can help: shoot the flags off the lamp posts to clear a square, and when the phone goes, get down the pub they've taken over and see them off. Each square you clear shows on the big map (M).",
       ],
       cap: "The first flag goes up. It won't be the last, the lads say.",
     };
