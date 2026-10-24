@@ -86,7 +86,7 @@ class Decks(unittest.TestCase):
 
     def test_a_joined_bridge_is_cut_again_at_its_banks_once_the_ground_is_laid(self):
         a = dict(c="residential", n="", w=5, pv=[1, 1], p=[[-8, 0, 10], [-4, 0, 10], [0, 0, 10], [4, 0, 12, 1], [8, 0, 12, 1]])
-        b = dict(c="residential", n="", w=6, pv=[2, 1], p=[[16, 0, 10], [12, 0, 10], [8, 0, 12, 1]])
+        b = dict(c="residential", n="", w=6, pv=[2, 1], ow=1, p=[[16, 0, 10], [12, 0, 10], [8, 0, 12, 1]])
         rd = [a, b]
         whole_spans(rd)
         self.assertEqual(len(rd), 1)
@@ -95,6 +95,7 @@ class Decks(unittest.TestCase):
         self.assertEqual([[q[0] for q in r["p"]] for r in rd], [[-8, -4, 0], [0, 4, 8, 12], [12, 16]])
         self.assertEqual([(r["w"], r["pv"], r.get("dk")) for r in rd],
                          [(5, [1, 1], None), (5, [1, 1], 3.5), (6, [1, 2], None)])   # (b turned round)
+        self.assertEqual(rd[2]["ow"], -1)
 
     def test_the_ground_is_dug_for_a_path_dipped_under_a_bridge(self):
         T = grid(20.0)

@@ -632,14 +632,28 @@ def whole_spans(rd, sq=None, ground=None, wet=None, cut=False, near=0.05):
     return joined
 
 
+_OWN = ("p", "_lay", "_tow", "_parts", "dk")
+
+
+def _turned(attrs):
+    """A record's own fields looking the other way along it: its pavements swap sides, and a one-way
+    street runs against its points."""
+    out = dict(attrs)
+    if out.get("pv"):
+        out["pv"] = out["pv"][::-1]
+    if out.get("ow"):
+        out["ow"] = -out["ow"]
+    return out
+
+
 def _pieces_of(r, turned=False):
-    """A record's pieces as [(x, y of its first point, w, pv)] looking along its points."""
-    parts = r.get("_parts") or [(r["p"][0][0], r["p"][0][1], r.get("w"), r.get("pv"))]
+    """A record's pieces as [(x, y of its first point, its own fields)] looking along its points."""
+    parts = r.get("_parts") or [(r["p"][0][0], r["p"][0][1], {k: v for k, v in r.items() if k not in _OWN})]
     if not turned:
-        return [tuple(t) for t in parts]
-    # (looking the other way: each piece starts at its old end, and its pavements swap sides)
+        return list(parts)
+    # (looking the other way, each piece starts at its old end)
     starts = [t[:2] for t in parts[1:]] + [tuple(r["p"][-1][:2])]
-    return [(x, y, w, None if pv is None else pv[::-1]) for (x, y), (_, _, w, pv) in zip(starts[::-1], parts[::-1])]
+    return [(x, y, _turned(a)) for (x, y), (_, _, a) in zip(starts[::-1], parts[::-1])]
 
 
 def _join_spans(rd, key):
@@ -695,10 +709,10 @@ def _join_spans(rd, key):
             pts += p
         # (the street takes the widths of the record that was on most of the span)
         base, enter = max(chain, key=lambda c: on[c[0]])
-        rec = {k: v for k, v in rd[base].items() if k not in ("p", "_lay", "_tow", "_parts")}
+        rec = {k: v for k, v in rd[base].items() if k not in _OWN}
+        if enter != 0:
+            rec = _turned(rec)
         rec["p"] = pts
-        if rec.get("pv") and enter != 0:
-            rec["pv"] = rec["pv"][::-1]
         rec["_parts"] = parts
         for f in ("_lay", "_tow"):
             got = set().union(*(rd[j].get(f) or set() for j, _ in chain))
@@ -717,7 +731,7 @@ def _cut_spans(rd):
             out.append(r)
             continue
         pts = r["p"]
-        starts = {(x, y): k for k, (x, y, _, _) in enumerate(parts)}
+        starts = {(x, y): k for k, (x, y, _) in enumerate(parts)}
         owner, cur, bounds = [], 0, set()
         for i, q in enumerate(pts):
             k = starts.get((q[0], q[1]))
@@ -730,15 +744,11 @@ def _cut_spans(rd):
         cuts = {0, len(pts) - 1} | {b for b in bounds if not any(a < b < e for a, e in inside)}
         cuts = sorted(cuts | {a for a, _ in inside} | {e for _, e in inside})
         for a, b in zip(cuts, cuts[1:]):
-            rec = {k: v for k, v in r.items() if k not in ("p", "_lay", "_tow")}
+            if any(_flag(q) for q in pts[a:b + 1]):
+                rec = {k: v for k, v in r.items() if k not in ("p", "_lay", "_tow")}
+            else:
+                rec = dict(parts[owner[a + 1]][2])
             rec["p"] = pts[a:b + 1]
-            if not any(_flag(q) for q in rec["p"]):
-                _, _, w, pv = parts[owner[a + 1]]
-                rec.pop("dk", None)
-                if w is not None:
-                    rec["w"] = w
-                if pv is not None:
-                    rec["pv"] = list(pv)
             for f in ("_lay", "_tow"):
                 if r.get(f):
                     rec[f] = r[f]
@@ -780,6 +790,7 @@ DIP_REACH = 40.0    # metres from a bridge's span that a path may have been dipp
 SLOPE = 1.5         # the ground eases from a way's level to its own over this many metres per metre of difference
 EASE = 12.0         # and over this far at most
 LAY_KERB = 1.7      # a kerbed street's pavement where its record gives none
+PAVE_FALL = 0.12    # metres a pavement's back edge may fall or rise from the street's level, towards the ground
 
 
 def _grid_points(T, ring, reach):
@@ -1414,6 +1425,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         return at[key]
 
     out = dict(v=v, road=[], service=[], pave=[], path=[], front=[], drive=[], e=[])
+    walk, kerbside = set(), set()
     for (cls, _), poly in zip(pieces, simple):
         flat = cls in ("path", "front", "drive")
         for poly in getattr(poly, "geoms", [poly]):
@@ -1432,12 +1444,22 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 ids = [point(x, y, flat) for x, y in pts]
                 if None not in ids:
                     out[kind] += ids
+                    (walk if cls == "pavement" else kerbside).update(ids)
             # inside on the left of every outline, so the game knows which way a kerb faces
             for ring in [orient(poly, 1.0).exterior, *orient(poly, 1.0).interiors]:
                 ids = [point(x, y, flat) for x, y in ring.coords]
                 ids = [k for k in ids if k is not None]
                 if len(ids) >= 2:
                     out["e"].append(dict(c={"pavement": "pave", "carriageway": "road"}.get(cls, cls), i=ids))
+    # A pavement's back edge falls a little towards the ground behind it, where the street is levelled
+    # across above it: stood level with the middle of the street, its back stood a kerb and more over
+    # the grass and showed as a dark step, wherever the ground falls away from a street (Sydney Road
+    # over the canal's tunnel). The kerb side stays level with the carriageway.
+    for k in walk - kerbside:
+        g = ground(v[3 * k], v[3 * k + 1])
+        if g is not None:
+            z = v[3 * k + 2]
+            v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
     return out if any(out[k] for k in ("road", "service", "pave", "path", "front", "drive")) else None
 
 
@@ -3062,13 +3084,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
     rd, _ = drop_paths_along_streets(rd)
-    whole_spans(rd, sq, road_ground, wet)
     drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
     carry_one_way(rd, tile.get("rd") or [])
     carry_pedestrian(rd, tile.get("rd") or [])
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
     rd, _ = drop_paths_along_streets(rd)
+    whole_spans(rd, sq, road_ground, wet)
     no_span_over_tunnels(rd, canal, [Polygon(w["r"][0]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]
                          + water[sum(1 for w in tile["wp"] if len(w["r"][0]) >= 3):], rails, road_ground)
     even_bridge_pavements(rd, houses)

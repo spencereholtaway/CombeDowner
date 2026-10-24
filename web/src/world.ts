@@ -369,6 +369,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // with no pit dug below both
   const KERB_RAISE = 0.25;
   const underTo = new Float32Array(T.nx * T.ny).fill(Infinity), roundTo = new Float32Array(T.nx * T.ny).fill(Infinity);
+  const covered = new Uint8Array(T.nx * T.ny);     // (a grid point under a carriageway face)
   const sinkUnder = (r: Road, reach: number, depth: number, hard: boolean) => {
     const own = reach;
     if (LEVEL) reach += T.dx * 0.75;
@@ -410,6 +411,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (faceWeights(t, x, y) >= 0) {
         if (pave) roundTo[v] = Math.min(roundTo[v], faceZ(t) - 0.08);
         else underTo[v] = Math.min(underTo[v], faceZ(t) - 0.3);
+        covered[v] = 1;
         continue;
       }
       // the face's height at its nearest edge, not its lowest corner: a long face down a hill would
@@ -422,8 +424,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const de = Math.hypot(x - ax - vx * u, y - ay - vy * u);
         if (de < d) { d = de; near = F[a3 + 2] + (F[b3 + 2] - F[a3 + 2]) * u; }
       }
-      if (d < reach) roundTo[v] = Math.min(roundTo[v], near - 0.05);
+      // (the grass comes up to just under the face's top, as a verge or a garden meets it, rather
+      // than leaving a dark step down from a pavement's back or a lane's edge)
+      if (d < reach) roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : 0.04));
     }
+  }
+  // the grid points just inside a face's edge are let down less, as the ground's triangles from them
+  // reach out under the grass beside it: well down, they dragged that grass a hand below the street's
+  // edge, and its face showed as a dark step beside a lane or a drive's mouth
+  if (LEVEL) for (let v = 0; v < covered.length; v++) {
+    if (!covered[v] || underTo[v] === Infinity) continue;
+    const i = v % T.nx, j = (v - i) / T.nx;
+    if ((i > 0 && !covered[v - 1]) || (i < T.nx - 1 && !covered[v + 1]) || (j > 0 && !covered[v - T.nx]) || (j < T.ny - 1 && !covered[v + T.nx])) underTo[v] += 0.2;
   }
   // (the grass beside a face is brought up a little to meet it, if the true ground falls away there, so
   // a pavement or a carriageway edge stands a kerb high above it, not a wall)
