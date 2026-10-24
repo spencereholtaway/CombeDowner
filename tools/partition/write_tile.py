@@ -56,7 +56,7 @@ from partition.settle import drop_unstood, house_kinds, load_evidence, owners_ne
 from partition.standing import Standing
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
-from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
+from structures import canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
 # key in `web/src/map.ts`'s BARRIER_HEIGHT, so no class needs a stand-in here.
@@ -712,6 +712,30 @@ def drawn_carriageway(sf):
     return unary_union(polys[shapely.area(polys) > 1e-6])
 
 
+def _ground_triangles(poly, T):
+    """The triangles of a face laid on the ground, cut along the ground grid's cells and the diagonal
+    the game splits each into, so every corner of the ground inside the face is a corner of the face
+    too and the grass cannot rise through the middle of a broad stretch of paving."""
+    x0, y0, x1, y1 = poly.bounds
+    i0, i1 = math.floor((x0 - T["x0"]) / T["dx"]), math.ceil((x1 - T["x0"]) / T["dx"])
+    j0, j1 = math.floor((y0 - T["y0"]) / T["dy"]), math.ceil((y1 - T["y0"]) / T["dy"])
+    halves = []
+    for j in range(j0, j1):
+        for i in range(i0, i1):
+            ax, ay = T["x0"] + i * T["dx"], T["y0"] + j * T["dy"]
+            bx, cy = ax + T["dx"], ay + T["dy"]
+            halves += [Polygon([(ax, ay), (bx, ay), (ax, cy)]), Polygon([(bx, ay), (bx, cy), (ax, cy)])]
+    halves = np.array(halves)
+    shapely.prepare(poly)
+    halves = halves[shapely.intersects(poly, halves)]
+    out = []
+    for piece in shapely.intersection(halves, poly):
+        for q in getattr(piece, "geoms", [piece]):
+            if q.geom_type == "Polygon" and q.area > 1e-4:
+                out += _triangles(q)
+    return out
+
+
 def _triangles(poly):
     """The triangles of a face. A face with a hole that touches its edge, which cutting an area out
     of a pavement can leave, defeats the constrained triangulation, so it is made valid and taken
@@ -766,6 +790,20 @@ PEDESTRIAN_HALF = 6.0      # metres either side of its line that a pedestrian st
 WALLED_FRONT = 0.3         # share of a frontage's edge with a wall, fence or hedge along it that makes it a yard
 
 
+PEDESTRIAN_EDGE = 1.5      # metres past a pedestrian street's paving that its edge may lie, as the partition fits it
+
+
+def pedestrian_ground(rd):
+    """The ground of the pedestrian streets, out to where the partition may have drawn their edge."""
+    g = [LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2 + max(r.get("pv") or (0, 0)) + PEDESTRIAN_EDGE)
+         for r in rd if r["c"] == "pedestrian" and len(r["p"]) > 1]
+    if not g:
+        return None
+    g = unary_union(g)
+    shapely.prepare(g)
+    return g
+
+
 def pedestrian_frontage(part, peds, br=()):
     """Open ground and plots between a pedestrian street and its buildings, with nothing standing
     between them and the street: the street's own paving, laid to the building line as a shopping
@@ -816,7 +854,7 @@ def _minus(a, b):
         return shapely.set_precision(a, 1e-3).difference(shapely.set_precision(b.buffer(0), 1e-3))
 
 
-def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=()):
+def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -891,6 +929,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     taken = unary_union([road, pave, plaza, *(face_shape(f).buffer(0) for f in part["faces"]
                                        if f["cls"] == "building" and len(f["xy"]) > 2)])
     path = shapes("path").difference(taken)
+    if bores is not None:
+        # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
+        path = path.difference(bores)
     taken = taken.union(path)
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
                                              for r in rows if (r[0], r[1]) != (r[2], r[3])] or [Polygon()])
@@ -933,7 +974,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         for poly in getattr(poly, "geoms", [poly]):
             if poly.geom_type != "Polygon" or poly.is_empty:
                 continue
-            for t in _triangles(poly):
+            for t in (_ground_triangles(poly, T) if cls == "drive" and T is not None else _triangles(poly)):
                 pts = list(t.exterior.coords)[:3]
                 if cls == "pavement":
                     kind = "pave"
@@ -2522,10 +2563,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     streets = unary_union([face_shape(f).buffer(0) for f in part["faces"]
                            if f["cls"] in ("carriageway", "pavement", "path") and len(f["xy"]) > 2] or [Polygon()])
     shapely.prepare(streets)
-    settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
-                     tile.get("sh") or [], row_at, streets)
-    footprints = [Polygon(b["r"][0]).buffer(0) for b in tile.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
-    settled["unstood"] = drop_unstood(part, evidence, Standing(sq, footprints))
 
     # the corridors pass 1 fitted, and this square's own share of them
     own = [r for r in rows if LineString(r[0]["line"]).intersects(box(*sq))]
@@ -2586,6 +2623,11 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     even_bridge_pavements(rd, houses)
     deck_reach(rd)
     cut_under_bridges(T, rd)
+    # which boundaries stand is settled once the streets are known: a pedestrian street's edge is open
+    settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
+                     tile.get("sh") or [], row_at, streets, pedestrian_ground(rd))
+    footprints = [Polygon(b["r"][0]).buffer(0) for b in tile.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
+    settled["unstood"] = drop_unstood(part, evidence, Standing(sq, footprints))
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [face_shape(f) for f in part["faces"]
@@ -2628,7 +2670,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         y = min(max(y, T["y0"]), T["y0"] + (T["ny"] - 1.001) * T["dy"])
         return ground(x, y)
 
-    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br),
+    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
+                                               canal_bores(canal)),
                                sq[0], sq[1])
     tile["br"] = br
     tile["gt"] = gt
@@ -2654,7 +2697,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                   f"a carriageway")
         print(f"  guessed boundaries left out: {settled['front']:.0f} m of front with no garden, "
               f"{settled['lane']:.0f} m along lanes, {settled['far']:.0f} m away from any garden, "
-              f"{settled.get('unstood', 0):.0f} m of wall or hedge with nothing standing near")
+              f"{settled['pedestrian']:.0f} m along pedestrian streets, {settled.get('unstood', 0):.0f} m of wall or hedge with nothing standing near")
         if fp_cut or fp_walled:
             print(f"  front paths meeting a wall: {fp_cut} cut short, {fp_walled} left out")
         if fp_dropped:

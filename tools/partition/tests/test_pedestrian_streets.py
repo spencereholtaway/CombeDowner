@@ -76,3 +76,63 @@ class PedestrianStreetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PedestrianFrontsTest(unittest.TestCase):
+    """Nothing guessed or listed stands between a pedestrian street and its shopfronts."""
+
+    def test_a_listed_railing_on_a_pedestrian_street_goes(self):
+        from shapely.geometry import box
+        from partition.settle import Evidence, settle
+        part = dict(edges=[dict(xy=[[5000, 0], [5010, 0]], kind="garden_wall", source="front",
+                                sides=[["corridor"], ["plot", 7]], support=0.0)])
+        listed = [(Point(5005, 2), "railing")]
+        settle(part, {7: box(5000, 1, 5010, 11)}, {7: "terrace"}, Evidence([], (), listed),
+               pedestrian=box(4990, -5, 5020, 1))
+        e = part["edges"][0]
+        self.assertEqual(e.get("drop"), [(0.0, 10.0)])
+
+    def test_a_mapped_wall_on_a_pedestrian_street_stands(self):
+        from shapely.geometry import LineString, box
+        from partition.settle import Evidence, settle
+        wall = LineString([(5000, 0.3), (5010, 0.3)])
+        part = dict(edges=[dict(xy=[[5000, 0], [5010, 0]], kind="garden_wall", source="front",
+                                sides=[["corridor"], ["plot", 7]], support=0.0)])
+        settle(part, {7: box(5000, 1, 5010, 11)}, {7: "terrace"}, Evidence([wall], [(wall, "wall")]),
+               pedestrian=box(4990, -5, 5020, 1))
+        self.assertFalse(part["edges"][0].get("drop"))
+
+    def test_paving_on_the_ground_has_a_corner_at_every_grid_point(self):
+        from partition.write_tile import _ground_triangles
+        T = dict(x0=0.0, y0=0.0, dx=4.0, dy=4.0)
+        tris = _ground_triangles(Polygon([(1, 1), (15, 1), (15, 11), (1, 11)]), T)
+        corners = {(round(x, 6), round(y, 6)) for t in tris for x, y in t.exterior.coords}
+        for gx in (4.0, 8.0, 12.0):
+            for gy in (4.0, 8.0):
+                self.assertIn((gx, gy), corners)
+        self.assertAlmostEqual(sum(t.area for t in tris), 140.0, places=6)
+
+
+class ListedOpenFrontTest(unittest.TestCase):
+    def test_listed_railings_stand_on_a_street_edge_in_front_of_open_ground(self):
+        from shapely.geometry import box
+        from partition.settle import Evidence, settle
+        part = dict(edges=[dict(xy=[[5000, 0], [5040, 0]], kind="none", source="parcel-nothing",
+                                sides=[["corridor"], ["open"]], support=0.0)])
+        settle(part, {7: box(5015, 10, 5025, 20)}, {7: "detached"},
+               Evidence([], (), [(Point(5020, 4), "railing")]))
+        e = part["edges"][0]
+        self.assertEqual(e["kind"], "railing")
+        kept = 40.0 - sum(b - a for a, b in e["drop"])
+        self.assertTrue(10.0 <= kept <= 16.0, kept)
+
+
+class TunnelPathTest(unittest.TestCase):
+    def test_no_path_is_drawn_over_a_canal_tunnel(self):
+        from shapely.geometry import box
+        part = dict(faces=[face("path", 0, -1, 40, 1)], edges=[], openings=[])
+        rd = [dict(c="footway", n="", w=2.0, p=[[0.0, 0.0, 10.0], [40.0, 0.0, 10.0]])]
+        sf = street_surfaces(part, rd, SQ, GROUND, bores=box(10, -5, 30, 5))
+        v, ids = sf["v"], sf["path"]
+        area = sum(Polygon([(v[3 * i], v[3 * i + 1]) for i in ids[k:k + 3]]).area for k in range(0, len(ids), 3))
+        self.assertAlmostEqual(area, 40.0, delta=0.5)
