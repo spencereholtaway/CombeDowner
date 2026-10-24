@@ -612,7 +612,11 @@ def fit_together(m, tag, note, f=None):
     for r in m["rd"]:
         if r["c"] not in ("footway", "path", "cycleway") or len(r["p"]) < 2: continue
         L = line(r["p"])
-        # only the stretches running along the street: a path crossing it passes through both pavements
+        # Only the stretches running along the street count. A path crossing a street passes through
+        # both its pavements and the metre beside each, about 8 m, so counting length alone made
+        # nearly every crossing a finding (390 of the partition's 415, most of main's 462) and hid
+        # the paths really laid along a pavement. "Along" is the writer's own test: the stretch moves
+        # along the street by at least 0.65 of its length (write_tile.ALONG_PAVEMENT).
         along = 0.0
         for k in ptree.query(L.buffer(1.0)):
             x = pave_out[int(k)].intersection(L)
