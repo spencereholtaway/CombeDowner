@@ -565,8 +565,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         if m and not roof and not m["flat"]:
             eaves = max(2.2, m["mid"])     # a pitched roof drawn as a block: meet it halfway
 
-        # a parapet along the eaves hides Georgian roofs from the street
-        parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") else 0.0
+        # a parapet along the eaves hides Georgian roofs from the street; a single-storey building
+        # there is a later bungalow, garage or extension, with its roof in plain view
+        parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") and eaves >= 5.0 else 0.0
 
         # roof covering
         if zone == "village":

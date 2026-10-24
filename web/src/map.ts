@@ -1223,9 +1223,12 @@ export interface Roof { q: number[][]; rp: number; hp: number[]; ch: number[][];
 
 /** Building b's pitched roof, or null for a flat one. When the map's roof rectangle hangs well over
  * thin air (an L-shaped house, or a church with its corners cut away, under one big roof) the roof
- * shrinks to the biggest rectangle that stands on the walls, keeping its pitch, and the rest of
- * the house gets a flat cap; only a house with no decent rectangle in it goes flat. */
+ * shrinks to the biggest rectangle that stands on the walls, keeping its ridge as high as it was
+ * (no steeper than 50°), and the rest of the house gets a flat cap; only a house with no decent
+ * rectangle in it goes flat. */
 const fits = new WeakMap<Building, Roof | null>();
+/** The steepest a roof is drawn, as tools/buildings.py measures them. */
+const STEEPEST = Math.tan((50 * Math.PI) / 180);
 export function roofFit(b: Building): Roof | null {
   const known = fits.get(b);
   if (known !== undefined) return known;
@@ -1273,8 +1276,11 @@ export function roofFit(b: Building): Roof | null {
       }
       const s0 = bi * cu, s1 = (bi + bw) * cu, t0 = bj * cv, t1 = (bj + bh) * cv;
       const along = s1 - s0, across = t1 - t0;
-      if (best >= 0.3 * L * W && Math.min(along, across) >= 2.5) {
-        // the ridge runs along the longer side; the roof keeps its slope, so a narrower one is lower
+      // decent next to the house itself: the map's rectangle can be far bigger than an L-shaped house
+      const floor = Math.min(L * W, ringArea(ring) - b.r.slice(1).reduce((s, h) => s + ringArea(h), 0));
+      if (best >= 0.3 * floor && Math.min(along, across) >= 2.5) {
+        // the ridge runs along the longer side, as high as the survey has it: lowering it to keep
+        // the slope left a narrow roof hidden behind its own walls from the street
         const turn = across > along, wide = turn ? along : across;
         const rq = turn ? [P(s0, t0), P(s0, t1), P(s1, t1), P(s1, t0)] : [P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1)];
         const hipped = (b.hp ?? [0, 0]).some((h) => h);
@@ -1284,7 +1290,7 @@ export function roofFit(b: Building): Roof | null {
           const su = ((x - q[0][0]) * ux + (y - q[0][1]) * uy) / L, sv = ((x - q[0][0]) * vx + (y - q[0][1]) * vy) / W;
           return su > s0 + 0.4 && su < s1 - 0.4 && sv > t0 + 0.4 && sv < t1 - 0.4;
         });
-        f = { q: rq, rp: (b.rp * wide) / W, hp, ch, wings: true };
+        f = { q: rq, rp: Math.min(b.rp, (wide / 2) * STEEPEST), hp, ch, wings: true };
       }
     }
   }
@@ -1425,6 +1431,12 @@ function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra
   return out;
 }
 function push2(m: Map<number, number[][]>, k: number, v: number[]) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
+
+function ringArea(ring: number[][]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  return Math.abs(a) / 2;
+}
 
 /** Is (x, y) inside the ring of points? */
 function inRing(ring: number[][], x: number, y: number): boolean {
