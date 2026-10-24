@@ -563,6 +563,52 @@ def _outside_buildings(pts, btree, inner):
             if g.geom_type == "LineString" and g.length >= 3]
 
 
+TOWPATH_UP = 0.4    # the towpath stands this far above the canal's water (web/src/works.ts UP)
+LOCK_CLIMB = 45.0   # metres from a lock's gates within which the towpath climbs with the lock
+
+
+def paths_on_the_towpath(rd, canal):
+    """A path's points on the canal's bank, along open water, at the towpath's level. The towpath's
+    own line carries the canal's level from its profile, but a short path joining it (from the
+    steps by Bath Top Lock) was laid on the survey's ground, which runs under the bank the game
+    builds, so it dipped half a metre into the towpath where it met it. Not by a lock, where the
+    towpath climbs with it, nor on a bridge. Returns how many points were moved."""
+    segs = []
+    for run in (canal or {}).get("runs", []):
+        for a, b in zip(run["p"], run["p"][1:]):
+            if len(a) >= 9 and not (a[6] | b[6]) & 3:
+                segs.append((a, b, run["lv"]))
+    if not segs:
+        return 0
+    gates = [g for lk in (canal or {}).get("locks", []) for g in (lk["lo"], lk["hi"])]
+    tree = STRtree([LineString([a[:2], b[:2]]) for a, b, _ in segs])
+    moved = 0
+    for r in rd:
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian":
+            continue
+        for i, q in enumerate(r["p"]):
+            if len(q) > 3 or any(math.dist(q[:2], g) < LOCK_CLIMB for g in gates):
+                continue
+            pt = Point(q[:2])
+            for k in tree.query(pt.buffer(12.0)):
+                a, b, lv = segs[int(k)]
+                L = math.dist(a[:2], b[:2]) or 1.0
+                t = ((q[0] - a[0]) * (b[0] - a[0]) + (q[1] - a[1]) * (b[1] - a[1])) / L ** 2
+                if not 0 <= t <= 1:
+                    continue
+                o = ((q[0] - a[0]) * -(b[1] - a[1]) + (q[1] - a[1]) * (b[0] - a[0])) / L
+                w = a[7] if o > 0 else a[8]
+                if w >= 1.5 and a[2] + 0.5 < abs(o) < a[2] + w - 0.3:
+                    z = round(lv + TOWPATH_UP, 1)
+                    if abs(q[2] - z) > 0.05:
+                        r["p"][i] = [q[0], q[1], z]
+                        moved += 1
+                    # (and kept there when the ground is laid: settle_on_laid_ground)
+                    r.setdefault("_tow", set()).add(tuple(q[:2]))
+                    break
+    return moved
+
+
 def no_span_over_tunnels(rd, canal, water, rails, ground=None):
     """A street over the canal where the canal runs in a tunnel, and nothing else passes under it,
     stands on the ground: there is nothing open under it to bridge. Marked as a span, its deck was
@@ -704,7 +750,9 @@ def _join_spans(rd, key):
             if k:
                 q = pts[-1]
                 f = 1 if 1 in (_flag(q), _flag(p[0])) else max(_flag(q), _flag(p[0]))
-                pts[-1] = q[:3] + ([f] if f else [])
+                # (the point shared is at the deck's height where either record has it on its span)
+                z = p[0][2] if _flag(p[0]) == f and _flag(q) != f else q[2]
+                pts[-1] = q[:2] + [z] + ([f] if f else [])
                 p = p[1:]
             pts += p
         # (the street takes the widths of the record that was on most of the span)
@@ -787,6 +835,62 @@ def even_bridge_pavements(rd, houses=()):
 
 
 DIP_REACH = 40.0    # metres from a bridge's span that a path may have been dipped for its headroom
+PATH_HEAD = 3.5     # metres from a deck's top down to a path under it: the deck (0.9 m) and 2.6 m clear
+DIP_GRADE = 0.1     # the steepest a path is let down towards a bridge it passes under
+
+
+def dip_paths_under_spans(rd):
+    """A path passing under another way's span, too close under its deck, let down to leave
+    `PATH_HEAD` below it, and back up to its own line along the way at `DIP_GRADE`. The profiles
+    dip a path under a bridge, but some too little (the cycleway under Stanier Road, 2 m) or not at
+    all (the footway under Warminster Road, 1.7 m): the path ran into the deck's side with no gap
+    to walk through. The ground is dug to it afterwards (lay_ground digs for a path buried near a
+    span). Returns how many paths were let down."""
+    decks = []
+    for r in rd:
+        if r["c"] in GAME_PATHS:
+            continue
+        # (the span itself, not the stretch from its last point down to the abutment, where a path
+        # meeting the street at its bank crosses it on the ground)
+        for a, b in zip(r["p"], r["p"][1:]):
+            if _flag(a) == 1 and _flag(b) == 1:
+                decks.append((LineString([a[:2], b[:2]]), a[2], b[2]))
+    if not decks:
+        return 0
+    tree = STRtree([d for d, _, _ in decks])
+    dipped = 0
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(p) < 2:
+            continue
+        line = LineString([q[:2] for q in p])
+        along = [line.project(Point(q[:2])) for q in p]
+        lows = []
+        for k in tree.query(line):
+            d, za, zb = decks[int(k)]
+            x = d.intersection(line)
+            if x.is_empty or x.geom_type != "Point":
+                continue
+            at = line.project(x)
+            i = max(0, min(len(p) - 2, int(np.searchsorted(along, at)) - 1))
+            if _flag(p[i]) or _flag(p[i + 1]):
+                continue
+            f = (at - along[i]) / ((along[i + 1] - along[i]) or 1)
+            zp = p[i][2] + (p[i + 1][2] - p[i][2]) * f
+            zd = za + (zb - za) * d.project(x, normalized=True)
+            if zd - zp < PATH_HEAD and zd - zp > 1.0:     # (not a path crossing the deck at its level)
+                lows.append((at, zd - PATH_HEAD))
+        if not lows:
+            continue
+        tow = r.get("_tow") or ()
+        for i, q in enumerate(p):
+            if _flag(q) or tuple(q[:2]) in tow:
+                continue
+            z = min(low + max(0.0, abs(along[i] - at) - 6.0) * DIP_GRADE for at, low in lows)
+            if z < q[2] - 0.05:
+                p[i] = [q[0], q[1], round(z, 1)]
+        dipped += 1
+    return dipped
 SLOPE = 1.5         # the ground eases from a way's level to its own over this many metres per metre of difference
 EASE = 12.0         # and over this far at most
 LAY_KERB = 1.7      # a kerbed street's pavement where its record gives none
@@ -2578,16 +2682,17 @@ PAVE = 1.7                 # a full pavement's width, as the old build's street 
 RESEAT_REACH = 15.0        # a street item moves onto a street no further off than this
 RESEAT_MIN_PAVEMENT = 0.8
 NUDGE_MAX = 1.0
+OFF_ROAD_REACH = 6.0   # metres a street item in the road may move to the drawn road's nearest edge
 PLANT_BACK = 2.5        # metres a plant on a pavement or path may be moved back off it
-# how far in from the pavement's back edge each kind stood in the old build; a lamp stood a fixed
-# 0.45 m off the carriageway whatever the pavement
-PAVEMENT_SET = {"bus": 0.9, "sign": PAVE - 0.25}
+# how far in from the pavement's back edge a bus stop stood in the old build (room for its shelter);
+# everything else moved out of the road stands a fixed 0.45 m off the carriageway, as a lamp did
+PAVEMENT_SET = {"bus": 0.9}
 LAMP_OFF = 0.45
 
 
 def reseat_on_pavement(kind, x, y, rd):
     """Where a street item that landed in the road belongs: on the pavement of the nearest kerbed
-    street, on the side it was on, as the old build set it. Returns (x, y, angle) or None when no
+    street, on the side it was on, just in from the kerb (a bus stop where the old build set it). Returns (x, y, angle) or None when no
     street is near or that side has too little pavement."""
     best = None
     for r in rd:
@@ -2610,11 +2715,13 @@ def reseat_on_pavement(kind, x, y, rd):
     pave = (r.get("pv") or [PAVE, PAVE])[0 if side > 0 else 1]
     if pave < RESEAT_MIN_PAVEMENT:
         return None
-    if kind == "lamp":
-        off = r["w"] / 2 + LAMP_OFF
+    if kind == "bus":
+        off = r["w"] / 2 + max(0.3, PAVEMENT_SET["bus"] - (PAVE - pave))
     else:
-        extra = PAVEMENT_SET.get(kind, PAVE - 0.4)
-        off = r["w"] / 2 + max(0.3, extra - (PAVE - pave))
+        # (the nearest point of the pavement to where it was mapped, just in from the kerb: the map's
+        # point lies in our carriageway where it is wider than the survey's, and set back to the old
+        # build's place on the pavement a post box ended up over 3 m from where it stands)
+        off = r["w"] / 2 + LAMP_OFF
     angle = math.atan2(dy, dx) + (0 if side > 0 else math.pi)
     return c.x - dy * off * side, c.y + dx * off * side, angle
 
@@ -2757,6 +2864,26 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         ok = not paved.contains(Point(nx, ny)) and clear(nx, ny) and kept_clear(nx, ny, plant)
         return (nx, ny) if ok else None
 
+    road_edge = road.boundary if road is not None and not road.is_empty else None
+    pavement = face_union("pavement")
+
+    def off_road(x, y):
+        """(x, y, angle) on the pavement just beyond the nearest edge of the road as drawn, facing it,
+        or None: where the nearest street's own pavement can't take it (none near, or its kerb is not
+        the drawn road's edge), a post box still goes to the nearest pavement, not away."""
+        if road_edge is None:
+            return None
+        p = Point(x, y)
+        q = road_edge.interpolate(road_edge.project(p))
+        d = q.distance(p)
+        if d < 1e-6 or d > OFF_ROAD_REACH:
+            return None
+        ux, uy = (q.x - x) / d, (q.y - y) / d
+        nx, ny = q.x + ux * LAMP_OFF, q.y + uy * LAMP_OFF
+        if in_road(nx, ny) or in_full_road(nx, ny) or not pavement.contains(Point(nx, ny)):
+            return None
+        return nx, ny, math.atan2(-ux, uy)
+
     def at_ground(r, q, lift=0.0):
         """`r` with its x, y at `q` and its height recomputed there (kept where the grid has none)."""
         z = ground(q[0], q[1]) if ground else None
@@ -2798,6 +2925,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             keep.append(r)
         elif in_road(x, y) or on_strip(x, y) or in_full_road(x, y):
             spot = reseat_on_pavement(r[0], x, y, rd) if rd else None
+            if spot is None or not clear(spot[0], spot[1]):
+                spot = off_road(x, y)
             z = ground(spot[0], spot[1]) if spot is not None and ground else None
             if spot is not None and clear(spot[0], spot[1]) and (z is not None or not ground):
                 z = round(z + 0.2, 2) if ground else r[3]
@@ -3091,10 +3220,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
     rd, _ = drop_paths_along_streets(rd)
     whole_spans(rd, sq, road_ground, wet)
+    paths_on_the_towpath(rd, canal)
     no_span_over_tunnels(rd, canal, [Polygon(w["r"][0]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]
                          + water[sum(1 for w in tile["wp"] if len(w["r"][0]) >= 3):], rails, road_ground)
     even_bridge_pavements(rd, houses)
     deck_reach(rd)
+    dip_paths_under_spans(rd)
     # the ground is laid to these streets and paths before anything else stands on it
     laid = lay_ground(T, rd, houses, rail_tracks)
     settle_on_laid_ground(rd, laid, road_ground)

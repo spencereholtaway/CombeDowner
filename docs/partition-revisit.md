@@ -796,3 +796,65 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   fences. The roof and tree rows moved because this run read more lidar squares (129 against 101),
   not because of these changes. A write needs `data/raw` linked into the worktree: without it the
   lidar's standing grid is missing, `drop_unstood` drops nothing, and wall precision falls to 0.967.
+
+## Bridge ends, the canal tunnel's kerb, the towpath and post boxes (24 October)
+
+- [ ] **A bridge is one record from bank to bank** (`whole_spans`). The corridors write a record per
+  stretch of width, and a stretch could end halfway across a bridge: the game builds each record's
+  span as a bridge of its own, so Mill Lane's toll bridge had an abutment block standing in the
+  river and a break in its arches, and Bridge Road over Linear Park had parapet ends and abutments
+  at odd angles round the path, with no opening for it. Records of one street meeting alone at a
+  point on a span are joined before the ground is laid, each keeping its own fields in `_parts`, and
+  cut again on the ground either side of the span once it is laid (cutting before, at the abutment,
+  made the abutment a record's end, which can hold no approach, and a footbridge's ramp fell 3 m).
+  The span takes the fields of the record on most of it. A span left starting at its record's end
+  on the bank (within 0.6 m of the ground, not in the water) starts on the ground there instead.
+  `check_map` counts what is left as "span ends where its record does": 150 before, 116 after (main
+  39). Trade-offs: records meeting at a junction are not joined (joining London Road Junction's
+  across its slip road put a 0.8 m step inside the record), so the rest are mostly paths meeting
+  others on a deck (37 footways, 32 cycleways) and the A4's slips (19 trunk); a span's pavements
+  are its majority record's, not the widest (the widest ran approaches' pavements into buildings).
+- [ ] **Each parapet stands at its own side's edge** (`dk` is [left, right] where the sides differ,
+  `deckSides` in `map.ts`). Both parapets stood at the wider pavement's edge, so a bridge with a
+  pavement on one side only had a 2 m slot of ground or river between its kerb and the other
+  parapet (Mill Lane's east side, which read as no parapet at all). A path riding a deck counts for
+  the side it is on, and not where its nearest point is past the deck's end (a footway crossing
+  Mill Lane on the ground beyond its toll house had stretched the deck to 13 m each side). The
+  standing reach (`map.deck`) is still the wider side's either side, hemmed in by the parapets.
+- [ ] **Paths under a bridge are let down to leave 3.5 m under its deck** (`dip_paths_under_spans`,
+  2.6 m clear under the 0.9 m deck), back to their own line at 1 in 10, and the ground is dug to
+  them. Only under the span itself: a path meeting a street on its bank crosses the stretch from
+  the span's last point to the abutment on the ground (Midland Road's riverside path was let down
+  4 m there before this was so). Stanier Road's cycleway (2.0 m) now passes; Warminster Road's footway still ends buried in
+  the abutment (it stops under the deck, so there is only one point to dig for). Ferry Lane's
+  cycleway no longer counts: the span ended at its record's end on the bank and starts on the
+  ground there now. Diagnostic (`pground/diag.py`): 3 of 30 crossings with no gap before, 1 of 29
+  after.
+- [ ] **Short paths onto the towpath are at its level** (`paths_on_the_towpath`): the steps' paths
+  by Bath Top Lock were laid on the survey's ground under the bank and met the towpath half a metre
+  low. "Towpath off the canal's level" 2 to 0. Not within 45 m of a lock, where the towpath climbs.
+- [ ] **The dark step by Sydney Road over the canal tunnel** was the edge face of the drive's mouth
+  and the back of the pavement beside it, standing 0.3 m over the grass: the grid points under a
+  carriageway are let down 0.3 m below it, and the ground's triangles from those just inside a
+  face's edge reach out under the grass beside it. Those edge points are now let down 0.1 m, the
+  grass beside a face is brought up to just under its top (`world.ts`), and a pavement's back edge
+  falls up to 0.12 m towards the ground behind it (`PAVE_FALL`). The step is thinner, not gone.
+  Trade-off: every pavement's back and lane's edge now meets the grass nearly flush, across Bath.
+- [ ] **A street item moved out of the road stands just in from the kerb** (0.45 m), the nearest
+  point of the pavement to where it was mapped, not at the old build's set-back (a bus stop keeps
+  room for its shelter). Where the nearest kerbed street's pavement can't take it (no kerbed street
+  near, or its kerb is not the drawn road's edge), it goes 0.45 m past the nearest edge of the road
+  as drawn, within 6 m and only onto a pavement face (`off_road`), instead of being dropped. The two post boxes short of main were
+  dropped, not set back: six of main's boxes were missing from our squares, three of them in a
+  carriageway face no kerbed street's record reaches (-1,2, 1,2, 1,3). Trade-off: bins and signs
+  moved out of a wider carriageway now stand at the kerb rather than at the back of the pavement.
+- Findings for the bridges pass (the bridge model in `world.ts`, not fixed here): a parapet stops
+  at the span's last point, so where the approach runs on an embankment (Midland Road) it ends in
+  a bare face before the bank does; an abutment is a block 1.5 m long across the whole deck from
+  its underside to 1.5 m into the ground, which shows wherever the bank falls away beside the road;
+  the deck underside is flat or one arch, whatever the bridge's type; nothing yet checks that the
+  gap under a bridge is clear of trees, walls or street items.
+- The barrier half of a square's write is not deterministic: square 0,4 written twice from the
+  same code gives 5,253 and 5,254 barrier records, and the same code's full write scored wall
+  recall 0.946 (final2's maps) and 0.951 (rewritten today). Barrier score moves of a few thousandths
+  between two runs are noise until that is found; the street records (`rd`) do come out the same.

@@ -14,11 +14,15 @@ def street(pv, w=6.0, c="residential"):
 
 
 class ReseatTest(unittest.TestCase):
-    def test_a_bin_in_the_road_goes_to_the_pavement_on_its_side(self):
-        x, y, a = reseat_on_pavement("bin", 50, 1.0, [street([1.7, 1.7])])
+    def test_a_post_box_in_the_road_goes_to_the_nearest_point_of_the_pavement_on_its_side(self):
+        x, y, a = reseat_on_pavement("post", 50, 1.0, [street([1.7, 1.7])])
         self.assertAlmostEqual(x, 50)
-        self.assertAlmostEqual(y, 3.0 + 1.3)
+        self.assertAlmostEqual(y, 3.0 + 0.45)
         self.assertAlmostEqual(a, 0)
+
+    def test_a_bus_stop_keeps_room_for_its_shelter(self):
+        x, y, a = reseat_on_pavement("bus", 50, 1.0, [street([1.7, 1.7])])
+        self.assertAlmostEqual(y, 3.0 + 0.9)
 
     def test_the_other_side_faces_back_along_the_street(self):
         x, y, a = reseat_on_pavement("lamp", 50, -1.0, [street([1.7, 1.7])])
