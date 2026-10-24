@@ -211,7 +211,19 @@ def _reach(area, p, nx, ny, side, cap):
     return best
 
 
-def fit_to_faces(xy, ws, pvs, car_area, walk_area):
+def _clearance(houses, p, nx, ny, side, cap):
+    """How far from `p`, square to the line on `side`, the nearest house wall stands, up to `cap`."""
+    ray = LineString([(p[0], p[1]), (p[0] + nx * side * cap, p[1] + ny * side * cap)])
+    _, parts, tree = _parts_of(houses)
+    best = cap
+    for j in tree.query(ray):
+        hit = parts[int(j)].intersection(ray)
+        if not hit.is_empty:
+            best = min(best, hit.distance(Point(p)))
+    return best
+
+
+def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None):
     """Re-centre a street's line on the carriageway the partition drew and give it that width.
 
     The corridor pass fitted `w` as a strip symmetric about the line, but the partition's carriageway
@@ -220,7 +232,11 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area):
     each point: how far the carriageway face reaches each side, and how much pavement face lies beyond
     it. `ws` and `pvs` are the corridor's figures at each point; a point that cannot be measured (no
     face there) keeps them. The two ends do not move, so they still meet the junction or the square's
-    edge they were fitted to. Returns [(points, w, pv)], one record per run of similar width."""
+    edge they were fitted to. Returns [(points, w, pv)], one record per run of similar width.
+
+    With `houses`, the line is then moved, up to `HOUSE_SHIFT`, so its carriageway lies in the open
+    ground between the buildings either side: a face too narrow to be measured, or a shift the face's
+    own figures could not make, otherwise left a measured wall standing in the road."""
     n = len(xy)
 
     def normal(a, b):
@@ -252,17 +268,19 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area):
     # averaged along the line, so the street does not jitter from one point to the next
     shift = [sum(shift[max(0, k - 1):k + 2]) / len(shift[max(0, k - 1):k + 2]) if 0 < k < n - 1 else 0.0
              for k in range(n)]
-    moved, width, pave = [], [], []
+    width, pave = [], []
     for k in range(n):
         w, pv = ws[k], pvs[k]
         near = [m for m in (mid[k - 1] if k else None, raw[k], mid[k] if k < n - 1 else None) if m]
-        moved.append((xy[k][0] + nrm[k][0] * shift[k], xy[k][1] + nrm[k][1] * shift[k]))
         if raw[k] is None or k in (0, n - 1):
             width.append(w); pave.append((pv[0], pv[1]))
             continue
         width.append(max(MIN_CARRIAGEWAY, min(w, min(m[0] + m[1] for m in near) - FACE_MARGIN)))
         pave.append((min(pv[0], min(m[2] for m in near)) if pv[0] > 0 else 0.0,
                      min(pv[1], min(m[3] for m in near)) if pv[1] > 0 else 0.0))
+    if houses is not None and not houses.is_empty:
+        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses)
+    moved = [(xy[k][0] + nrm[k][0] * shift[k], xy[k][1] + nrm[k][1] * shift[k]) for k in range(n)]
     runs, i = [], 0
     while i < n - 1:
         j = i + 1
@@ -285,6 +303,52 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area):
         pr = min(p[1] for p in pave[i0:i1 + 1])
         out.append((moved[i0:i1 + 1], round(w, 2), [round(pl, 2), round(pr, 2)]))
     return out
+
+
+HOUSE_SHIFT = 2.0               # metres a street's line may move to clear the buildings either side
+HOUSE_MARGIN = 0.1
+NARROW_LANE = 1.8               # metres: a car's width, the least a lane squeezed between two buildings is drawn
+
+
+def _between_houses(xy, nrm, shift, width, pave, houses):
+    """(shift, width, pave) at each inner point: moved the least it must be for the carriageway to clear the
+    houses each side, where there is room between them. Where there is not, the line is centred in the
+    gap and the carriageway narrowed to it, down to `NARROW_LANE`, since the buildings are measured and
+    the street's width is a guess, and each pavement stops at the wall beyond it. The ends stay put.
+    Halfway between two points is measured too and asked of both."""
+    n = len(xy)
+    reach = max(width) / 2 + HOUSE_SHIFT + 0.5
+
+    def room(p, nx, ny, half):
+        if houses.contains(Point(p)):
+            return None
+        left = _clearance(houses, p, nx, ny, 1, reach) - HOUSE_MARGIN
+        right = _clearance(houses, p, nx, ny, -1, reach) - HOUSE_MARGIN
+        return (-right + half, left - half, left, right)
+
+    out, wide, paved = list(shift), list(width), list(pave)
+    reach += max(max(v) for v in pave)
+    for k in range(1, n - 1):
+        half = width[k] / 2
+        spans = [room(xy[k], nrm[k][0], nrm[k][1], half)]
+        for a, b in ((k - 1, k), (k, k + 1)):
+            m = ((xy[a][0] + xy[b][0]) / 2, (xy[a][1] + xy[b][1]) / 2)
+            d = math.hypot(xy[b][0] - xy[a][0], xy[b][1] - xy[a][1]) or 1.0
+            spans.append(room(m, -(xy[b][1] - xy[a][1]) / d, (xy[b][0] - xy[a][0]) / d, half))
+        spans = [s for s in spans if s is not None]
+        if not spans:
+            continue
+        lo, hi = max(s[0] for s in spans), min(s[1] for s in spans)
+        s = (lo + hi) / 2 if lo > hi else min(hi, max(lo, out[k]))
+        if abs(s) <= HOUSE_SHIFT:
+            out[k] = s
+            if lo > hi:
+                wide[k] = max(NARROW_LANE, min(width[k], hi - lo + 2 * half))
+        h, s = wide[k] / 2, out[k]
+        left, right = min(v[2] for v in spans), min(v[3] for v in spans)
+        paved[k] = (max(0.0, min(pave[k][0], left - s - h)) if pave[k][0] > 0 else 0.0,
+                    max(0.0, min(pave[k][1], right + s - h)) if pave[k][1] > 0 else 0.0)
+    return out, wide, paved
 
 
 def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None):
@@ -316,6 +380,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     frame = Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
     inner = [g for g in (b.buffer(-0.3) for b in blocks or []) if not g.is_empty]
     btree = STRtree(inner) if inner else None
+    house_area = unary_union([b.buffer(0) for b in blocks]) if blocks else None
     road_lines = [LineString(r["line"]) for r in rows if r["cls"] not in GAME_PATHS]
     road_tree = STRtree(road_lines) if road_lines else None
     for r in rows:
@@ -354,7 +419,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             if fit:
-                pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1])
+                pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area)
             else:
                 pieces = [(xy, ch[0][2], list(ch[0][3]))]
             for pp, ww, vv in pieces:
@@ -365,7 +430,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                     if marked is None:
                         continue
                     for piece, deep, lay, tow in marked:
-                        for part in _surface_pieces(piece, deep):
+                        for part in (h for whole_part in _surface_pieces(piece, deep) for h in _opened(whole_part)):
                             rec = dict(c=r["cls"], n=r.get("name", ""), p=part, w=round(ww, 2))
                             if lay:
                                 rec["_lay"] = lay
@@ -376,6 +441,15 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                                 rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
                             out.append(rec)
     return out
+
+
+def _opened(pts):
+    """A street that comes back to where it began, as two halves: one record round a loop has no
+    side that is its left all the way, so its pavements cannot be laid as one strip either side."""
+    if len(pts) < 5 or math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) > 0.05:
+        return [pts]
+    k = len(pts) // 2
+    return [pts[:k + 1], pts[k:]]
 
 
 # Points (4 m apart) a street's approach to its bridge may keep its profile for, and the steepest the
