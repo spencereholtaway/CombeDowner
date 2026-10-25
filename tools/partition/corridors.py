@@ -24,7 +24,30 @@ PRIOR = {
 }
 PAVE = (2.0, 1.2)               # pavement (ideal, minimum)
 PATHS = {"footway", "path", "cycleway", "bridleway", "steps", "track"}
+# The room a path's corridor takes between the plots: the path and the verge either side of it.
 PATHW = {"footway": 1.8, "path": 1.5, "cycleway": 2.5, "bridleway": 2.5, "steps": 1.8, "track": 3.0}
+# The path drawn in that room, where it has no width tag of its own: each the widest value that fits
+# the build's own input's tagged paths best (within a metre of the tag along the most length). The
+# tagged footways have a median of 1.0 to 1.1 m.
+PATH_DRAWN = {"footway": 1.5, "path": 1.5, "cycleway": 2.2, "bridleway": 2.0, "steps": 1.8, "track": 3.0}
+PATH_NARROWEST = 0.8
+
+
+def path_width(cls, obs=()):
+    """The width a path is drawn: its own `width` tag where it has one (the longest-tagged, if
+    several), else `PATH_DRAWN`'s for its kind, and never wider than its corridor's room."""
+    room = PATHW.get(cls, 1.8)
+    best, longest = None, 0.0
+    for t0, t1, tags in obs or ():
+        try:
+            w = float(str(tags.get("width", "")).replace("m", "").strip())
+        except ValueError:
+            continue
+        if t1 - t0 > longest:
+            best, longest = w, t1 - t0
+    if best is None:
+        return min(room, PATH_DRAWN.get(cls, room))
+    return min(room, max(PATH_NARROWEST, best))
 REACH = 14.0                    # metres looked out from a centre line for what stands beside the street
 LANE = 3.25                     # metres a lane is assumed wide for a "lanes" tag
 STEP = 2.0                      # metres between cross-section samples

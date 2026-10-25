@@ -58,6 +58,7 @@ from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
+from partition.corridors import PATHW, path_width
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle
 from partition.standing import Standing
@@ -320,6 +321,7 @@ HOUSE_SHIFT = 2.0               # metres a street's line may move to clear the b
 HOUSE_MARGIN = 0.1
 LIDAR_INTO = 1.5                # metres into a footprint the lidar is looked at for the building itself
 LIDAR_TALL = 1.5                # metres above the ground: lower than this, nothing stands there
+MEASURED_GIVE = 1.0             # metres a street with a width tag may narrow where a building stands
 NARROW_LANE = 1.8               # metres: a car's width, the least a lane squeezed between two buildings is drawn
 
 
@@ -328,7 +330,8 @@ def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=Fal
     houses each side, where there is room between them. Where there is not, the line is centred in the
     gap and the carriageway narrowed to it, down to `NARROW_LANE`, since the buildings are measured and
     the street's width is a guess, and each pavement stops at the wall beyond it. A street with a
-    measured width (`measured`) is centred but not narrowed: the tag is a measurement too. The ends stay put.
+    measured width (`measured`) narrows only there, and by at most `MEASURED_GIVE`: the tag is a
+    measurement too. The ends stay put.
     Halfway between two points is measured too and asked of both."""
     n = len(xy)
     reach = max(width) / 2 + HOUSE_SHIFT + 0.5
@@ -356,8 +359,10 @@ def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=Fal
         s = (lo + hi) / 2 if lo > hi else min(hi, max(lo, out[k]))
         if abs(s) <= HOUSE_SHIFT:
             out[k] = s
-            if lo > hi and not measured:
-                wide[k] = max(NARROW_LANE, min(width[k], hi - lo + 2 * half))
+            if lo > hi:
+                # a measured street gives up at most a metre, where the lidar confirms the building
+                floor = max(MIN_CARRIAGEWAY, width[k] - MEASURED_GIVE) if measured else NARROW_LANE
+                wide[k] = max(floor, min(width[k], hi - lo + 2 * half))
         h, s = wide[k] / 2, out[k]
         left, right = min(v[2] for v in spans), min(v[3] for v in spans)
         paved[k] = (max(0.0, min(pave[k][0], left - s - h)) if pave[k][0] > 0 else 0.0,
@@ -452,6 +457,8 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             if fit:
                 pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area,
                                       tall if r.get("tagged") else None)
+            elif r.get("path"):
+                pieces = [(xy, path_width(r["cls"], r.get("obs")), list(ch[0][3]))]
             else:
                 pieces = [(xy, ch[0][2], list(ch[0][3]))]
             for pp, ww, vv in pieces:
@@ -1708,6 +1715,28 @@ def _seen_along(line, standing, step=0.5):
     return sum(standing.near(p, 0.5) for p in pts) / len(pts) if pts else 0.0
 
 
+def drawn_paths(faces, rd, paving=None):
+    """The partition's path faces, less the verge either side of each path that is narrower than the
+    room its corridor took: the corridor is cut at `PATHW`, and the path drawn in it at its own width.
+    A verge piece against other `paving` stays paved: a path across a square is part of the square."""
+    keep, verge = [], []
+    for r in rd:
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(r["p"]) < 2 or "w" not in r:
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        room = PATHW.get(r["c"], 1.8) / 2
+        keep.append(line.buffer(r["w"] / 2))
+        if r["w"] / 2 < room - 0.05:
+            verge.append(line.buffer(room + 0.1, cap_style="flat").difference(line.buffer(r["w"] / 2, cap_style="flat")))
+    if not verge:
+        return faces
+    cut = faces.intersection(unary_union(verge).difference(unary_union(keep)))
+    if paving is not None and not paving.is_empty:
+        near = paving.buffer(0.2)
+        cut = unary_union([g for g in getattr(cut, "geoms", [cut]) if not g.intersects(near)] or [Polygon()])
+    return faces.difference(cut)
+
+
 def _minus(a, b):
     """a less b, snapped to a millimetre where GEOS cannot settle the overlay of two nearly
     coincident outlines (a plaza's edge laid along a street's pavement)."""
@@ -1793,7 +1822,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
     taken = unary_union([road, pave, plaza, *(face_shape(f).buffer(0) for f in part["faces"]
                                        if f["cls"] == "building" and len(f["xy"]) > 2)])
-    path = shapes("path").difference(taken)
+    path = drawn_paths(shapes("path"), rd, taken).difference(taken)
     if bores is not None:
         # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
         path = path.difference(bores)
@@ -3477,7 +3506,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     roads = []
     for e, car, pl, pr in own:
         rec = dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=e["path"],
-                   line=e["line"], sections=e["sections"], tagged=any("width" in t for _, _, t in e.get("obs") or ()))
+                   line=e["line"], sections=e["sections"], obs=e.get("obs") or (),
+                   tagged=any("width" in t for _, _, t in e.get("obs") or ()))
         roads.append(rec)
 
     # the ground every point in the tile is placed on: the terrain grid the tile carries
