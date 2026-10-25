@@ -3,6 +3,7 @@
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { Need, needUnder } from "./railbridge";
 import { BARRIER_HEIGHT, Building, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
@@ -829,16 +830,19 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   //  - beam: a concrete deck with a flat underside on slim piers, and a steel railing on a low
   //    concrete upstand each side;
   //  - truss: a deck between two steel trusses, which are its sides;
-  //  - foot: a thin deck between steel railings, on slim legs where it is long.
+  //  - foot: a thin deck between steel railings, on slim legs where it is long;
+  //  - suspension: a foot's deck with no legs, hung from a chain each side between a stone tower at
+  //    each end.
   // Each end has an abutment whose foot follows the bank under it, and the parapets run on along
   // the approach while the road stands above the ground beside it, so they meet the bank rather
   // than ending in the air. No pier stands in what passes under (the map's `uo`: a road, a path or
   // the railway) or in the canal. What the bridge crosses keeps its own ground underneath.
   const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
-  const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52];
+  const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52], TRUSS = [0.3, 0.37, 0.38];
   const PARAPET = 1.05;       // above the pavement
   const KINDS: Record<string, { deck: number; gap: number }> = {
     arch: { deck: 0.9, gap: 16 }, beam: { deck: 1.1, gap: 26 }, truss: { deck: 0.9, gap: 45 }, foot: { deck: 0.45, gap: 18 },
+    suspension: { deck: 0.45, gap: Infinity },
   };
   /** An upright block on corners [x, y] (data) from low to high. */
   function prism(g: Geo, c: number[][], low: number, high: number, col: number[]) {
@@ -1019,7 +1023,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           return h !== null && Math.abs(h - q.top) < 1.2;
         };
         const open = [1, -1].map((side) => P.filter((q) => beside(q, side)).length > P.length / 2);
-        const sideCol = stone ? STONE : kind === "foot" ? PLATE : CONCRETE;
+        const light = kind === "foot" || kind === "suspension";
+        const sideCol = stone ? STONE : light ? PLATE : CONCRETE;
         for (let i = 0; i < P.length - 1; i++) {
           const A = P[i], B = P[i + 1], uA = along(A), uB = along(B);
           const underA = A.top - DECK, underB = B.top - DECK;
@@ -1086,12 +1091,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           }
           // a steel railing (on the beam's upstand), or the truss
           if (!stone) {
-            const m = side * (Ws(side) - 0.2), base = kind === "beam" ? 0.35 : 0, H = kind === "truss" ? Math.max(2.4, Math.min(4, (sb - sa) / 12)) : 1.1;
-            const post = kind === "truss" ? 3.5 : kind === "foot" ? 1.5 : 2;
-            const rails = kind === "truss" ? [base + 0.15, H] : [0.55, 1.1];
+            const truss = kind === "truss", col = truss ? TRUSS : STEEL;
+            const m = side * (Ws(side) - 0.2), base = kind === "beam" ? 0.35 : 0, H = truss ? Math.max(2.4, Math.min(4, (sb - sa) / 12)) : 1.1;
+            // (a truss's panels are as long as it is high, so its diagonals lean at 45 degrees, as a Warren girder's do)
+            const post = truss ? H : kind === "beam" ? 2 : 1.5;
+            const rails = truss ? [base + 0.1, H] : [0.55, 1.1];
             for (let i = 0; i < run.length - 1; i++) {
               const A = run[i], B = run[i + 1];
-              for (const y of rails) bar(steel, at(A, m, A.top + y), at(B, m, B.top + y), kind === "truss" ? 0.12 : 0.03, STEEL);
+              for (const y of rails) bar(steel, at(A, m, A.top + y), at(B, m, B.top + y), truss ? 0.09 : 0.03, col);
             }
             const first = Math.ceil(run[0].s / post) * post, k0 = Math.round(first / post);
             for (let u = first, k = k0; u <= run[run.length - 1].s + 1e-6; u += post, k++) {
@@ -1099,15 +1106,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               while (i < run.length - 2 && run[i + 1].s < u) i++;
               const A = run[i], B = run[i + 1], f = Math.min(1, Math.max(0, (u - A.s) / ((B.s - A.s) || 1)));
               const q = { ...A, x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, top: A.top + (B.top - A.top) * f };
-              bar(steel, at(q, m, q.top + base), at(q, m, q.top + (kind === "truss" ? H : 1.12)), kind === "truss" ? 0.1 : 0.03, STEEL);
+              bar(steel, at(q, m, q.top + base), at(q, m, q.top + (truss ? H : 1.12)), truss ? 0.045 : 0.03, col);
               // a truss's diagonal to the next post, leaning alternately
-              if (kind === "truss" && u + post <= run[run.length - 1].s + 1e-6) {
+              if (truss && u + post <= run[run.length - 1].s + 1e-6) {
                 let j = i;
                 while (j < run.length - 2 && run[j + 1].s < u + post) j++;
                 const C = run[j], D = run[j + 1], h2 = Math.min(1, Math.max(0, (u + post - C.s) / ((D.s - C.s) || 1)));
                 const q2 = { ...C, x: C.x + (D.x - C.x) * h2, y: C.y + (D.y - C.y) * h2, top: C.top + (D.top - C.top) * h2 };
-                if (k % 2) bar(steel, at(q, m, q.top + base + 0.15), at(q2, m, q2.top + H), 0.08, STEEL);
-                else bar(steel, at(q, m, q.top + H), at(q2, m, q2.top + base + 0.15), 0.08, STEEL);
+                if (k % 2) bar(steel, at(q, m, q.top + base + 0.1), at(q2, m, q2.top + H), 0.06, col);
+                else bar(steel, at(q, m, q.top + H), at(q2, m, q2.top + base + 0.1), 0.06, col);
               }
             }
           }
@@ -1116,6 +1123,27 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             if (seam(q)) continue;
             const up = stone ? PARAPET : 0.35, fwd = [-q.ny * dir, 0, -q.nx * dir];
             facing(g, at(q, h, q.top), at(q, w, q.top), at(q, w, q.top + up), at(q, h, q.top + up), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], stone ? STONE : CONCRETE);
+          }
+        }
+        if (kind === "suspension" && !seam(P[0]) && !seam(P[P.length - 1])) {
+          // a stone tower each side at each end, and a chain between their tops sagging to just
+          // above the deck halfway, with a rod down to the deck's edge every 2 m
+          const TH = Math.max(4, Math.min(8, s / 9)), mid = lerpAt(s / 2);
+          for (const side of [1, -1]) {
+            const o = side * (Ws(side) + 0.5), tops: number[] = [];
+            for (const [sp, dir] of [[0, 1], [s, -1]] as const) {
+              const q = lerpAt(sp), fx = -q.ny, fy = q.nx, top = q.top + TH;
+              const c = [[-0.6, -0.5], [0.6, -0.5], [0.6, 0.5], [-0.6, 0.5]].map(([u, v]) => [q.x + fx * u + q.nx * (o + v), q.y + fy * u + q.ny * (o + v)]);
+              prism(g, c, q.g - 0.5, top, STONE);
+              // (the chain runs on over the tower and down to its anchorage in the bank behind)
+              const bx = q.x - fx * dir * 6 + q.nx * o, by = q.y - fy * dir * 6 + q.ny * o;
+              bar(steel, at(q, o, top), [bx, ground(bx, -by), -by], 0.06, STEEL);
+              tops.push(top);
+            }
+            const sag = (tops[0] + tops[1]) / 2 - (mid.top + 1.0);
+            const chain = (q: Pt) => { const f = q.s / s; return tops[0] + (tops[1] - tops[0]) * f - sag * 4 * f * (1 - f); };
+            for (let i = 0; i < P.length - 1; i++) bar(steel, at(P[i], o, chain(P[i])), at(P[i + 1], o, chain(P[i + 1])), 0.06, STEEL);
+            for (const q of P) if (q.s > 1 && q.s < s - 1) bar(steel, at(q, o, chain(q)), at(q, side * Ws(side), q.top), 0.015, STEEL);
           }
         }
         // the piers: stone across the deck under an arch bridge, slim columns under the others
@@ -1128,7 +1156,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const box = (u0: number, u1: number, v0: number, v1: number) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
           if (stone) prism(g, box(-1, 1, -Ws(-1), Ws(1)), low, under, STONE);
           else {
-            const t = kind === "foot" ? 0.25 : 0.45, cols = kind === "foot" ? [0] : [-hr * 0.6, hl * 0.6];
+            const t = light ? 0.25 : 0.45, cols = light ? [0] : [-hr * 0.6, hl * 0.6];
             for (const v of cols) prism(g, box(-t, t, v - t, v + t), low, under - 0.6, CONCRETE);
             prism(g, box(-t - 0.1, t + 0.1, -Ws(-1) + 0.3, Ws(1) - 0.3), under - 0.6, under, CONCRETE);
           }
@@ -1291,9 +1319,24 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     map.canal = canal;
     map.movers.push(...canal.moored);
   }
+  /** The headroom wanted under the railway at data (x, y), by what passes under there: the village's
+   *  and the rest of Bath's (the wider map). A van's under a street, a walker's under its pavements
+   *  and a path, a narrowboat's under the canal. */
+  function underRail(rail: NonNullable<typeof map.railData>): Need {
+    const ways: { p: number[][]; reach: number; need: number }[] = [];
+    for (const r of [...map.d.rd, ...(map.wide?.rd ?? [])]) {
+      if (r.bridge) continue;
+      const foot = PATHS.has(r.c);
+      ways.push({ p: r.p, reach: width(r) / 2 + (KERBED.has(r.c) ? pv(r) : 0.3) + 1, need: 2.3 });
+      if (!foot) ways.push({ p: r.p, reach: width(r) / 2 + 0.3, need: 3.4 });
+    }
+    for (const l of [...map.d.wl, ...(map.wide?.wl ?? [])]) ways.push({ p: l.p, reach: 2, need: l.c === "canal" ? 2.8 : 0.8 });
+    for (const run of map.canalData?.runs ?? []) ways.push({ p: run.p, reach: 6, need: 2.8 });
+    return needUnder(rail.tracks.map((t) => t.p), ways, [...map.d.wp, ...(map.wide?.wp ?? [])].map((w) => w.r[0]));
+  }
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
-  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0) : null;
+  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData)) : null;
   if (railway) { map.floors.push((x, z) => railway.floor(x, z)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;

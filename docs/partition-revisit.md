@@ -934,3 +934,110 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   one more sunk footway span by Green Park. Too steep fell 177 to 62. In the shots, a garden fence
   runs down the bank to the water beside Bathwick Hill's canal bridge, and the Dundas basin
   cycleway's parapets run on along its ramp on to the grass.
+
+## Bridges, third pass
+
+- [ ] **The ground under a span goes down to the lidar's** (`lay_ground`, `_surveyed_under`): the
+  EA DTM has bridges taken out, so under a deck it sees the bank, the water or the road below. It is
+  put on the tile's heights by the ground at the span's two ends (the tile's terrain and the survey
+  stand up to 5 m apart on a hill; the end that agrees least lowers it least), only ever lowers the
+  tile's ground, and not under a way at grade or the railway. Ground in the gap 5 to 2, no open gap
+  12 to 11 (Bristol Road over the brook at Newbridge and Rossiter Road over the canal now open).
+  Left: Brook Road (two openings with solid ground between, which the check counts as a hump) and
+  a pond-loop footway in Royal Victoria Park marked a span all round.
+- [ ] **Footbridges stand 1.5 m over the water** they cross (point by point, so two records meeting
+  over it are lifted alike, and again after the easing, which brought 2-point spans down). That is a
+  metre of air under the game's 0.45 m deck; `check_map.py` judges every deck as 0.9 m deep, so
+  about eight small footbridges still count as "no open gap" at 0.5-0.6 m.
+- [ ] **A path's long river crossing tagged as an arch but too low for one** (over 40 m, rise under
+  an eighth of it, from the lidar) is a light footbridge, not stone: Victoria Bridge, and the
+  Railway Path's two parallel decks at Newbridge. A `suspension` kind is in the game (stone towers,
+  chains, hangers; no extra draw call) for OSM's `bridge:structure=suspension`, but nothing in the
+  data says Victoria Bridge is one: the outline says arch, the layer keeps no `bridge:support` or
+  `material`, the listed buildings are only walls and railings, and the lidar's towers are lost
+  among the trees (tried: tall cells at both ends pick out half of Bath's river bridges). A fresh
+  OSM fetch with `bridge:structure=suspension` on it would make it one with no code change.
+- [ ] **Railway bridges** (`railway.ts`, shared with main): piers about 12 m apart where nothing
+  passes under (roads, paths and streams from the village and the wider map, water, the canal:
+  `underRail` in `world.ts`), brick arches between them where the line stands high enough, and a
+  steel girder over a way under where an arch flatter than a fifth of its length would be needed.
+  Trade-off: the long viaduct through Bath Spa has so much under it that much of it is girder
+  rather than Brunel's arches.
+- [ ] **A named way running on from its bridge's record** at a junction on the bank, with the deck
+  still well above the ground there, ramps down off it at a path's or a road's grade with the ground
+  laid up to it (`ramp_off_decks`), not more deck: the Railway Path at Newbridge no longer drops
+  3 m off the end of its bridge. Tried and dropped: main's rule on every span end (span ends where
+  its record does 130 to 145, bridges over nothing 0 to 4, junctions kinked where the ground could
+  not be laid), since the partition's streets already keep their approaches up (`_approaches`).
+- [ ] **No boundary at a bridge's abutments** (`deck_ends_reach`): the gap's outline left the first
+  and last 1.5 m open, so a fence panel could stand against the abutment. Wall recall 0.951 to
+  0.948 (real walls running on from parapets go too). Left: Bathwick Hill's fence down the bank to
+  the canal stands beside the abutment, not on it; Mill Lane's second wall under its parapet; the
+  Dundas basin cycleway's parapets along its raised ramp.
+- [ ] **Not ported, tried**: main's path over a lock on its coping (`lock_coping`, `along_lock`).
+  It moves Pulteney Road's heights by Widcombe top lock enough to add four "too steep" stretches
+  (62 to 66), even with the roads not raised for the walkway; the patch is kept aside. Also tried
+  and dropped: running a span on over a way crossing a point past its end (Winsley Hill: the track
+  there meets the road, it does not cross it), and keeping an approach up until it is back on the
+  ground for good (headroom under Stanier Road). Winsley Hill's kink is still there: the base
+  tile's ground is dug for main's track under main's longer span.
+- [ ] **Trusses** are Warren girders: panels as long as they are high, thinner chords and diagonals,
+  a lighter green-grey.
+
+## Bridges, fourth pass
+
+- [ ] **Railway bridges are Bath stone** (`railbridge.ts`, used by `railway.ts`; shared game code,
+  so main's maps get it too). OpenStreetMap has no `bridge:structure` on any of Bath's railway
+  bridge ways (37 `bridge=yes`, 7 viaduct, all bare, and Overpass could not be reached for a fresh
+  fetch), so each bridge is worked out from the line's heights and what passes under it. Piers
+  stand about as far apart as the line is high (6 to 12 m), so a semicircle springs just off the
+  ground, and never in a road, a path, the water or the canal. Each opening takes the roundest arch,
+  from a semicircle down to a segmental one an eighth as high as it is wide, that keeps its
+  headroom over what passes under it: 3.4 m over a carriageway, 2.3 m over a pavement or path, 2.8 m
+  over the canal, 0.8 m over a stream. Over nothing, an arch flatter than 0.3 of its width (or under
+  1.5 m high) is built as the plain wall it would look like. A girder is used only where no arch
+  fits, and a run of openings under 45 m with a girder in it is all girder, with piers only every
+  25 m. A track laid beside another on the same viaduct takes that one's piers and girders, so the
+  arches line up. The masonry has voussoirs, a string course and a coping; the girders are a lighter
+  grey-green with stiffeners. On the viaduct through Bath Spa nearly every opening is now a 7 to
+  10 m round arch; the girders are the two Avon crossings (St James's Bridge really is an iron
+  girder) and a few wide roads. Left: the bridge over the footpath at -5366,2887 was an arch in r6
+  and is now a girder (no arch clears the path's headroom over its single 16 m opening), and
+  Bath Spa's platform sides are still brick.
+- [ ] **check_map rule 10 judges each deck by its own depth** (`DECK_DEPTH`, as `world.ts` `KINDS`
+  builds it: a footbridge 0.45 m, a beam 1.1 m, stone 0.9 m). No open gap: ours 11 to 4, main 8 to 8
+  (main's maps carry no `bt`).
+- [ ] **Dundas basin cycleway** (2302,-106): the structures pass put the point just past the span's
+  end on the towpath, so it dropped 3 m to the towpath and climbed back. A towpath point next to a
+  span whose deck stands over 2 m above it is now on the span (`TOW_OVER`, at the end of `solve`).
+  Only this one edge in the map changes. Its railings along the ramp and the pink low wall by it are
+  still there.
+- [ ] **No wall at the foot of a bridge's side** (`deck_skirts`): a strip 0.8 m outside each span's
+  parapets, along the span only, takes the lidar's view of the bridge's own side, which was drawn
+  as a second wall under the parapet (Mill Lane, Bathampton: cut from 2.3 m to 1.5 m, not gone; a
+  1.2 m strip removes it but costs 0.002 of wall recall).
+- [ ] **The abutment keep-off is for guessed boundaries only**: a seen one (`evidence`, or support
+  over `SUPPORT`) may meet the abutment. Wall recall stays at 0.948 to 0.950 (run-to-run noise is
+  about 0.001 to 0.002: two runs of the same code differ in 17 squares). With the rule off, recall is
+  0.951 but wall precision drops to 0.968, and exempting front walls too gives +0.001 recall for
+  -0.002 precision, so the walls it loses are guesses that happen to match.
+- Looked at and left, with the cause: Bathwick Hill's fence down the bank is an OpenStreetMap-mapped
+  fence along the cycle ramp to the towpath (main never drew it). Drawing path-side mapped fences as
+  railings dropped fence recall from 0.918 to 0.808, so it is not done. Linear Park over Bridge
+  Road: the hedge ring is the registered parcel of the semi at -2672,1573 with the lidar seeing it,
+  and the stone wall in the foreground is a lidar wall along the footway ramp. Both are data.
+- Kinks: Hensley Gardens' dip (5 of the 20) is the base square's ground, dug by main for a bridge
+  over the Devonshire Tunnel's portal where the survey sees solid ground under the road. Filling it
+  back to the survey (`undig_base_spans`) fixed the road (kinked 20 to 17, too steep 62 to 58) but
+  half-buried the portal, which stands right under the road, so it was taken back. Winsley Hill has
+  the same cause, but main's track runs under main's longer span there. Bailbrook, Stanier Road,
+  the Green Park span and the service road at -5_6 are not changed.
+- Lock coping, tried again (`lock-rule-2.diff` in the scratchpad): the patch on its own changed
+  street heights even when off, because a path crossing at a lock stopped counting as a canal
+  crossing that eases the streets up. With that fixed, and the network solved a second time without
+  the walkways to keep the streets' heights, no stretch is too steep and nothing kinks, but the
+  walkway at Widcombe (-446,1632) ends 0.8 m above the two paths it joins (one more "span ends where
+  its record does"), so it is kept aside again.
+- Commit 395a982e's message says a long low path crossing tagged as an arch is a suspension bridge;
+  b95398ec changed that to a light footbridge, which is what the code does.
+

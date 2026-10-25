@@ -338,6 +338,11 @@ def deck_sides(r):
     return h, h
 
 
+# Each kind's deck depth, as world.ts's KINDS builds it: a footbridge's thin deck leaves more air
+# under it than a stone arch's, so judging every deck as an arch's counted footbridges as shut.
+DECK_DEPTH = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}
+
+
 def bridge_spans(roads, marks, rail_pts, ground):
     """Every span: (what, its points, the deck's top at each, its reach left and right, the deck's
     depth). A span runs from the point before its first marked point to the one after its last,
@@ -352,7 +357,7 @@ def bridge_spans(roads, marks, rail_pts, ground):
             while e + 1 < len(p) and mk[e + 1] == 1: e += 1
             a, z = max(0, k - 1), min(len(p) - 1, e + 1); k = e + 1
             tops = [q[2] if mk[a + i] else ground(q[0], q[1]) for i, q in enumerate(p[a:z + 1])]
-            spans.append((f"{r['c']} {r['n']!r}", [q[:2] for q in p[a:z + 1]], tops, deck_sides(r), 0.9))
+            spans.append((f"{r['c']} {r['n']!r}", [q[:2] for q in p[a:z + 1]], tops, deck_sides(r), DECK_DEPTH.get(r.get("bt"), 0.9)))
     for tp in rail_pts:
         k = 0
         while k < len(tp):
@@ -369,8 +374,8 @@ def under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts):
 
     A span's banks are its first and last 2.5 m. The floor under it is the ground, or the water's
     surface where it is over water. Something stands under the deck if it is inside the deck's
-    outline and its foot is more than 0.3 m below the deck's underside (0.9 m under its top, as
-    world.ts builds it; 1.2 m under the railway's, as railway.ts does)."""
+    outline and its foot is more than 0.3 m below the deck's underside (DECK_DEPTH under its top, by its kind,
+    as world.ts builds it; 1.2 m under the railway's)."""
     sq = box(*m["b"])
     wps = [w for w in m["wp"] if len(w["r"][0]) >= 3]
     wz = [w["z"] for w in wps]
