@@ -1318,9 +1318,45 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     map.canal = canal;
     map.movers.push(...canal.moored);
   }
+  /** Whether a road, a path, water or the canal passes under the railway at data (x, y): the
+   *  village's and the rest of Bath's (the wider map), looked up only round the line's bridges. */
+  function underRail(rail: NonNullable<typeof map.railData>): (x: number, y: number) => boolean {
+    const C = 10, cell = (i: number, j: number) => `${i},${j}`;
+    const near = new Map<string, number[][]>();
+    for (const t of rail.tracks) for (const q of t.p) if (q[3] === 1) near.set(cell(Math.floor(q[0] / C), Math.floor(q[1] / C)), []);
+    const line = (p: number[][], reach: number) => {
+      for (let k = 0; k + 1 < p.length; k++) {
+        const [ax, ay] = p[k], [bx, by] = p[k + 1];
+        for (let i = Math.floor((Math.min(ax, bx) - reach) / C); i <= Math.floor((Math.max(ax, bx) + reach) / C); i++)
+          for (let j = Math.floor((Math.min(ay, by) - reach) / C); j <= Math.floor((Math.max(ay, by) + reach) / C); j++)
+            near.get(cell(i, j))?.push([ax, ay, bx, by, reach]);
+      }
+    };
+    for (const r of [...map.d.rd, ...(map.wide?.rd ?? [])]) if (!r.bridge) line(r.p, width(r) / 2 + (KERBED.has(r.c) ? pv(r) : 0.3) + 1);
+    for (const l of [...map.d.wl, ...(map.wide?.wl ?? [])]) line(l.p, 2);
+    for (const run of map.canalData?.runs ?? []) line(run.p, 6);
+    const ponds = [...map.d.wp, ...(map.wide?.wp ?? [])].map((w) => w.r[0]).filter((ring) => ring.length > 2).map((ring) => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [x, y] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      return { ring, x0, x1, y0, y1 };
+    });
+    const inside = (ring: number[][], x: number, y: number) => {
+      let o = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++)
+        if ((ring[i][1] > y) !== (ring[j][1] > y) && x < ((ring[j][0] - ring[i][0]) * (y - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]) o = !o;
+      return o;
+    };
+    return (x, y) => {
+      for (const [ax, ay, bx, by, reach] of near.get(cell(Math.floor(x / C), Math.floor(y / C))) ?? []) {
+        const vx = bx - ax, vy = by - ay, f = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+        if (Math.hypot(x - ax - vx * f, y - ay - vy * f) < reach) return true;
+      }
+      return ponds.some((w) => x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && inside(w.ring, x, y));
+    };
+  }
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
-  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0) : null;
+  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData)) : null;
   if (railway) { map.floors.push((x, z) => railway.floor(x, z)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;

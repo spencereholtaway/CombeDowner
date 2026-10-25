@@ -24,8 +24,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   detail everywhere. Landmarks are modelled by hand: Bath Abbey, Pulteney Bridge, the Roman Baths,
   Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
   and more. Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
-  and the railway, steel trusses at Midland Bridge, concrete beams on slim piers for the trunk roads,
-  and light footbridges with railings for the paths, with the gap under each kept clear.
+  and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
+  trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
+  suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
+  saw it. The railway's own bridges stand on brick arches, or on steel girders where a road, a path
+  or the river passes under, and never have a pier in the way.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
   string of red and white bunting and the whole string flutters down for a bonus and rips the flags
