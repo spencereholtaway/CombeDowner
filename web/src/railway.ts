@@ -226,9 +226,12 @@ export function compact(pos: number[], col: number[]): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.computeVertexNormals();
-  const n = g.getAttribute("normal").array as Float32Array;
-  g.setAttribute("normal", new THREE.Int8BufferAttribute(Int8Array.from(n, (v) => Math.round(v * 127)), 3, true));
-  g.setAttribute("color", new THREE.Uint8BufferAttribute(Uint8Array.from(col, (v) => Math.round(v * 255)), 3, true));
+  // (plain loops: a typed array's from() with a function took a fifth of a second over the whole line)
+  const n = g.getAttribute("normal").array as Float32Array, n8 = new Int8Array(n.length), c8 = new Uint8Array(col.length);
+  for (let k = 0; k < n.length; k++) n8[k] = Math.round(n[k] * 127);
+  for (let k = 0; k < col.length; k++) c8[k] = Math.round(col[k] * 255);
+  g.setAttribute("normal", new THREE.Int8BufferAttribute(n8, 3, true));
+  g.setAttribute("color", new THREE.Uint8BufferAttribute(c8, 3, true));
   g.computeBoundingSphere();
   if (!(globalThis as { __keepArrays?: boolean }).__keepArrays)
     for (const a of Object.values(g.attributes) as THREE.BufferAttribute[]) a.onUpload(() => { (a as { array: unknown }).array = null; });

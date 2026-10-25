@@ -345,14 +345,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // fall short in others, which showed as grass and hillside through the street
   const faced = !!D.sf && SURFACES;
   const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04];
-  const faceXYZ: number[] = [], faceKind: number[] = [];
-  if (faced) FACE_KINDS.forEach((kind, n) => {
-    const V = D.sf!.v, I = D.sf![kind] ?? [];
-    for (let k = 0; k + 2 < I.length; k += 3) {
-      for (const i of [I[k], I[k + 1], I[k + 2]]) faceXYZ.push(V[3 * i], V[3 * i + 1], V[3 * i + 2] - Z0);
-      faceKind.push(n);
-    }
-  });
+  const nFaces = faced ? FACE_KINDS.reduce((t, kind) => t + Math.floor((D.sf![kind]?.length ?? 0) / 3), 0) : 0;
+  const faceXYZ = new Float64Array(nFaces * 9), faceKind = new Uint8Array(nFaces);
+  if (faced) {
+    let t = 0;
+    FACE_KINDS.forEach((kind, n) => {
+      const V = D.sf!.v, I = D.sf![kind] ?? [];
+      for (let k = 0; k + 2 < I.length; k += 3, t++) {
+        for (let c = 0; c < 3; c++) { const i = I[k + c], o = t * 9 + c * 3; faceXYZ[o] = V[3 * i]; faceXYZ[o + 1] = V[3 * i + 1]; faceXYZ[o + 2] = V[3 * i + 2] - Z0; }
+        faceKind[t] = n;
+      }
+    });
+  }
   /** Where (x, y) lies in face triangle t, as weights on its three corners (left in `fw`, to avoid a
    *  fresh array per call); returns the smallest, at least 0 when the point is inside the triangle. */
   const fw = [0, 0, 0];
@@ -419,17 +423,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       // the face's height at its nearest edge, not its lowest corner: a long face down a hill would
       // otherwise dig the grass beside its top end metres below the street
-      let d = Infinity, near = 0;
+      let d2 = Infinity, near = 0;
       for (let e = 0; e < 3; e++) {
         const a3 = o + e * 3, b3 = o + (e + 1) % 3 * 3;
         const ax = F[a3], ay = F[a3 + 1], bx = F[b3], by = F[b3 + 1];
         const vx = bx - ax, vy = by - ay, u = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
-        const de = Math.hypot(x - ax - vx * u, y - ay - vy * u);
-        if (de < d) { d = de; near = F[a3 + 2] + (F[b3 + 2] - F[a3 + 2]) * u; }
+        const ex = x - ax - vx * u, ey = y - ay - vy * u, de2 = ex * ex + ey * ey;
+        if (de2 < d2) { d2 = de2; near = F[a3 + 2] + (F[b3 + 2] - F[a3 + 2]) * u; }
       }
       // (the grass comes up to just under the face's top, as a verge or a garden meets it, rather
       // than leaving a dark step down from a pavement's back or a lane's edge)
-      if (d < reach) roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : 0.04));
+      if (d2 < reach * reach) roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : 0.04));
     }
   }
   // the grid points just inside a face's edge are let down less, as the ground's triangles from them
@@ -1294,9 +1298,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
     const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04 };
     const onGround = (k: string) => k === "path" || k === "front" || k === "drive";
+    // (a point is in several triangles and outlines: the drawn ground under it is found once)
+    const groundAt = new Float64Array(V.length / 3).fill(NaN);
     const at = (i: number, kind: string) => {
       const x = V[3 * i], z = -V[3 * i + 1];
-      if (onGround(kind)) { const dg = drawnGround(x, z); return [x, (Number.isFinite(dg) ? dg : V[3 * i + 2] - Z0) + LIFT[kind], z]; }
+      if (onGround(kind)) {
+        let dg = groundAt[i];
+        if (dg !== dg) { const g = drawnGround(x, z); dg = groundAt[i] = Number.isFinite(g) ? g : V[3 * i + 2] - Z0; }
+        return [x, dg + LIFT[kind], z];
+      }
       return [x, V[3 * i + 2] - Z0 + LIFT[kind], z];
     };
     for (const kind of ["road", "service", "pave", "path", "front", "drive"] as const) {
@@ -1334,12 +1344,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     // an edge two pieces share is a step between them, not a cliff down to the ground: the higher
     // piece's side face stops at the lower one's surface, and the lower piece draws none
-    const key = (i: number) => `${V[3 * i]},${V[3 * i + 1]}`;
-    const owner = new Map<string, { kind: string; a: number; b: number }>();
+    // (two pieces' points at one spot are told apart by number, so each spot gets one number here)
+    const spot = new Int32Array(NP), spots = new Map<string, number>();
+    for (let i = 0; i < NP; i++) { const k = `${V[3 * i]},${V[3 * i + 1]}`, s = spots.get(k); if (s === undefined) spots.set(k, spot[i] = i); else spot[i] = s; }
+    const key = (a: number, b: number) => spot[a] * NP + spot[b];
+    const owner = new Map<number, { kind: string; a: number; b: number }>();
     for (const [n, e] of sf.e.entries()) {
       if (n % 400 === 399) yield;
       const kind = e.c in LIFT ? e.c : "road";
-      for (let k = 0; k + 1 < e.i.length; k++) owner.set(`${key(e.i[k])}|${key(e.i[k + 1])}`, { kind, a: e.i[k], b: e.i[k + 1] });
+      for (let k = 0; k + 1 < e.i.length; k++) owner.set(key(e.i[k], e.i[k + 1]), { kind, a: e.i[k], b: e.i[k + 1] });
     }
     for (const [n, e] of sf.e.entries()) {
       if (n % 100 === 99) yield;
@@ -1349,7 +1362,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const a = at(e.i[k], kind), b = at(e.i[k + 1], kind);
         const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (l < 1e-3) continue;
-        const other = owner.get(`${key(e.i[k + 1])}|${key(e.i[k])}`);
+        const other = owner.get(key(e.i[k + 1], e.i[k]));
         let stepA = NaN, stepB = NaN;
         if (other) {
           stepA = at(other.b, other.kind)[1]; stepB = at(other.a, other.kind)[1];

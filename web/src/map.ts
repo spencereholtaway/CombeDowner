@@ -62,7 +62,7 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: number[]; road: number[]; service: number[]; pave: number[]; path?: number[]; front?: number[]; drive?: number[]; e: { c: string; i: number[] }[]; l?: number };
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number };
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
@@ -317,7 +317,8 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.fine = adaptGrid(T);
-    this.hgt = Float32Array.from(T.h, (v) => v / 10);
+    this.hgt = new Float32Array(T.h.length);
+    for (let k = 0; k < T.h.length; k++) this.hgt[k] = T.h[k] / 10;
     // the cable car: laid on the ground, with the trees, hedges and furniture cleared out of its way
     if (cableData?.st?.length === 2) {
       this.cable = new CableLine(cableData, (x, z) => this.ground(x, z));
