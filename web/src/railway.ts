@@ -230,7 +230,8 @@ export function compact(pos: number[], col: number[]): THREE.BufferGeometry {
   g.setAttribute("normal", new THREE.Int8BufferAttribute(Int8Array.from(n, (v) => Math.round(v * 127)), 3, true));
   g.setAttribute("color", new THREE.Uint8BufferAttribute(Uint8Array.from(col, (v) => Math.round(v * 255)), 3, true));
   g.computeBoundingSphere();
-  for (const a of Object.values(g.attributes) as THREE.BufferAttribute[]) a.onUpload(() => { (a as { array: unknown }).array = null; });
+  if (!(globalThis as { __keepArrays?: boolean }).__keepArrays)
+    for (const a of Object.values(g.attributes) as THREE.BufferAttribute[]) a.onUpload(() => { (a as { array: unknown }).array = null; });
   return g;
 }
 
@@ -533,6 +534,9 @@ export class Railway {
               if (lowA > -1.5 && lowB > -1.5 && !plan.span(s0)) continue;     // (low enough to be an embankment's top)
               const kind = plan.kind((s0 + s1) / 2), steel = kind === "girder";
               for (const w of [1, -1]) {
+                // the ballast's shoulders fall away under the sides, so the cess beside the track is
+                // laid flat out to them, with no slot down into the bridge
+                quad(P(A, 1.6 * w, 0.25), P(B, 1.6 * w, 0.25), P(B, (steel ? 2.4 : 2.1) * w, 0.25), P(A, (steel ? 2.4 : 2.1) * w, 0.25), BALLAST);
                 if (steel) {
                   quad(P(A, 2.4 * w, 1.1), P(B, 2.4 * w, 1.1), P(B, 2.4 * w, lowB), P(A, 2.4 * w, lowA), GIRDER);
                   quad(P(A, 2.2 * w, 1.1), P(B, 2.2 * w, 1.1), P(B, 2.55 * w, 1.1), P(A, 2.55 * w, 1.1), GIRDER2);
