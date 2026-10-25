@@ -203,8 +203,7 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     # checks the plan names (a gate on its edge with the edge continuing either side, nothing wider
     # than its edge, no building facing a street with neither)
     houses = {i: b for i, b in buildings}
-    path_corr = [(e["line"], e["sections"][0][2][0] if e.get("sections") else PATHW.get(e["cls"], 1.8), e["cls"])
-                 for e in paths]
+    path_corr = [(e["line"], PATHW.get(e["cls"], 1.8), e["cls"]) for e in paths]
     # the built street/pavement/path polygons, for the checks and for deciding which plot edges are
     # fronts: an edge whose far side is open ground reaching a corridor is a front too
     cor_faces = [g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]

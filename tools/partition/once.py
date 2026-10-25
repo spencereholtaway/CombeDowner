@@ -44,7 +44,7 @@ from shapely.strtree import STRtree
 
 from . import MARGIN, Q, evidence_of, lap, zone_at
 from .buildings import clean_buildings
-from .corridors import PATHS, REACH, fit_cross_section, offset_poly, path_width, side_reach
+from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
 from structures import match_structures
@@ -436,7 +436,7 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None):
     a caller that has already measured them (the held-out width test reads the same corridor), and
     measured here when they are not."""
     if e["cls"] in PATHS:
-        w = path_width(e["cls"], e["obs"])
+        w = PATHW.get(e["cls"], 1.8)
         ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
         car = offset_poly(e["line"], ts, np.full(len(ts), w / 2), np.full(len(ts), w / 2))
         return dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=True,
