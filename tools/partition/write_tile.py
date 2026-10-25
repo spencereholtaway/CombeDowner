@@ -1187,17 +1187,17 @@ def _lift(tile, seen):
 
 
 def fill_dug_ground(T, base_rd, tunnels, roads, profiles, houses=(), rails=()):
-    """Where the old build carried a bridge further than this one does, it had dug the ground under
-    its span away below the deck, and a street this build lays at grade there would dip into the
-    hole just off its own bridge's end. Along the ways that run on where the old span did, that ground
-    goes back up to what the lidar saw (the survey has
-    bridges taken out, so under an old span it is the bank, the water or the road below, and filling
-    to it never buries what really passes under), put on the tile's own heights by the ground at the
-    old span's ends. Left as dug: under this build's own spans and decks, along any of its ways that
-    runs below the survey (a dip under a bridge, a cutting, a tunnel), round a tunnel's mouth
-    and along the way into it (filled, the mouth would be half buried), in buildings, and on the
-    outermost ring of the grid, which the next square shares. Returns the predicate for the ground
-    left dug round a tunnel's mouth under an old span, for a street to be carried over there."""
+    """Where the old build carried a bridge further than this one does (or dipped a path of its own
+    for one), it had dug the ground away under it, and a way this build lays at grade there dipped
+    into the hole just off its own bridge's end. Along this build's ways that run on where the old
+    one did, that ground goes back up to what the lidar saw (the survey has bridges taken out, so
+    under an old span it is the bank, the water or the road below), put on the tile's own heights by
+    the ground at the old span's ends. Left as dug: under this build's own spans and decks and the
+    railway, along any of its ways that runs below the survey (a dip under a bridge, a cutting, a
+    tunnel) or crosses the old span, round a tunnel's mouth and along the way into it (filled, the
+    mouth would be half buried), in buildings, and on the outermost ring of the grid, which the next
+    square shares. Returns the predicate for the ground left dug round a tunnel's mouth, for a
+    street well above it to be carried across."""
     nx, ny, z0 = T["nx"], T["ny"], T["z0"]
     grid = np.array(T["h"], dtype=float).reshape(ny, nx) / 10.0 + z0
     ours, pts, level = [], [], []
