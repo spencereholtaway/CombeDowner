@@ -213,11 +213,12 @@ an edge between two of them. `prep_map.py`'s squares are kept apart, in
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
 
-`prep_map.py`'s squares take about 5 minutes on four cores (4 on a 14-core Mac). The partition's
-city-wide passes take about half an hour more on a Mac the first time; they are kept, and run again
-only when the partition's tools or the map's data change. A second run only rebuilds the squares
-whose data or tools have changed, and only writes those squares again (about 2.5 minutes when only
-the partition's writer has changed). `--only ti,tj ...` rebuilds those squares and writes just
+`prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
+more the first time (five and a half hours of processor time, nearly all of it dividing the blocks
+into plots); what it works out for the whole city is kept, and worked out again only when its tools
+or the map's data change. A second run only rebuilds the squares whose data or tools have changed,
+and the partition then writes only those squares again: about 3 minutes when only the partition's
+writer has changed, and seconds when nothing has. `--only ti,tj ...` rebuilds those squares and writes just
 those, reusing the passes. With `--shard`, the partition isn't run: gather every share's
 `partition/prep/` on one machine and run `prep_tiles.py ... --partition-only` there, as the
 workflow below does. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the

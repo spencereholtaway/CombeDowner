@@ -10,15 +10,17 @@ rebuild can't stack one partition on another, and no rebuild can put the old-sty
 game in its place.
 
 The city-wide passes (the street graph and its corridors, the bridges and road heights, the worked
-blocks: `city.py`) run once for the whole map into `<dir>/partition/once/`, and are kept until
-something they're built from changes: the partition's tools, the map's layers in `<dir>` and
-`data/<map>/`, the squares' measurements, or the canal and railway files. Each square is then
-assembled (`<dir>/partition/city/`) and written (`write_tile.py`) again only when the passes or its
-own `prep_map.py` square have changed, so `--only` reuses the passes and writes just those squares.
+blocks) and each square's assembly from them (`city.py`) run into `<dir>/partition/once/` and
+`<dir>/partition/city/`, and are kept until something they're built from changes: their tools, the
+map's layers in `<dir>` and `data/<map>/`, the squares' lidar walls, or the canal and railway files.
+A square is written (`write_tile.py`) again only when those, the writer's own tools and kept lidar,
+or its `prep_map.py` square have changed: a change to the writer alone rewrites the squares in a
+few minutes, and `--only` reuses the passes and writes just those squares.
 
 The stage runs for a map marked `partition=True` in `tools/area.py` (Combe Down's Bath, so far the
 only one with the Land Registry's parcels and the lidar it needs kept, `measured.py`): for any
-other map `prep_tiles.py` builds straight into the game's folder and this stage doesn't run. Nothing here is decided over the network: it is all build-time.
+other map `prep_tiles.py` builds straight into the game's folder and this stage doesn't run.
+Nothing here is decided over the network: it is all build-time.
 """
 import hashlib
 import json
@@ -49,10 +51,10 @@ def prep_dir(src_dir):
     return os.path.join(stage_dir(src_dir), "prep")
 
 
-def code_files():
-    """The partition's own modules and every tool module they import, found by reading the imports
-    rather than by importing, so an import inside a function counts too."""
-    seen, todo = set(), [os.path.join(HERE, n) for n in ("__init__.py", "city.py", "write_tile.py")]
+def code_files(*roots):
+    """The partition's modules `roots` and every tool module they import, found by reading the
+    imports rather than by importing, so an import inside a function counts too."""
+    seen, todo = set(), [os.path.join(HERE, n) for n in roots]
     while todo:
         p = todo.pop()
         if p in seen:
@@ -82,13 +84,14 @@ def passes_key(map_id, src_dir):
     any it lacks into the folder, which would change the key on every run, and they're unpacked from
     the repository's `terrain15.zip`, which is in."""
     data = os.path.join(ROOT, "data", map_id)
+    kept = os.path.join(data, "measured", "partition.zip")      # the writer's alone
     inputs = [os.path.join(src_dir, n) for n in sorted(os.listdir(src_dir)) if n.endswith(".geojson")]
     for d, sub, names in os.walk(data):
         sub[:] = sorted(sub)
-        inputs += [os.path.join(d, n) for n in sorted(names) if not n.startswith(".")]
+        inputs += [os.path.join(d, n) for n in sorted(names) if not n.startswith(".") and os.path.join(d, n) != kept]
     maps = os.path.join(ROOT, "web", "public", "maps")
     inputs += [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
-    return digest(code_files() + inputs)
+    return digest(code_files("__init__.py", "city.py") + inputs)
 
 
 def read(path):
@@ -177,7 +180,8 @@ def main(argv):
               + (f"; {len(failed)} failed: {' '.join(map(name, sorted(failed)))}" if failed else ""), flush=True)
 
     # a square is written again when its prep_map square or the passes have changed
-    wkey = lambda t: digest([os.path.join(base, name(t) + ".json")], (key,))
+    writer = digest(code_files("write_tile.py") + [KEPT])
+    wkey = lambda t: digest([os.path.join(base, name(t) + ".json")], (key, writer))
     out_of = lambda t: os.path.join(out_dir, name(t) + ".json")
     todo, copy = [], []
     for t in wanted:
