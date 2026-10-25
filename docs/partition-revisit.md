@@ -1119,3 +1119,40 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   better at South Stoke's plot fences, Linear Park's extra parapet and hedge ring, Winsley Hill's
   towpath bank, the Mill Lane deck viewpoint, Bathwick Hill's fence down the bank and against the
   abutment, and the pedestrian way under the line by Bath Spa, which stops short of the bridge.
+
+## Main's newest bridge and road-height rules, ported
+
+- [ ] **Main's three newest rules are in `structures.py` and the writer.** Underpasses: a tunnel
+  stretch too shallow to bore is cut into unbroken runs, so the cuttings at either end of a bored
+  tunnel are two underpasses, not one through the hill; and one more than 2.5 m deep makes a road
+  crossing it (or laid right along its top) a bridge whatever the survey's ground there, as at
+  Grand Parade over the road under it. Stacked roads: a road the data lays right on top of another
+  well below it is a bridge there. It runs before the dips under bridges, not after them as in
+  `prep_map.py`, so what passes under is dipped for headroom too (after, the London Road
+  cycleways came out as bridges with 3.8 m over the trunk link), and a gap of a point or two
+  between its new span points is bridged. Slip roads: `ramp_off_decks` now carries a ramp still
+  in the air at a record's end on down the records going on from there, 20 points at most, at
+  nine tenths of the street's steepest grade (paths and steps as before). Main's tweak in step 3
+  (a path off a bridge's deck and down under it has the deck only behind it) came in too.
+- [ ] **Two of the partition's own, found on the way.** A bridge split where the data ends a road
+  passing well under it (2.5 m) is joined into one (`_join_spans`): Argyle Street over Spring
+  Gardens Road, the Railway Path over its footway, Grand Parade. Span ends where its record does
+  fell from 135 to 66 with it. And the ground main dug under its longer spans (and for paths of
+  its own it dipped for one) goes back up to the lidar's along our ways that run on where its
+  did (`fill_dug_ground`): Pulteney Road at Bath Deep Lock, Winsley Hill and Hensley Gardens no
+  longer dip off their bridges. Hensley Gardens is carried over the Devonshire Tunnel's mouth as
+  main has it, the mouth and the 40 m into it left dug. Filling is kept off anything crossing the
+  old span (Rossiter Road under its old footbridge kept its dip, the London Road cycleway under
+  Midland Road its headroom), off ways below the survey, and off the railway.
+  Revisit: it is a set of rules about where main's ground was dug, which goes once the
+  partition lays all its own ground rather than editing main's.
+- [ ] **Map check** (main / combined before / now, `out/r7-l`): too steep 39 / 51 / 45, span ends
+  where its record does 99 / 126 / 64, kinked 16 / 14 / 10, ground in the gap 5 / 2 / 1, no open
+  gap 18 / 4 / 3, deck end off the road 2 / 0 / 1, the rest unchanged. The deck end is a
+  footbridge by Sydney Gardens (698,1910) whose span now stops a point earlier and ramps down,
+  0.7 m over the ground at its end. Too steep is still above main: 22 of the 45 are trunk roads
+  (Beckford Road, Warminster Road, Bristol Road, London Road) that main calls primary and checks
+  at 1 in 6.7 rather than 1 in 8, 13 are Midford Road by the Two Tunnels (main has them too), and
+  the worst are Bailbrook Lane, which the partition's graph joins to the A46 down in the
+  Bailbrook underpass, so it comes down to it instead of passing over.
+- [ ] **Scoreboard**: no line moved.
