@@ -669,8 +669,11 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 continue
             if r["c"] in PATHS and any(g.distance(x) < LOCK_REACH for g in gates):
                 continue
+            # over a lock's chamber a boat rises to the upper pound, so a crossing there clears the
+            # higher of the two; one below the bottom gates (Pulteney Road at Bath Deep Lock) has
+            # only the lower pound under it
             for lo, hi, top in lock_levels:
-                if lo.distance(x) < 25 or hi.distance(x) < 25:
+                if lo.distance(x) + hi.distance(x) < lo.distance(hi) + 6:
                     lv = max(lv, top)
             canal_x.append((k, x, lv, half))
     road_x = [(x, lv, k) for k, x, lv, half in canal_x if pending[k]["c"] not in PATHS]
