@@ -155,6 +155,15 @@ def main():
         wtree_all = shapely.STRtree(water_all)
         streams = [LineString([q[:2] for q in w["p"]]) for w in m.get("wl") or [] if len(w["p"]) > 1 and w.get("c") != "canal"]
         stree_w = shapely.STRtree(streams)
+        # (a bridge the data splits into pieces, each piece's span running on into the next one's at
+        # its end: the pieces are one bridge, judged together)
+        # (or cut off by the edge of the square, with no road going on from its end: the rest of
+        # it is in the next square)
+        span_ends, all_ends = collections.defaultdict(list), collections.Counter()
+        for r, mk in zip(roads, marks):
+            for e in (0, len(r["p"]) - 1):
+                all_ends[(round(r["p"][e][0]), round(r["p"][e][1]))] += 1
+                if mk[e] == 1: span_ends[(round(r["p"][e][0]), round(r["p"][e][1]))].append(r)
         for r, mk, ln in zip(roads, marks, lines):
             if not any(mk): continue
             p = r["p"]
@@ -190,6 +199,9 @@ def main():
                     under = any(lines[int(j)].crosses(seg) and not joined(roads.index(r), int(j)) for j in tree.query(seg) if roads[int(j)] is not r)
                 if not under:
                     under = any(q[2] - ground(q[0], q[1]) > 2.5 for q in p[k:e + 1])
+                if not under:
+                    under = any(o is not r or all_ends[(round(p[i][0]), round(p[i][1]))] == 1
+                                for i in {k, e} & {0, len(p) - 1} for o in span_ends[(round(p[i][0]), round(p[i][1]))])
                 if not under and mk[k] == 1: note("3 bridge over nothing", seg.length, (tag, round(p[k][0]), round(p[k][1])), f"{r['c']} {r['n']!r} {seg.length:.0f} m")
                 k = e + 1
         # ---- 4. water --------------------------------------------------------------------------

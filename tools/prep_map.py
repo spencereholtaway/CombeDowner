@@ -672,10 +672,19 @@ smooth_network()
 underpasses = []
 for k, r in enumerate(pending):
     if not r["tunnel_ranges"]: continue
-    shallow = in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
-    pts = [r["run"][i][:2] for i in sorted(shallow)]
-    if len(pts) >= 2: underpasses.append((k, shapely.LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0)))
-under_tree = shapely.STRtree([u for _, u in underpasses])
+    shallow = sorted(in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)})
+    # (each unbroken stretch on its own: the cuttings at either end of a bored tunnel are two)
+    runs_ = [[]]
+    for i in shallow:
+        if runs_[-1] and i != runs_[-1][-1] + 1: runs_.append([])
+        runs_[-1].append(i)
+    for st_ in runs_:
+        pts = [r["run"][i][:2] for i in st_]
+        # (and how far down in the ground it goes: a path through a building's passage, which the
+        # data also calls a tunnel, is at the street's level, with nothing over it to carry)
+        deep = max((elev(r["run"][i][0], r["run"][i][1]) - r["z"][i] for i in st_), default=0)
+        if len(pts) >= 2: underpasses.append((k, shapely.LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0), shapely.LineString(pts), deep))
+under_tree = shapely.STRtree([u[1] for u in underpasses])
 carried = 0
 for k, r in enumerate(pending):
     if not underpasses: break
@@ -686,6 +695,14 @@ for k, r in enumerate(pending):
         over = {i for i, q in enumerate(r["run"]) if poly.contains(shapely.Point(q[:2]))}
         carried += len(over - r["span"])
         r["span"] |= over
+        # (one that crosses it is a bridge, whatever the survey's ground there: 2. keeps it; and so
+        # is one the data lays right on top of the road down in it, along it)
+        mid, half_ = underpasses[int(j)][2], RW.get(pending[underpasses[int(j)][0]]["c"], 4) / 2 + 0.5
+        if underpasses[int(j)][3] < 2.5: continue
+        if line.crosses(mid): r.setdefault("overpass", set()).update(over)
+        else:
+            top = {i for i in over if mid.distance(shapely.Point(r["run"][i][:2])) < half_}
+            if len(top) >= 3: r.setdefault("overpass", set()).update(top)
 if underpasses: print(f"underpasses: {len(underpasses)}, with {carried} points of other roads carried over them as bridges")
 # ---- bridges: what's really a bridge, what rides on one, what passes under one ---------------
 # Overture marks odd little "bridges" (a street over a vault, a few metres of a path) with nothing
@@ -789,7 +806,8 @@ for k, r in enumerate(pending):
         a, b, line = span_line(r, st)
         real = any(water_polys[int(j)].intersects(line) for j in water_tree.query(line)) \
             or any(rail_lines[int(j)].intersects(line) for j in rail_tree.query(line)) \
-            or any(z[i] - elev(run[i][0], run[i][1]) > 2.5 for i in st)
+            or any(z[i] - elev(run[i][0], run[i][1]) > 2.5 for i in st) \
+            or any(i in r.get("overpass", ()) for i in st)
         solid = real
         if not real:
             for j in road_tree.query(line):
@@ -945,9 +963,11 @@ for k, r in enumerate(pending):
             top = lock_coping(x.x, x.y)
             if top is not None and not along_lock(road_lines[k], x): canal_x.append((k, x, top + 0.35 - CANAL_HEAD - 0.6, half))
             continue
-        # a road crossing at a lock clears the higher of the two pounds, not just the one it's over
+        # a road crossing over a lock's chamber clears the higher of the two pounds (a boat rises
+        # in it to the upper one), not just the one it's over; one crossing below the bottom gates
+        # (Pulteney Road at Bath Deep Lock) only has the lower pound under it
         for lo, hi, top in lock_levels:
-            if lo.distance(x) < 25 or hi.distance(x) < 25: lv = max(lv, top)
+            if lo.distance(x) + hi.distance(x) < lo.distance(hi) + 6: lv = max(lv, top)
         canal_x.append((k, x, lv, half))
 over_canal = 0
 road_x = [(x, lv, k) for k, x, lv, half in canal_x if pending[k]["c"] not in PATHS]
@@ -1092,8 +1112,11 @@ for k, r in enumerate(pending):
             x = crossing(k, j, line)
             if x is None: continue
             o = pending[j]
-            # a bridge or a deck itself here: leave it be
-            if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 10 for i in o["span"] | o["deck"]): continue
+            # a bridge or a deck itself here: leave it be (but a path coming off a bridge's deck
+            # and down under the same bridge, to the towpath under it, has the deck only behind it)
+            m_ = min(range(len(o["run"]) - 1), key=lambda m: shapely.LineString([o["run"][m][:2], o["run"][m + 1][:2]]).distance(x))
+            if any(i in o["span"] | o["deck"] for i in (m_ - 1, m_, m_ + 1, m_ + 2)): continue
+            if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 10 for i in o["span"]): continue
             t = line.project(x) / (line.length or 1) * (b - a)
             lo = a + min(b - a - 1, int(t)); f = t - (lo - a)
             deck = z[lo] + (z[lo + 1] - z[lo]) * f
@@ -1194,6 +1217,26 @@ for r in pending:
                 r["span"].add(i); r["z"][i] = max(r["z"][i], wz + 0.8); afloat += 1
 if afloat: print(f"bridges: {afloat} path points over water carried as footbridges")
 if afloat: carry_spans(True)      # (the footbridges too)
+
+# a road the data lays right on top of another, well above it (a lane along the top of a cutting
+# drawn over the road down in it, or a path whose bridge the data stops short of the road it
+# crosses), is on a bridge there: the ground is the lower road's
+stacked = 0
+for k, r in enumerate(pending):
+    if r["c"] in PATHS and r["c"] in ("steps", "pedestrian"): continue
+    for j in road_tree.query(road_lines[k].buffer(4.0)):
+        o = pending[int(j)]
+        if int(j) == k or o["c"] in PATHS: continue
+        half_ = RW.get(o["c"], 4) / 2
+        line_ = road_lines[int(j)]
+        for i, q in enumerate(r["run"]):
+            if i in r["span"] or i in r["deck"] or i in r["tow"]: continue
+            pt = shapely.Point(q[:2])
+            if line_.distance(pt) > half_: continue
+            m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
+            if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
+                r["span"].add(i); r.setdefault("solid", set()).add(i); stacked += 1
+if stacked: print(f"bridges: {stacked} road points lying over another road well below them carried as bridges")
 
 # the ground under every span is nobody's to flatten, except where a road dips under it; and
 # where the survey has a hump under a span (the bridge filled in), it's cut down below the deck
@@ -1633,21 +1676,47 @@ if regrown: print(f"bridges: spans run {regrown} points further to the ground as
 ramped = 0
 # (only on this build's own ground: a road runs on past it, where the ground isn't known)
 on_grid = lambda q: X0 + dx <= q[0] <= X0 + (nx - 2) * dx and Y0 + dy <= q[1] <= Y0 + (ny - 2) * dy
+# (where a road ends with its ramp still in the air, the ramp carries on down the roads that go on
+# from there: a flyover's slip road the data splits off at the end of the bridge)
+ends_at = defaultdict(list)
+for r in roads:
+    for e in (0, len(r["p"]) - 1): ends_at[(round(r["p"][e][0]), round(r["p"][e][1]))].append((r, e))
+
+
+ramp_made = set()      # (the points a ramp carried on to another road takes: none of them is a bridge's end to ramp from again)
+
+
+def ramp_down(r, p, j, step, flag, grade, n_, seen, crossed=False):
+    global ramped
+    while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 20 and on_grid(p[j]):
+        g = gelev(p[j][0], p[j][1])
+        if p[j - step][2] - g <= 0.6: return
+        p[j][2] = max(g, p[j - step][2] - math.dist(p[j][:2], p[j - step][:2]) * grade)
+        p[j].append(flag); ramped += 1; j += step; n_ += 1
+        if crossed: ramp_made.add(id(p[j - step]))
+    if 0 <= j < len(p) or n_ >= 20: return
+    last = p[j - step]
+    if not on_grid(last) or last[2] - gelev(last[0], last[1]) <= 0.6: return
+    seen.add(id(r))
+    for o, e in ends_at[(round(last[0]), round(last[1]))]:
+        q = o["p"]
+        if id(o) in seen or len(q) < 2 or len(q[e]) > 3 or math.dist(q[e][:2], last[:2]) > 0.5: continue
+        nxt = 1 if e == 0 else -1
+        if len(q[e + nxt]) > 3: continue
+        q[e][2] = last[2]; q[e].append(flag); ramp_made.add(id(q[e])); ramped += 1
+        ramp_down(o, q, e + nxt, nxt, flag, grade, n_ + 1, seen, True)
+
+
 for r in roads:
     p = r["p"]
     if not any(len(q) > 3 for q in p): continue
-    grade = 0.5 if r["c"] == "steps" else 0.125 if r["c"] in PATHS else 0.1
+    grade = 0.5 if r["c"] == "steps" else 0.125 if r["c"] in PATHS else STEEPEST.get(r["c"], 0.25) * 0.9
     for step in (1, -1):
         idx = range(len(p)) if step > 0 else range(len(p) - 1, -1, -1)
         for i in idx:
             j = i + step
-            if len(p[i]) < 4 or not (0 <= j < len(p)) or len(p[j]) > 3: continue
-            n_ = 0
-            while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 10 and on_grid(p[j]):
-                g = gelev(p[j][0], p[j][1])
-                if p[j - step][2] - g <= 0.6: break
-                p[j][2] = max(g, p[j - step][2] - math.dist(p[j][:2], p[j - step][:2]) * grade)
-                p[j].append(p[i][3]); ramped += 1; j += step; n_ += 1
+            if len(p[i]) < 4 or id(p[i]) in ramp_made or (0 <= j < len(p) and len(p[j]) > 3): continue
+            ramp_down(r, p, j, step, p[i][3], grade, 0, set())
 if ramped: print(f"bridges: {ramped} points of ramp down off decks that ended in the air")
 # and off its bridges a path lies on the ground as it's finally laid (as the game draws it)
 for r in roads:
