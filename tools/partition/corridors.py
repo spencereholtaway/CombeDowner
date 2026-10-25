@@ -24,7 +24,27 @@ PRIOR = {
 }
 PAVE = (2.0, 1.2)               # pavement (ideal, minimum)
 PATHS = {"footway", "path", "cycleway", "bridleway", "steps", "track"}
-PATHW = {"footway": 1.8, "path": 1.5, "cycleway": 2.5, "bridleway": 2.5, "steps": 1.8, "track": 3.0}
+# A path's width when it has no width tag: each the widest value that fits the build's own input's
+# tagged paths best (within a metre of the tag along the most length), so a path stays easy to walk.
+# Measured, the tagged footways have a median of 1.0 to 1.1 m, where 1.8 m had been assumed.
+PATHW = {"footway": 1.5, "path": 1.5, "cycleway": 2.2, "bridleway": 2.0, "steps": 1.8, "track": 3.0}
+PATH_NARROWEST, PATH_WIDEST = 0.8, 6.0
+
+
+def path_width(cls, obs=()):
+    """A path's width: its own `width` tag where it has one (the longest-tagged, if several), else
+    `PATHW`'s for its kind."""
+    best, longest = None, 0.0
+    for t0, t1, tags in obs or ():
+        try:
+            w = float(str(tags.get("width", "")).replace("m", "").strip())
+        except ValueError:
+            continue
+        if t1 - t0 > longest:
+            best, longest = w, t1 - t0
+    if best is None:
+        return PATHW.get(cls, 1.8)
+    return min(PATH_WIDEST, max(PATH_NARROWEST, best))
 REACH = 14.0                    # metres looked out from a centre line for what stands beside the street
 LANE = 3.25                     # metres a lane is assumed wide for a "lanes" tag
 STEP = 2.0                      # metres between cross-section samples
