@@ -216,7 +216,9 @@ def main(argv):
             open(os.path.join(keys, name(t) + ".tile"), "w").write(wkey(t))
         print(f"partition: {len(done)} squares written in {time.time() - t0:.0f}s, {stubs} stubs at the edges dropped", flush=True)
         if missed:
-            print(f"partition: {missed} points under bridges had no kept lidar ground: pack it again (tools/mapdata.py pack)")
+            # a dozen or so are the far ends of paths the old build dipped for bridges of its own
+            print(f"partition: {missed} points under bridges had no kept lidar ground"
+                  + (": pack it again (tools/mapdata.py pack)" if missed > 100 else ""))
     print(f"partition: {len(wanted) - len(todo) - len(copy)} squares unchanged, "
           f"{len(copy) - len(failed & set(copy))} outside the partition kept as prep_map built them, "
           f"{time.time() - start:.0f}s in all")

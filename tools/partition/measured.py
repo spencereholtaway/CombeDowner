@@ -8,7 +8,7 @@ two things from it, and both are kept in `data/<map>/measured/partition.zip`:
   `standing.py` and the writer's `lidar_tall` ask of it. A change to either height needs the lidar
   again and a fresh pack;
 - the bare ground (DTM) round every bridge, where the writer looks under a span for the bed, the
-  bank or the road below (`write_tile.surveyed_ground`). "Round every bridge" is 30 m round every
+  bank or the road below (`write_tile.surveyed_ground`). "Round every bridge" is 40 m round every
   street edge the city-wide passes give a span, and round every bridge OpenStreetMap maps, to the
   centimetre, on the map's own metre grid (so the build needs no National Grid conversion). A
   ground point asked for outside that is counted (`missed`), and the stage says so: pack again.
@@ -28,7 +28,7 @@ from . import MAP, ROOT
 
 FLOOR = 0.5         # metres: standing.FLOOR
 TALL = 1.5          # metres: write_tile.LIDAR_TALL
-REACH = 30.0        # metres round a bridge whose bare ground is kept
+REACH = 40.0        # metres round a bridge whose bare ground is kept
 PIECE = 50.0        # metres: a bridge's line is taken in pieces this long
 NONE = -32768       # in the kept centimetres: the survey has no ground there
 BLOCK = 50          # metres: the ground is kept in squares this size of the map's own grid
@@ -66,7 +66,7 @@ def _blocks():
     return _kept["w"]
 
 
-def under_bridges(xs, ys):
+def under_bridges(xs, ys, count=True):
     """The kept bare ground at map points, NaN where there is none: the survey's cell under the
     middle of the map's metre the point is in. Returns (heights, found)."""
     blocks = _blocks()
@@ -78,7 +78,8 @@ def under_bridges(xs, ys):
         if g is not None:
             out[k] = g[y % BLOCK, x % BLOCK]
             found[k] = True
-    missed[0] += int((~found).sum())
+    if count:
+        missed[0] += int((~found).sum())
     return out, found
 
 

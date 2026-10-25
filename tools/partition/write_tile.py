@@ -1124,12 +1124,13 @@ LAY_KERB = 1.7      # a kerbed street's pavement where its record gives none
 PAVE_FALL = 0.12    # metres a pavement's back edge may fall or rise from the street's level, towards the ground
 
 
-def surveyed_ground(xs, ys):
+def surveyed_ground(xs, ys, count=True):
     """The lidar's bare ground (the Environment Agency's 1 m DTM) at map points, NaN where it has
     none. The survey takes bridges out, so under a deck it is the bank, the water or the road below.
-    Read from the repository's copy round the bridges (`measured.py`)."""
+    Read from the repository's copy round the bridges (`measured.py`). `count=False` for a look
+    along a whole path, most of it nowhere near a bridge, so a miss there isn't one the pack lacks."""
     from partition.measured import under_bridges
-    return under_bridges(np.asarray(xs, float), np.asarray(ys, float))[0]
+    return under_bridges(np.asarray(xs, float), np.asarray(ys, float), count=count)[0]
 
 
 def _surveyed_under(ground, p, st, xs, ys):
@@ -1227,7 +1228,7 @@ def fill_dug_ground(T, base_rd, tunnels, roads, profiles, houses=(), rails=()):
         marked = stretches({i for i, q in enumerate(p) if len(q) > 3 and q[3] == 1})
         # (and where it dipped a path of its own well below the survey, for a bridge of its own)
         if r["c"] in GAME_PATHS and len(p) > 1:
-            sv = surveyed_ground([q[0] for q in p], [q[1] for q in p])
+            sv = surveyed_ground([q[0] for q in p], [q[1] for q in p], count=False)
             marked += stretches({i for i, q in enumerate(p) if len(q) < 4 and not np.isnan(sv[i]) and q[2] < sv[i] - 2 * FILL_UNDER})
         for st in marked:
             a, b = max(0, st[0] - 1), min(len(p) - 1, st[-1] + 1)
@@ -3020,6 +3021,51 @@ def _without_lone_stubs(runs, gaps, square):
     return runs
 
 
+PAVE_POKE = 0.3         # metres of a barrier's end that may lie on a pavement before it is cut back
+END_BEYOND = 1.5        # metres of barrier past a pavement's corner that go with the end cut off
+
+
+def ends_off_pavements(br, rd):
+    """A wall, fence or hedge whose end runs out over a street's pavement (at a junction's corner,
+    where the plot's corner and the drawn pavement disagree) is cut back to the pavement's edge, with
+    any stub of it left beyond the pavement's corner. Only an end: a barrier crossing a pavement in
+    its middle is left for the rules that open walls."""
+    bands = []
+    for r in rd:
+        if r["c"] not in KERBED or len(r["p"]) < 2:
+            continue
+        L, w = LineString([q[:2] for q in r["p"]]), r.get("w", RW.get(r["c"], 4))
+        for side, pv in zip((1, -1), r.get("pv") or (0, 0)):
+            if pv > 0:
+                bands.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True)
+                             .difference(L.buffer(w / 2, cap_style=2)).buffer(-0.25))
+    if not bands:
+        return br, 0
+    tree = STRtree(bands)
+    out, cut = [], 0
+    for b in br:
+        if len(b["p"]) < 2:
+            out.append(b)
+            continue
+        line = LineString(b["p"])
+        near = [bands[int(k)] for k in tree.query(line)]
+        if not near or sum(g.intersection(line).length for g in near) <= PAVE_POKE:
+            out.append(b)
+            continue
+        rest = line.difference(unary_union(near))
+        parts = sorted((p for p in getattr(rest, "geoms", [rest]) if p.geom_type == "LineString" and p.length > 0),
+                       key=lambda p: -p.length)
+        if not parts or sum(p.length for p in parts[1:]) > END_BEYOND:
+            out.append(b)
+            continue
+        flat = LineString([q[:2] for q in b["p"]])
+        s0, s1 = sorted(flat.project(Point(c[:2])) for c in (parts[0].coords[0], parts[0].coords[-1]))
+        cut += 1
+        if s1 - s0 >= 0.5:
+            out.append(dict(b, p=[[round(v, 1) for v in c] for c in substring(line, s0, s1).coords]))
+    return out, cut
+
+
 def drop_edge_stubs(out_dir, squares):
     """Once every square is written: a short run kept because it touched the square's edge, and so
     should carry on in the next square, goes if the next square has nothing there. Each square's
@@ -4002,6 +4048,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
                                                canal_bores(canal), standing),
                                sq[0], sq[1])
+    br, _ = ends_off_pavements(br, rd)
     tile["br"] = br
     tile["gt"] = gt
     tile["fp"] = fp
