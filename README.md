@@ -204,9 +204,25 @@ python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 python3 -I tools/ground_kinds.py $MAP
 ```
 
-That takes about 5 minutes on four cores, and a second run only rebuilds the squares whose data or
-tools have changed. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the
-same across ten machines, commits the map files and redeploys the game.
+`prep_tiles.py` builds each square with `tools/prep_map.py`, then, as its last stage, lays the
+ground of all of Bath out as one partition (`tools/partition/stage.py`): every bit of ground is a
+street, a pavement, a garden plot, a path or open land, the streets are fitted once across the whole
+city, the plots follow the Land Registry's parcels, and every wall, fence, hedge and gate stands on
+an edge between two of them. `prep_map.py`'s squares are kept apart, in
+`data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
+squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
+What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
+
+`prep_map.py`'s squares take about 5 minutes on four cores (4 on a 14-core Mac). The partition's
+city-wide passes take about half an hour more on a Mac the first time; they are kept, and run again
+only when the partition's tools or the map's data change. A second run only rebuilds the squares
+whose data or tools have changed, and only writes those squares again (about 2.5 minutes when only
+the partition's writer has changed). `--only ti,tj ...` rebuilds those squares and writes just
+those, reusing the passes. With `--shard`, the partition isn't run: gather every share's
+`partition/prep/` on one machine and run `prep_tiles.py ... --partition-only` there, as the
+workflow below does. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the
+same across ten machines, then the partition on one (an hour or two on its four cores), commits the
+map files and redeploys the game.
 
 A change to what is measured from the lidar or the canopy (`tools/lidar.py`, `tools/canopy.py`,
 `buildings.roof_parts`) needs the raw data again. Fetch it from the public sources (about 2.5 GB,
@@ -217,7 +233,7 @@ steps, then pack it back:
 pip3 install overturemaps rasterio pyproj scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
-python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide
+python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide     # also the partition's lidar, from the build's passes
 ```
 
 With only the lidar and canopy fetched (`tools/fetch.py $MAP --only lidar,canopy`, after

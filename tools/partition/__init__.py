@@ -34,7 +34,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from area import area, MAPS
 
-MAP = "combe-down"
+MAP = os.environ.get("CD_MAP", "combe-down")      # set before any process pool starts, as macOS's workers start afresh
 A = area(MAP, wide=True)
 Q = A.squares
 LON0, LAT0 = A.centre

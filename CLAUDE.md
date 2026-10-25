@@ -158,7 +158,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   lidar, tree canopy, energy certificates and OSM, all of Bath in one run of square builds
   (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and
   `docs/new-area.md`). The village is the middle 3 x 3 squares, loaded like the rest: all are
-  `web/public/maps/combe-down/<ti>_<tj>.json`, streamed in round the player, and
+  `web/public/maps/combe-down/<ti>_<tj>.json` (as the partition stage writes them, below), streamed in round the player, and
   `web/public/maps/combe-down.json` holds only what belongs to the map as a whole. `map.ts` loads them and answers ground height,
   collision and raycasts; `world.ts` builds the scene from it. Data coordinates are metres east (x)
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
@@ -208,6 +208,16 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   roads are smoothed as one network before that (`smooth_network`: main roads first, side roads
   meeting them at their height, no steeper than the hill), as the railway is (`tools/railway.py`;
   the levelling both share is `tools/profiles.py`).
+
+  Then, for Bath, the **partition** lays all of that out again as one partition of the ground,
+  the last stage of `tools/prep_tiles.py` (`tools/partition/stage.py`): the streets are fitted
+  once across the whole city (`tools/partition/once.py`, `corridors.py`), their heights,
+  bridges and tunnels worked out together (`tools/structures.py`, `profiles.py`), the blocks
+  divided into plots that follow the Land Registry's parcels (`plots.py`), and every boundary,
+  gate, front path and the ground under the roads written into each square from those
+  (`write_tile.py`), over `prep_map.py`'s square for everything else. So the streets, plots,
+  garden boundaries and road heights the game shows come from there, and new rules for them go
+  into `tools/partition/` or `tools/structures.py`, not `prep_map.py` alone.
 
   A new kind of thing, or a fix for things clashing, goes into this order as a rule, not as
   a clean-up step on top. Rule 9 of `tools/check_map.py` counts the clashes (lone gates,

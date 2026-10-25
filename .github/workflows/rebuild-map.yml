@@ -1,6 +1,8 @@
 # Rebuilds the whole map of Bath from the data kept in the repository (data/combe-down/, see
 # tools/mapdata.py), with the squares shared out across several machines at once, then commits the
-# map files to the branch it was started on and redeploys the game. Start it from the Actions tab
+# map files to the branch it was started on and redeploys the game. The shares build prep_map's
+# squares; the partition (tools/partition/stage.py) needs all of them, so it runs once, on one
+# machine, after them. Start it from the Actions tab
 # ("Rebuild the map", Run workflow) or with `gh workflow run rebuild-map.yml`. With "push" off it
 # only says what would change.
 name: Rebuild the map
@@ -25,7 +27,7 @@ env:
   MAP: combe-down
   SHARDS: 10
   # the same versions the map has been built with, so the map comes out byte for byte the same
-  PY_PACKAGES: numpy==2.5.3 shapely==2.2.0 pillow==12.3.0
+  PY_PACKAGES: numpy==2.5.3 shapely==2.2.0 pillow==12.3.0 scipy==1.18.1
 
 jobs:
   squares:
@@ -55,9 +57,12 @@ jobs:
             cp web/public/maps/$MAP.json web/public/maps/$MAP-{canal,rail}.json out/
             cp web/public/maps/$MAP/tiles.json out/$MAP/
           fi
+          # a map with the partition stage keeps prep_map's squares apart, as the partition's starting point
+          from=data/raw/$MAP/wide/partition/prep
+          [ -d $from ] || from=web/public/maps/$MAP
           for log in data/raw/$MAP/wide/split/*/.built; do
             t=$(basename $(dirname $log))
-            if [ -f web/public/maps/$MAP/$t.json ]; then cp web/public/maps/$MAP/$t.json out/$MAP/; fi
+            if [ -f $from/$t.json ]; then cp $from/$t.json out/$MAP/; fi
           done
           ls out out/$MAP | wc -l
       - uses: actions/upload-artifact@v4
@@ -66,8 +71,41 @@ jobs:
           path: out/
           retention-days: 1
 
-  commit:
+  partition:
     needs: squares
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install $PY_PACKAGES
+      - run: python3 -I tools/mapdata.py unpack $MAP
+      - uses: actions/download-artifact@v4
+        with:
+          path: built
+      - name: Lay the ground out as a partition over every square
+        run: |
+          mkdir -p data/raw/$MAP/wide/partition/prep out/$MAP
+          for d in built/squares-*; do
+            cp $d/$MAP/*_*.json data/raw/$MAP/wide/partition/prep/
+            cp $d/*.json web/public/maps/ 2>/dev/null || true
+          done
+          if python3 -I -c "import sys; sys.path.insert(0, 'tools'); from area import MAPS; sys.exit(0 if MAPS['$MAP'].get('partition') else 1)"; then
+            python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide out/$MAP --partition-only
+            cat data/raw/$MAP/wide/partition/city.log | tail -20
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: partition
+          path: out/
+          retention-days: 1
+
+  commit:
+    needs: partition
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +122,8 @@ jobs:
       - name: Put the map files in place
         run: |
           for d in built/squares-*; do cp -r $d/. web/public/maps/; done
+          # the partition's squares over prep_map's (none for a map without the stage)
+          cp -r built/partition/. web/public/maps/
           # the whole-city map and the pubs, once every square is in: the far-off ground takes
           # their heights, and the pubs stand at their signs
           python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json

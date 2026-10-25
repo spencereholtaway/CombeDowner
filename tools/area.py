@@ -31,6 +31,9 @@ MAPS = {
         field=1465,                    # force field radius in metres: the play area is 2.9 km across
         field_centre=(-410, 220),
         half=1565,
+        # the squares are laid out as a partition after prep_map (tools/partition/stage.py), from the
+        # Land Registry's parcels and what is kept from the lidar for it
+        partition=True,
         # one list for the whole of Bath, first match wins; positions come from named places in the
         # map data, and edges are approximate
         zones=[

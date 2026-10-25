@@ -230,6 +230,14 @@ canal to the levels those files give; then:
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 ```
 
+For Combe Down's Bath, that same command then lays the ground out as a partition
+(`tools/partition/stage.py`, "Rebuild a map" in the README). It runs for a map marked
+`partition=True` in `tools/area.py`; a new map doesn't have it, and is built by `prep_map.py` alone.
+To give one the partition it needs the Land Registry's parcels (below) and the lidar, then a build,
+then `tools/mapdata.py pack`, which keeps what the partition reads from the lidar
+(`data/$MAP/measured/partition.zip`); `tools/partition/` still reads `CD_MAP` for its map, and has
+only been tried on Bath.
+
 For the squares' shop signs, download OpenStreetMap and the food hygiene ratings for the wide
 circle first (`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm.geojson wide`, and the same with
 `tools/fsa.py` and `fsa.geojson`), and put the non-domestic certificates and the UPRN file in
