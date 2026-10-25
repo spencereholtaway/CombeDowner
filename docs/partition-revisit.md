@@ -959,12 +959,27 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   on the ground under it, so on the line under Bellotts Road, Sydney Place and Meadow Lane (9 within
   3 m of a track, now 0). Cars are left out of the whole outline of a bridge's deck, so a street
   passing under a bridge has no parked cars under it either.
-- [ ] **Path widths within 1 m are 0.810 against main's 0.857 because of the default, not the
-  layout**: pass 1 gives every footway 1.8 m and every cycleway 2.5 m (`corridors.PATHW`) and
-  ignores a path's own width tag, where main uses 1.6 and 2.0. The tagged footways in the build's
-  own input have a median of 1.0 to 1.1 m. Fixing it means reading a path's width tag in
-  `once.fit_edge` and rerunning pass 1 and the city, which was not done here.
+- [ ] **A path is as wide as its own width tag, and an untagged one takes its kind's default**,
+  now footway 1.5 m, cycleway 2.2 m, bridleway 2.0 m (were 1.8, 2.5, 2.5): of the widths that put
+  the most tagged length within a metre of its tag in the build's own input (even ids), each the
+  widest. Pass 1's road fits are kept; only the paths are refitted (`out/s3-once2`, with pass 2 and
+  the city rerun into `out/s3-city2`). Scored with the odd ids' tags hidden, path widths within
+  1 m would be 0.903 (main's 1.6/2.0 give 0.881); the scoreboard says 1.000 because the build
+  reads the odd ids' tags too. Trade-off, against the same writer on the old city: wall recall
+  0.950 to 0.947 (guessed walls beside footways rolled as fences, as the plots changed shape),
+  pedestrian areas paved 0.611 to 0.605, and one each of "walls a metre apart" and "wall poking
+  past another" beside narrowed footways. Decide whether to keep it.
+- [ ] **A street with a measured width is not narrowed below it**, and where its buildings stand
+  closer than that the lidar is asked first: a footprint edge counts only where the survey sees
+  something 1.5 m high within 1.5 m inside it. Shaftesbury Mews (tagged 3.3 m, measured) is back to
+  2.5 m and carriageway widths to 0.776 within 1 m. Buildings on a carriageway 9 to 15: the
+  measured streets that now run into a footprint.
+- [ ] **A plot on a pedestrian street whose front the lidar sees something stand along is left as
+  a garden**, not paved, even with nothing mapped there: street paved 0.928 to 0.917. Miles's
+  Buildings' fenced gardens were never paved; the lidar rule also keeps a strip in Chandos
+  Buildings and Hay Hill, where a tree's canopy may be what the survey saw.
 - [ ] **"Footpath along a pavement" now counts only the stretches running along the street.** It
   counted a path's whole length within a metre of a pavement, so every path crossing a street
   (through both pavements) was a finding: 390 of the 415. With that, the partition has 9 against
-  main's 70; the 9 are short stretches, 5 to 7 m, where a path meets a pavement at a slant.
+  main's 70 (old rule: 415 and 462); the 9 are short stretches, 5 to 7 m, where a path meets a
+  pavement at a slant. The change is in Spencer's `check_map.py`: show him.
