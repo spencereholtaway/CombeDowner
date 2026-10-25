@@ -27,8 +27,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
-  saw it. The railway's own bridges stand on brick arches, or on steel girders where a road, a path
-  or the river passes under, and never have a pier in the way.
+  saw it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
+  round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
+  wide, and a steel girder on stone abutments only where no arch would clear the road or the river
+  under it. A short bridge is all one or the other, and no pier stands in the way.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
   string of red and white bunting and the whole string flutters down for a bonus and rips the flags
