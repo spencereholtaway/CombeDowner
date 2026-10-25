@@ -19,6 +19,7 @@ data/<map>/ (see the README there for where each comes from and its licence):
   hashes (non-domestic, see shops.py), and its OS Open UPRN position;
 - the Mapzen terrain tiles the builds read (zoom 15 for the squares, the canal and the railway,
   zoom 14 for the wide file), packed smaller;
+- what the partition reads from the lidar (tools/partition/measured.py), in measured/partition.zip;
 - what the builds measure from the lidar and the tree canopy map (gigabytes, so not kept: see
   docs/new-area.md to fetch them), in measured/: for each square, what the survey shows of each
   building's roof (its heights as percentiles, the ground at its walls, the roof planes fitted to
@@ -378,6 +379,14 @@ def pack(map_id, raw):
     pack_epc(os.path.join(raw, "epc"), os.path.join(out, "epc"))
     for zoom, folder in TERRAIN.items():
         pack_terrain(os.path.join(raw, folder), zoom, os.path.join(out, f"terrain{zoom}.zip"))
+    from area import MAPS
+    if MAPS[map_id].get("partition"):
+        if os.path.isdir(os.path.join(raw, "lidar", "dtm")) and os.path.isdir(os.path.join(raw, "partition", "once")):
+            os.environ["CD_MAP"] = map_id
+            from partition import measured
+            measured.pack(raw)
+        else:
+            print("the partition's lidar: needs the lidar and a map build in the raw dir, left as it was")
 
 
 def unpack(map_id, raw):
