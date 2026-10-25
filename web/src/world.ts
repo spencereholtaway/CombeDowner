@@ -837,7 +837,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // than ending in the air. No pier stands in what passes under (the map's `uo`: a road, a path or
   // the railway) or in the canal. What the bridge crosses keeps its own ground underneath.
   const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
-  const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52], TRUSS = [0.38, 0.44, 0.45];
+  const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52], TRUSS = [0.3, 0.37, 0.38];
   const PARAPET = 1.05;       // above the pavement
   const KINDS: Record<string, { deck: number; gap: number }> = {
     arch: { deck: 0.9, gap: 16 }, beam: { deck: 1.1, gap: 26 }, truss: { deck: 0.9, gap: 45 }, foot: { deck: 0.45, gap: 18 },
@@ -1097,7 +1097,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const rails = truss ? [base + 0.1, H] : [0.55, 1.1];
             for (let i = 0; i < run.length - 1; i++) {
               const A = run[i], B = run[i + 1];
-              for (const y of rails) bar(steel, at(A, m, A.top + y), at(B, m, B.top + y), truss ? 0.07 : 0.03, col);
+              for (const y of rails) bar(steel, at(A, m, A.top + y), at(B, m, B.top + y), truss ? 0.09 : 0.03, col);
             }
             const first = Math.ceil(run[0].s / post) * post, k0 = Math.round(first / post);
             for (let u = first, k = k0; u <= run[run.length - 1].s + 1e-6; u += post, k++) {
@@ -1105,15 +1105,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               while (i < run.length - 2 && run[i + 1].s < u) i++;
               const A = run[i], B = run[i + 1], f = Math.min(1, Math.max(0, (u - A.s) / ((B.s - A.s) || 1)));
               const q = { ...A, x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, top: A.top + (B.top - A.top) * f };
-              bar(steel, at(q, m, q.top + base), at(q, m, q.top + (truss ? H : 1.12)), truss ? 0.035 : 0.03, col);
+              bar(steel, at(q, m, q.top + base), at(q, m, q.top + (truss ? H : 1.12)), truss ? 0.045 : 0.03, col);
               // a truss's diagonal to the next post, leaning alternately
               if (truss && u + post <= run[run.length - 1].s + 1e-6) {
                 let j = i;
                 while (j < run.length - 2 && run[j + 1].s < u + post) j++;
                 const C = run[j], D = run[j + 1], h2 = Math.min(1, Math.max(0, (u + post - C.s) / ((D.s - C.s) || 1)));
                 const q2 = { ...C, x: C.x + (D.x - C.x) * h2, y: C.y + (D.y - C.y) * h2, top: C.top + (D.top - C.top) * h2 };
-                if (k % 2) bar(steel, at(q, m, q.top + base + 0.1), at(q2, m, q2.top + H), 0.045, col);
-                else bar(steel, at(q, m, q.top + H), at(q2, m, q2.top + base + 0.1), 0.045, col);
+                if (k % 2) bar(steel, at(q, m, q.top + base + 0.1), at(q2, m, q2.top + H), 0.06, col);
+                else bar(steel, at(q, m, q.top + H), at(q2, m, q2.top + base + 0.1), 0.06, col);
               }
             }
           }
