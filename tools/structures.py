@@ -152,6 +152,11 @@ def in_ranges(run, ranges):
     return {i for i, (_, _, t) in enumerate(run) if any(a <= t <= b for a, b in ranges)}
 
 
+def tunnel_inside(idx):
+    """The points of a tunnel's stretches inside it, not at its mouths: a way can only join it there."""
+    return {i for i in idx if i - 1 in idx and i + 1 in idx}
+
+
 def level_structures(run, z, bridges, tunnels):
     """Carry bridges and tunnels straight between the road at either end (`profiles.carry_profile`;
     a tunnel's ends as the survey has them)."""
@@ -429,7 +434,10 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 under_k, poly, mid, deep = underpasses[int(j)]
                 if under_k == k:
                     continue
+                # (a street in a tunnel of its own beside it, the other carriageway, is not over it)
                 over = {i for i, q in enumerate(r["run"]) if poly.contains(Point(q[:2]))}
+                if r["c"] not in PATHS:
+                    over -= in_ranges(r["run"], r["tunnel_ranges"])
                 r["span"] |= over
                 # one crossing it is a bridge whatever the survey's ground there (2. keeps it), and so
                 # is one the data lays right on top of the road down in it, along it
@@ -1004,6 +1012,8 @@ def smooth_network(pending, chains, elev):
         order.append((RANK.get(c, 6), -L, ch))
     order.sort(key=lambda o: (o[0], o[1]))
     tun = {k: in_ranges(r["run"], r["tunnel_ranges"]) for k, r in enumerate(pending) if r["tunnel_ranges"]}
+    inside = {k: tunnel_inside(t) for k, t in tun.items() if pending[k]["c"] not in PATHS}
+    below = {}
     for _, _, ch in order:
         pts = [pending[k]["run"][i] for k, i in ch]
         z = np.array([pending[k]["z"][i] for k, i in ch], dtype=float)
@@ -1012,7 +1022,11 @@ def smooth_network(pending, chains, elev):
         for m, q in enumerate(pts):
             h = done.get(key(q))
             # a road laid already, meeting this one there: unless it's well above or below (a
-            # bridge's deck and a road passing under it at a point the data happens to give both)
+            # bridge's deck and a road passing under it at a point the data happens to give both),
+            # or both run on through it with one inside a tunnel there (the other passes over)
+            if h is not None and 0 < m < n - 1 and below[key(q)] is not None and \
+                    below[key(q)] != (ch[m][1] in inside.get(ch[m][0], ())):
+                continue
             if h is not None and abs(h - z[m]) < 2.5:
                 z[m] = h
                 fixed[m] = True
@@ -1043,6 +1057,7 @@ def smooth_network(pending, chains, elev):
         for m, (k, i) in enumerate(ch):
             pending[k]["z"][i] = float(z[m])
             done[key(pts[m])] = float(z[m])
+            below[key(pts[m])] = (i in inside.get(k, ())) if 0 < m < n - 1 else None
 
 
 def limit_grades(pending, chains, dips):
