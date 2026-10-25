@@ -155,12 +155,18 @@ export function bridgePlan(p: number[][], need: Need, twin: { piers: number[][];
 /** What passes under the railway's bridges, as a Need: each way a line with how far either side it
  *  reaches and the headroom it wants, and the ponds and the lake, which want a little. */
 export function needUnder(tracks: number[][][], ways: { p: number[][]; reach: number; need: number }[], ponds: number[][][]): Need {
-  const C = 10, cell = (i: number, j: number) => `${i},${j}`;
-  const near = new Map<string, number[][]>();
-  for (const p of tracks) for (const q of p) if (q[3] === 1) near.set(cell(Math.floor(q[0] / C), Math.floor(q[1] / C)), []);
+  // (numbered cells, and only ways near a bridge: this runs over every street in Bath)
+  const C = 10, cell = (i: number, j: number) => (i + 32768) * 65536 + j + 32768;
+  const near = new Map<number, number[][]>();
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of tracks) for (const q of p) if (q[3] === 1) {
+    near.set(cell(Math.floor(q[0] / C), Math.floor(q[1] / C)), []);
+    x0 = Math.min(x0, q[0] - C); x1 = Math.max(x1, q[0] + C); y0 = Math.min(y0, q[1] - C); y1 = Math.max(y1, q[1] + C);
+  }
   for (const { p, reach, need } of ways)
     for (let k = 0; k + 1 < p.length; k++) {
       const [ax, ay] = p[k], [bx, by] = p[k + 1];
+      if (Math.max(ax, bx) + reach < x0 || Math.min(ax, bx) - reach > x1 || Math.max(ay, by) + reach < y0 || Math.min(ay, by) - reach > y1) continue;
       for (let i = Math.floor((Math.min(ax, bx) - reach) / C); i <= Math.floor((Math.max(ax, bx) + reach) / C); i++)
         for (let j = Math.floor((Math.min(ay, by) - reach) / C); j <= Math.floor((Math.max(ay, by) + reach) / C); j++)
           near.get(cell(i, j))?.push([ax, ay, bx, by, reach, need]);

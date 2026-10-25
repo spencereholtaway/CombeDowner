@@ -2,7 +2,7 @@
 // thread, and sends it back. It does nothing else: no map, no scene, no game. Nothing here goes
 // over the network.
 import type { Parsed } from "./parsesquare";
-import { unpackSurfaces } from "./sfpack";
+import { surfaceBuffers, unpackSurfaces } from "./sfpack";
 
 interface Ask { ti: number; tj: number; text: string }
 
@@ -16,5 +16,5 @@ self.onmessage = (e: MessageEvent<Ask>) => {
   } catch (err) {
     out = { ti, tj, error: String(err) };
   }
-  (self as unknown as { postMessage(m: Parsed): void }).postMessage(out);
+  (self as unknown as { postMessage(m: Parsed, t: Transferable[]): void }).postMessage(out, surfaceBuffers(out.data));
 };

@@ -53,6 +53,22 @@ export interface Grass {
   update(px: number, pz: number): void;
 }
 
+function markTri(mask: Uint8Array, W: number, H: number, ax: number, ay: number, bx: number, by: number, cx: number, cy: number) {
+  const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  if (area === 0) return;
+  if (area < 0) { const tx = bx, ty = by; bx = cx; by = cy; cx = tx; cy = ty; }
+  const lab = Math.hypot(bx - ax, by - ay), lbc = Math.hypot(cx - bx, cy - by), lca = Math.hypot(ax - cx, ay - cy), M = 0.23;
+  const i0 = Math.max(0, Math.floor(Math.min(ax, bx, cx) - M - 0.5)), i1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx, cx) + M - 0.5));
+  const j0 = Math.max(0, Math.floor(Math.min(ay, by, cy) - M - 0.5)), j1 = Math.min(H - 1, Math.ceil(Math.max(ay, by, cy) + M - 0.5));
+  for (let j = j0; j <= j1; j++) {
+    const py = j + 0.5;
+    for (let i = i0; i <= i1; i++) {
+      const px = i + 0.5;
+      if ((bx - ax) * (py - ay) - (by - ay) * (px - ax) >= -M * lab && (cx - bx) * (py - by) - (cy - by) * (px - bx) >= -M * lbc && (ax - cx) * (py - cy) - (ay - cy) * (px - cx) >= -M * lca) mask[j * W + i] = 1;
+    }
+  }
+}
+
 /**
  * Grass for the map. groundAt gives the drawn ground height at scene (x, z); kinds are the
  * ground colours by kind (the terrain's palette), so tufts match the ground they stand on.
@@ -93,25 +109,9 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   for (const w of D.wl) line(w.p, 2.2);
   // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
   for (const t of D.tn ?? []) for (const end of [t.p.slice(0, 6), t.p.slice(-6)]) line(end, 2 * TUNNEL.half + 1);
-  // nor on a square's street and path faces, kerbs and all
-  if (D.sf && (typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips")) {
-    const V = D.sf.v;
-    // every triangle wound the same way: one wound the other way cancels where two overlap a little,
-    // and the sliver between them would grow grass across the road. Filled a few hundred at a time,
-    // as one fill of the lot stalls the game for a second.
-    let n = 0;
-    g.beginPath();
-    for (const I of [D.sf.road, D.sf.service, D.sf.pave, D.sf.path ?? [], D.sf.front ?? [], D.sf.drive ?? []]) for (let k = 0; k + 2 < I.length; k += 3) {
-      const ax = X(V[3 * I[k]]), ay = Y(V[3 * I[k] + 1]);
-      let bx = X(V[3 * I[k + 1]]), by = Y(V[3 * I[k + 1] + 1]), cx = X(V[3 * I[k + 2]]), cy = Y(V[3 * I[k + 2] + 1]);
-      if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0) [bx, by, cx, cy] = [cx, cy, bx, by];
-      g.moveTo(ax, ay); g.lineTo(bx, by); g.lineTo(cx, cy); g.closePath();
-      if (++n % 300 === 0) { g.fill(); g.beginPath(); yield; }
-    }
-    g.fill();
-    for (const e of D.sf.e) line(e.i.map((i) => [V[3 * i], V[3 * i + 1]]), 0.8);
-    yield;
-  }
+  // nor on a square's street and path faces, kerbs and all: their outlines here, their insides below
+  const faced = !!D.sf && (typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips");
+  if (faced) { const V = D.sf!.v; for (const e of D.sf!.e) line(Array.from(e.i, (i) => [V[3 * i], V[3 * i + 1]]), 0.8); }
   for (const s of D.fp ?? []) line([[s[0], s[1]], [s[2], s[3]]], 1.5);
   for (const s of D.dv ?? []) line([[s[0], s[1]], [s[2], s[3]]], 3.4);
   // cricket wickets are worn bare
@@ -125,6 +125,18 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   for (let k = 0; k < blocked.length; k++) { blocked[k] = px[k * 4] > 60 ? 1 : 0; if (k % 200000 === 199999) yield; }
   cv.width = cv.height = 1;   // let the browser free the big canvas
   yield;
+  // The faces' triangles are marked straight into the mask: tens of thousands of them filled on the
+  // canvas took longer than all the rest of the grass. A pixel counts as covered when its middle is
+  // within a quarter of a metre of the triangle, about where the canvas's blend crossed the threshold.
+  if (faced) {
+    const V = D.sf!.v;
+    let n = 0;
+    for (const I of [D.sf!.road, D.sf!.service, D.sf!.pave, D.sf!.path, D.sf!.front, D.sf!.drive]) if (I) for (let k = 0; k + 2 < I.length; k += 3) {
+      markTri(blocked, W, H, X(V[3 * I[k]]), Y(V[3 * I[k] + 1]), X(V[3 * I[k + 1]]), Y(V[3 * I[k + 1] + 1]), X(V[3 * I[k + 2]]), Y(V[3 * I[k + 2] + 1]));
+      if (++n % 3000 === 0) yield;
+    }
+    yield;
+  }
   const free = (x: number, y: number) => {
     const i = Math.round(X(x)), j = Math.round(Y(y));
     return i >= 0 && j >= 0 && i < W && j < H && !blocked[j * W + i];
