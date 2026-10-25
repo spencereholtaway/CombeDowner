@@ -1149,10 +1149,10 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 - [ ] **Map check** (main / combined before / now, `out/r7-l`): too steep 39 / 51 / 45, span ends
   where its record does 99 / 126 / 64, kinked 16 / 14 / 10, ground in the gap 5 / 2 / 1, no open
   gap 18 / 4 / 3, deck end off the road 2 / 0 / 1, the rest unchanged. The deck end is a
-  footbridge by Sydney Gardens (698,1910) whose span now stops a point earlier and ramps down,
-  0.7 m over the ground at its end. Too steep is still above main: 22 of the 45 are trunk roads
+  footbridge at 698,1910 whose span now stops a point earlier and ramps down,
+  0.7 m over the ground at its end. Too steep is still above main: 19 of the 45 are trunk roads
   (Beckford Road, Warminster Road, Bristol Road, London Road) that main calls primary and checks
-  at 1 in 6.7 rather than 1 in 8, 13 are Midford Road by the Two Tunnels (main has them too), and
+  at 1 in 6.7 rather than 1 in 8, 14 are Midford Road by the Two Tunnels (main has 13 there), and
   the worst are Bailbrook Lane, which the partition's graph joins to the A46 down in the
   Bailbrook underpass, so it comes down to it instead of passing over.
 - [ ] **Scoreboard**: no line moved.
