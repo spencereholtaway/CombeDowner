@@ -832,6 +832,66 @@ def _ends_on_the_bank(rd, sq, on_bank, edge=3.0):
                 p[e] = q[:3]
 
 
+RAMP = {"steps": 0.5}      # the steepest a ramp off a deck falls: these, else a path's or a road's
+PATH_RAMP, STREET_RAMP = 0.125, 0.1
+
+
+def ramp_off_decks(rd, ground, T, near=0.05, most=10):
+    """A deck can't stop in the air: where a bridge's record ends at a junction on the bank with its
+    span's last point still well above the ground, the same street running on from it comes down
+    from the deck as a ramp, no steeper than a path or a road may be, rather than dropping off it in
+    one step. `prep_map.py`'s rule, for the records the partition cuts a street into; the ramp is an
+    approach on its own embankment, the ground laid up to it (lay_ground), not more deck. Only on
+    the tile's own grid: past it the next square decides. Returns the points ramped."""
+    x0, y0, dx, dy, nx, ny = T["x0"], T["y0"], T["dx"], T["dy"], T["nx"], T["ny"]
+
+    def on_grid(q):
+        return x0 + dx <= q[0] <= x0 + (nx - 2) * dx and y0 + dy <= q[1] <= y0 + (ny - 2) * dy
+
+    def key(r, q):
+        return r["c"], r.get("n", ""), round(q[0] / near), round(q[1] / near)
+    ends = {key(r, q): q for r in rd for q in (r["p"][0], r["p"][-1]) if _flag(q) in (1, 2)} if rd else {}
+    # (nor across a junction, where the other ways stay on their ground)
+    meet = collections.Counter((round(q[0] / near), round(q[1] / near)) for r in rd for q in (r["p"][0], r["p"][-1]))
+    streets = collections.Counter((round(q[0] / near), round(q[1] / near)) for r in rd if r["c"] not in GAME_PATHS
+                                  for q in (r["p"][0], r["p"][-1]))
+    ramped = 0
+    for r in rd:
+        p = r["p"]
+        grade = RAMP.get(r["c"], PATH_RAMP if r["c"] in GAME_PATHS else STREET_RAMP)
+        # (a street's own approaches already keep its profile's height off the deck, the ground laid
+        # to them; and a path's, its steps and dips being what they are: but a named way running on
+        # from its bridge's record at a junction on the bank has neither)
+        starts = []
+        for e, step in ((0, 1), (len(p) - 1, -1)):
+            deck = ends.get(key(r, p[e])) if not _flag(p[e]) and r.get("n") else None
+            if deck is not None and len(p) > 1:
+                starts.append((e - step, e, deck))
+        for i, j, prev in starts:
+            step = 1 if j > i else -1
+            # (the junction itself only where no other street meets it there, whose ground it is)
+            at = (round(p[j][0] / near), round(p[j][1] / near))
+            e_ = j if i in (-1, len(p)) and streets[at] == (2 if r["c"] not in GAME_PATHS else 0) else None
+            g = ground(prev[0], prev[1])
+            # (a span that comes down on its bank already meets the ground: the way on from it is
+            # the street's, and its hollows are what the street passes over)
+            if g is None or prev[2] - g <= 0.6:
+                continue
+            n = 0
+            while 0 <= j < len(p) and not _flag(p[j]) and n < most and on_grid(p[j]) and \
+                    (j == e_ or meet[(round(p[j][0] / near), round(p[j][1] / near))] < 3):
+                g = ground(p[j][0], p[j][1])
+                if g is None or prev[2] - g <= 0.6:
+                    break
+                p[j] = [p[j][0], p[j][1], round(max(g, prev[2] - math.dist(p[j][:2], prev[:2]) * grade), 1)]
+                r.setdefault("_lay", set()).add(tuple(p[j][:2]))
+                prev = p[j]
+                ramped += 1
+                j += step
+                n += 1
+    return ramped
+
+
 def even_bridge_pavements(rd, houses=()):
     """A bridge's pavements as wide as each other. The game stands both parapets at the wider
     pavement's edge, so a narrower one on the other side left a slot between the pavement and the
@@ -1263,7 +1323,7 @@ def deck_reach(rd):
 STRUCTURES = {"arch": "arch", "humpback": "arch", "beam": "beam", "girder": "beam", "truss": "truss",
               "suspension": "suspension", "simple-suspension": "suspension", "cable-stayed": "beam", "cantilever": "beam"}
 LONG_ARCH = 70.0      # metres: a river crossing longer than this with nothing to say otherwise is a modern beam
-HUNG = 40.0           # metres: a path's crossing this long over a river that is too low for an arch is hung
+LOW_ARCH = 40.0       # metres: a path's crossing this long over a river and too low for an arch is a light footbridge
 
 
 def osm_bridges(sq, reach=60.0):
@@ -1294,8 +1354,8 @@ def bridge_kinds(rd, osm, water, rails, canal_lines, ground=None):
     now runs along (Linear Park, the Two Tunnels), farm tracks' bridges and the
     streets' over the river and the brooks; a trunk road's bridge (but over the railway) and a main
     road's over another road are modern beams, as is a very long crossing; and a path's own bridge
-    is a footbridge. A path's long crossing of a river said to be an arch, but standing lower over
-    the water than an arch that long could, is hung from towers."""
+    is a footbridge, as is a path's long crossing of a river said to be an arch but standing lower
+    over the water than an arch that long could."""
     lines, outlines = osm
     ltree = STRtree([g for g, _ in lines]) if lines else None
     otree = STRtree([g for g, _ in outlines]) if outlines else None
@@ -1381,13 +1441,13 @@ def bridge_kinds(rd, osm, water, rails, canal_lines, ground=None):
                 kind = "arch"
         # (a bridge is often several records, its ramps and its deck: the outline is the whole of it)
         across = max(span.length, _long_side(outline) if outline is not None else 0.0)
-        if kind == "arch" and path and over_water and across >= HUNG and ground is not None:
+        if kind == "arch" and path and over_water and across >= LOW_ARCH and ground is not None:
             # a stone arch that long needs a rise of an eighth of it: a path's long crossing that
-            # stands lower over the water than that, with no pier in it, is hung from towers
+            # stands lower over the water than that is not stone, whatever the outline says
             st = sorted(on)
             under = _surveyed_under(ground, p, st, [p[i][0] for i in st], [p[i][1] for i in st])
             if not np.isnan(under).all() and max(p[i][2] for i in st) - np.nanmin(under) < across / 8:
-                kind = "suspension"
+                kind = "foot"
         if kind == "beam" and path:
             kind = "foot"
         r["bt"] = kind
@@ -1430,6 +1490,25 @@ def deck_gaps(rd, ground, depth=0.9):
             outline = core.buffer(hl + 0.4, single_sided=True, cap_style="flat").union(
                 core.buffer(-(hr + 0.4), single_sided=True, cap_style="flat"))
             out.append((outline, line, cum, under))
+    return out
+
+
+def deck_ends_reach(gaps, past=1.0):
+    """The ground a bridge's abutments stand on, at each end of each gap and a metre past it: no
+    boundary is drawn there, or a fence panel stands against the abutment's face."""
+    out = []
+    for outline, line, cum, under in gaps:
+        # (as wide as the deck's outline, out to its parapets)
+        half = max(0.5, outline.area / max(0.1, line.length - 2 * BANK) / 2)
+        for a, b in ((-past, BANK), (line.length - BANK, line.length + past)):
+            piece = substring(line, max(0.0, a), min(line.length, b))
+            if a < 0 or b > line.length:
+                # (run on straight past the end, along the line's last stretch)
+                (ux, uy), (vx, vy) = (line.coords[0], line.coords[1]) if a < 0 else (line.coords[-1], line.coords[-2])
+                d = math.hypot(ux - vx, uy - vy) or 1
+                tip = (ux + (ux - vx) / d * past, uy + (uy - vy) / d * past)
+                piece = LineString([tip, *piece.coords] if a < 0 else [*piece.coords, tip])
+            out.append(piece.buffer(half, cap_style="flat"))
     return out
 
 
@@ -3506,6 +3585,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     even_bridge_pavements(rd, houses)
     deck_reach(rd)
     dip_paths_under_spans(rd)
+    ramp_off_decks(rd, road_ground, T)
     # the ground is laid to these streets and paths before anything else stands on it
     laid = lay_ground(T, rd, houses, rail_tracks)
     settle_on_laid_ground(rd, laid, road_ground)
@@ -3533,7 +3613,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     gaps = deck_gaps(rd, road_ground)
     wall_blocked = blocked
     if gaps:
-        wall_blocked = unary_union([g[0] for g in gaps] + ([blocked] if blocked is not None else []))
+        wall_blocked = unary_union([g[0] for g in gaps] + deck_ends_reach(gaps) + ([blocked] if blocked is not None else []))
         shapely.prepare(wall_blocked)
     door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq)
     gone = {id(o) for o in wrong_side}
