@@ -287,6 +287,9 @@ def split_back(r):
     return out
 
 
+TOW_OVER = 2.0      # metres a deck stands over the towpath at its end for the span to reach on over it
+
+
 def towpath_points(run, z, c, canal_open, canal_tree, locks, bridged):
     """{i: height} of the points of a path's run that lie on the canal's towpath: level with the
     coping, whatever the survey made of the ground, so the path neither rises to the bridges over it
@@ -908,6 +911,14 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
             del r["tow"][i]
             r["z"][i] = (r["z"][i - 1] + r["z"][i + 1]) / 2
             (r["span"] if i - 1 in r["span"] else r["deck"]).add(i)
+        # and one just past a span's end with the deck still well above the towpath is the span
+        # reaching on over it, as a span does over a path crossing at its end
+        for i in sorted(r["tow"]):
+            ends = [n for n in (i - 1, i + 1) if n in r["span"] and n not in r["tow"]]
+            if ends and max(r["z"][n] for n in ends) - r["tow"][i] > TOW_OVER:
+                r["z"][i] = max(r["z"][n] for n in ends)
+                r["span"].add(i)
+                del r["tow"][i]
         for i, h in r["tow"].items():
             r["z"][i] = h
             r["span"].discard(i)
