@@ -1124,42 +1124,12 @@ LAY_KERB = 1.7      # a kerbed street's pavement where its record gives none
 PAVE_FALL = 0.12    # metres a pavement's back edge may fall or rise from the street's level, towards the ground
 
 
-_DTM = []
-
-
 def surveyed_ground(xs, ys):
     """The lidar's bare ground (the Environment Agency's 1 m DTM) at map points, NaN where it has
-    none. The survey takes bridges out, so under a deck it is the bank, the water or the road below."""
-    xs, ys = np.asarray(xs, float), np.asarray(ys, float)
-    out = np.full(len(xs), np.nan)
-    if not len(xs):
-        return out
-    if not _DTM:
-        import glob
-        files = sorted(glob.glob(os.path.join(ROOT, "data", "raw", MAP, "wide", "lidar", "dtm", "*.tif")))
-        try:
-            import rasterio
-            _DTM.append([rasterio.open(f) for f in files])
-        except ImportError:
-            _DTM.append([])
-    if not _DTM[0]:
-        return out
-    from rasterio.windows import Window
-    from lidar import _to_bng
-    from partition import KX, KY, LAT0, LON0
-    e, n = _to_bng((xs / KX + LON0, ys / KY + LAT0))
-    for src in _DTM[0]:
-        col, row = ~src.transform @ (e, n)
-        col, row = np.floor(col).astype(int), np.floor(row).astype(int)
-        ok = (row >= 0) & (row < src.height) & (col >= 0) & (col < src.width)
-        if not ok.any():
-            continue
-        c0, r0 = col[ok].min(), row[ok].min()
-        a = src.read(1, window=Window(c0, r0, col[ok].max() - c0 + 1, row[ok].max() - r0 + 1)).astype(float)
-        v = a[row[ok] - r0, col[ok] - c0]
-        v[(v < -100) | (v > 2000)] = np.nan
-        out[ok] = v
-    return out
+    none. The survey takes bridges out, so under a deck it is the bank, the water or the road below.
+    Read from the repository's copy round the bridges (`measured.py`)."""
+    from partition.measured import under_bridges
+    return under_bridges(np.asarray(xs, float), np.asarray(ys, float))[0]
 
 
 def _surveyed_under(ground, p, st, xs, ys):

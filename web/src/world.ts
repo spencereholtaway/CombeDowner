@@ -845,6 +845,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
   const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52], TRUSS = [0.3, 0.37, 0.38];
   const PARAPET = 1.05;       // above the pavement
+  const FOOT_CLASSES = new Set(["footway", "path", "cycleway", "steps", "bridleway"]);
   const KINDS: Record<string, { deck: number; gap: number }> = {
     arch: { deck: 0.9, gap: 16 }, beam: { deck: 1.1, gap: 26 }, truss: { deck: 0.9, gap: 45 }, foot: { deck: 0.45, gap: 18 },
     suspension: { deck: 0.45, gap: Infinity },
@@ -932,11 +933,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     list.forEach((_, i) => { if (!used.has(i)) chain(i); });
     return out;
   }
+  // a map built without the partition gives no bridge its kind
+  function plainKind(c: string) {
+    return FOOT_CLASSES.has(c) ? "foot" : c === "trunk" || c === "motorway" ? "beam" : "arch";
+  }
   function bridgeStructures(rd: Road[], g: Geo, steel: Geo) {
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
-      const kind = r.bt && KINDS[r.bt] ? r.bt : "arch", DECK = KINDS[kind].deck, stone = kind === "arch";
+      const kind = r.bt && KINDS[r.bt] ? r.bt : plainKind(r.c), DECK = KINDS[kind].deck, stone = kind === "arch";
       const [hl, hr] = deckSides(r), half = Math.max(hl, hr), ds = (r as Joined).ds, lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
       const along0: number[] = [0];
       for (let i = 1; i < r.p.length; i++) along0.push(along0[i - 1] + Math.hypot(r.p[i][0] - r.p[i - 1][0], r.p[i][1] - r.p[i - 1][1]));

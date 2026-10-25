@@ -32,6 +32,10 @@ from .plots import (OPEN_KINDS, Parcels, building_axes, classify_edges, front_no
 from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
 
+# the map build's stage sets this: the drawings and the comparison with the game's own squares are
+# for looking at, and the game's squares are the partition's own earlier output there
+QUICK = os.environ.get("CD_PARTITION_QUICK") == "1"
+
 
 def load_ridges(raw, ti, tj):
     """The lidar wall runs the build kept for this square (data/combe-down/measured/<ti>_<tj>.zip)."""
@@ -299,15 +303,17 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
               ("line", [(e[0], e[1] + (" inferred" if e[3] == "inferred" else ""))
                         for e in pedges if e[1] != "none"]),
               ("dot", [(p, "free") for p in pts_new])]
-    render(os.path.join(out, "render.svg"), sq, layers, f"partition: square {ti},{tj}")
+    if not QUICK:
+        render(os.path.join(out, "render.svg"), sq, layers, f"partition: square {ti},{tj}")
     layers_ev = [("poly", [(g, c) for g, c, _ in faces
                            if c in ("open", "plot", "pavement", "path", "carriageway", "building")]),
                  ("line", [(g, "ridge") for g, _, _ in ridges]),
                  ("line", [(g, "railing") for g, _ in barriers]),
                  ("dot", [(p, "free") for p in pts_old])]
-    render(os.path.join(out, "evidence.svg"), sq, layers_ev,
-           f"evidence: lidar ridge runs (red) and mapped barriers, square {ti},{tj}")
-    cur = current_build(ti, tj, sq)
+    if not QUICK:
+        render(os.path.join(out, "evidence.svg"), sq, layers_ev,
+               f"evidence: lidar ridge runs (red) and mapped barriers, square {ti},{tj}")
+    cur = None if QUICK else current_build(ti, tj, sq)
     if cur:
         bl, rd, br = cur
         rl = []

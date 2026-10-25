@@ -5,8 +5,9 @@ its guessed walls and hedges have nothing standing anywhere near them, against a
 ones (the UKCEH hedgerow test, tried on `claude/exp-lidar-walls`). Fences are not tested: a
 close-board fence is thinner than the survey's metre and a third of real ones show nothing.
 
-The grid is the surface less the bare ground on 1 m cells (Environment Agency), cached beside the
-lidar, so a square's second write reads it back.
+The grid is the surface less the bare ground on 1 m cells (Environment Agency), as the repository
+keeps it (`measured.py`), so a fresh clone builds the same; it is measured from the lidar itself only
+to pack it, and cached beside the lidar.
 """
 import os
 
@@ -20,11 +21,16 @@ FLOOR = 0.5         # metres: lower than this is ground, grass or a kerb
 PAD = 20.0
 
 
-def ndsm(sq, pad=PAD):
+def ndsm(sq, pad=PAD, raw_only=False):
     """(height above ground on a 1 m grid over the square, x0, y0), or None without the lidar."""
     key = tuple(round(v) for v in sq)
     cache = os.path.join(LIDAR, "ndsm", "%d_%d_%d_%d.npy" % key)
     x0, y0 = sq[0] - pad, sq[1] - pad
+    if not raw_only and pad == PAD:
+        from .measured import standing
+        kept = standing(sq)
+        if kept is not None:
+            return kept, x0, y0
     if os.path.exists(cache):
         return np.load(cache), x0, y0
     if not os.path.isdir(os.path.join(LIDAR, "dsm")):

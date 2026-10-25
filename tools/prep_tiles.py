@@ -1,6 +1,7 @@
 """Build the whole of Bath round a detailed map as tiles, at the detailed map's level of detail.
 
 Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--measure] [--jobs 4] [--shard k/n] [--only ti,tj ...]
+       python3 -I tools/prep_tiles.py <map> <dir> <out dir> --partition-only [--only ti,tj ...]
 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
 
@@ -34,6 +35,12 @@ loads it first), and <out dir>/tiles.json, which says how the tiles are laid out
 {"x0", "y0": the south-west corner of tile (0, 0), metres east and north of the map centre;
  "dx": the grid spacing; "cells": grid cells per tile side; "z0": the height every tile's
  terrain is measured from; "tiles": [[ti, tj], ...]}.
+
+For Combe Down (the one map the partition is written for), the squares prep_map.py builds go into
+<dir>/partition/prep/ instead, and the last stage, tools/partition/stage.py, lays the ground out as
+a partition and writes the game's squares into <out dir> from them (see there). With --shard the
+squares are built but the partition isn't, as it needs every square: gather the shares' prep/
+folders on one machine, then run --partition-only there.
 """
 import hashlib, json, math, os, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
@@ -45,6 +52,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from mapdata import measured_dir
 from stitch import boundaries, path_clear
+from partition.stage import partitioned, prep_dir
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
@@ -94,6 +102,8 @@ def main():
     if keep: args.remove("--keep")
     measure = "--measure" in args
     if measure: args.remove("--measure")
+    partition_only = "--partition-only" in args
+    if partition_only: args.remove("--partition-only")
     jobs = os.cpu_count() or 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
@@ -121,7 +131,19 @@ def main():
             if 0 <= ti <= 2 and 0 <= tj <= 2 or box(*tile_box(ti, tj)).intersects(circle): tiles.append((ti, tj))
     print(f"{len(tiles)} tiles of {size:.1f} m, {CELLS} cells of {D:.4f} m")
     os.makedirs(out_dir, exist_ok=True)
-    out_of = lambda t: os.path.join(out_dir, f"{t[0]}_{t[1]}.json")
+    staged = partitioned(map_id)
+    # prep_map's squares for a partitioned map are only the partition's starting point, so they're
+    # kept out of the game's folder
+    prep_out = prep_dir(src_dir) if staged else out_dir
+    os.makedirs(prep_out, exist_ok=True)
+    out_of = lambda t: os.path.join(prep_out, f"{t[0]}_{t[1]}.json")
+    index = lambda: json.dump(dict(x0=X0, y0=Y0, dx=D, cells=CELLS, z0=G.z0, tiles=[list(t) for t in tiles if os.path.exists(out_of(t))]),
+                              open(os.path.join(out_dir, "tiles.json"), "w"), separators=(",", ":"))
+    if partition_only:
+        if not staged: sys.exit(f"{map_id} has no partition stage")
+        code = run_partition(map_id, src_dir, out_dir, only, jobs)
+        index()
+        sys.exit(code)
     # (the village's nine used to be kept apart, in <dir>/core, to be stitched into one file: they
     # go in with the rest now, so a build already made isn't made again)
     core_dir = os.path.join(src_dir, "core")
@@ -185,7 +207,9 @@ def main():
     # changed: its own cut of the layers, the shared data it reads (lidar, canopy, terrain,
     # certificates), the canal and railway files, or any of the map tools
     t0 = time.time()
-    tools = digest([p for p in files(TOOLS) if p.endswith(".py") and p != os.path.abspath(__file__)])   # this file: in the cut
+    # this file is in the cut, and prep_map never reads the partition's tools
+    partition_tools = (os.path.join(TOOLS, "partition") + os.sep, os.path.join(TOOLS, "structures.py"))
+    tools = digest([p for p in files(TOOLS) if p.endswith(".py") and p != os.path.abspath(__file__) and not p.startswith(partition_tools)])
     shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
@@ -236,16 +260,28 @@ def main():
     write_header(area(map_id), G, os.path.join(TOOLS, "..", "web", "public", "maps", f"{map_id}.json"),
                  [out_of(t) for t in tiles if 0 <= t[0] <= 2 and 0 <= t[1] <= 2])
 
+    # ---- the partition, over every square prep_map has built -------------------------------------
+    stage_failed = 0
+    if staged and shard is None:
+        stage_failed = run_partition(map_id, src_dir, out_dir, only, jobs)
+    elif staged:
+        print(f"partition: not run on a share of the squares; gather the shares' {prep_out} and run --partition-only")
+
     # ---- the index, and what it all came to ------------------------------------------------------
+    index()
     built = [list(t) for t in tiles if os.path.exists(out_of(t))]
-    json.dump(dict(x0=X0, y0=Y0, dx=D, cells=CELLS, z0=G.z0, tiles=built),
-              open(os.path.join(out_dir, "tiles.json"), "w"), separators=(",", ":"))
     raw = sum(os.path.getsize(out_of(t)) for t in built)
     zipped = sum(len(gzip.compress(open(out_of(t), "rb").read(), 6)) for t in built)    # about what the server sends
     print(f"{len(built)} of {len(tiles)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
           + (f"; {len(failed)} failed: {' '.join(f'{a}_{b}' for a, b in failed)}" if failed else ""))
     if done: print(f"this run: {len(done)} tiles in {time.time() - start:.0f}s, {sum(s for _, s in done) / len(done):.0f}s each on average")
-    if failed: sys.exit(1)
+    if failed or stage_failed: sys.exit(1)
+
+
+def run_partition(map_id, src_dir, out_dir, only, jobs):
+    cmd = [sys.executable, "-I", os.path.join(TOOLS, "partition", "stage.py"), map_id, src_dir, out_dir, "--jobs", str(jobs)]
+    if only: cmd += ["--only", *(f"{a},{b}" for a, b in only)]
+    return subprocess.run(cmd).returncode
 
 
 def clear_seams(built, tiles, out_of):
