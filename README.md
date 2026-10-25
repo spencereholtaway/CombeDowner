@@ -223,7 +223,9 @@ those, reusing the passes. With `--shard`, the partition isn't run: gather every
 `partition/prep/` on one machine and run `prep_tiles.py ... --partition-only` there, as the
 workflow below does. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the
 same across ten machines, then the partition on one (an hour or two on its four cores), commits the
-map files and redeploys the game.
+map files and redeploys the game. It only runs when started by hand. Its partition step hasn't run on
+GitHub yet: start it with "push" off the first time (`gh workflow run rebuild-map.yml -f push=false`)
+and check it reports no map files changed before letting it commit.
 
 A change to what is measured from the lidar or the canopy (`tools/lidar.py`, `tools/canopy.py`,
 `buildings.roof_parts`) needs the raw data again. Fetch it from the public sources (about 2.5 GB,

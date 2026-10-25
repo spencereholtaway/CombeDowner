@@ -1175,3 +1175,27 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   hill; the 14th (112,-1927) is where its bridge crosses into the next square: the writer drops the
   stub of span left in this square, with nothing under it here, and the first point drops 1.4 m
   to the dug ground. Keeping the stub swapped it for two "no open gap" places, so it is left.
+
+## One build, from a clean state (25 October)
+
+- [ ] **A clean rebuild with fresh city-wide passes scored worse than the combined build**
+  (carriageways within a metre 0.776 to 0.750). The combined build used passes from 23 October,
+  run before Spencer's lidar wall runs were read from the right spot and the walls came back across
+  the outer edges. With the new runs, 812 street edges fitted differently: a run inside a tagged
+  street (Cynthia Road, Second Avenue, Saint Mark's Road) made the fit drop the width tag. A street
+  with a width tag is now fitted between buildings and mapped barriers only (`fit_cross_section`'s
+  `hard`); the lidar's runs still fit every untagged street. Carriageways within 1 m 0.788 (MAE
+  0.69), pavement side agreement 0.935 and recall 0.916, every other line within 0.002 of the
+  combined build. Fitting the tagged width against the buildings alone but letting the pavements
+  give way to the runs scored carriageways 0.840 and cost 0.01 of pavements, so it was not kept.
+- [ ] **A hedge's end on a pavement corner is cut back** (`ends_off_pavements`): at Down Avenue
+  and Hawthorn Grove the fresh plots run a hedge 0.5 m over the corner of the drawn pavement. Only
+  the end of a barrier, and only where less than 1.5 m of it carries on past the pavement.
+- [ ] **What the build keeps from the lidar round bridges reaches 40 m, not 30 m**: a path the old
+  build dipped for a bridge of its own is looked at along its whole length, and those looks are no
+  longer counted as missing. 13 points are still missed, the far ends of those dips; the stage says
+  "pack it again" only past 100.
+- [ ] **The build is the same twice**: two runs from an empty `partition/` folder give
+  byte-identical squares, and packing `partition.zip` again from the new passes gives the same file.
+- [ ] **Left**: "too steep" 42 against main's 39 (the trunk roads, above); the footway under the
+  railway by North Parade Road (-419,2059) stops 37 m short of where main's runs on.

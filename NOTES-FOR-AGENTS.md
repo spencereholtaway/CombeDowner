@@ -26,14 +26,8 @@ the game locally, without the sound" in `CLAUDE.md`.
   `web/public/maps/combe-down/` are the partition's; `prep_map.py`'s own go to
   `data/raw/combe-down/wide/partition/prep/`. New rules for streets, plots, garden boundaries and
   road heights go into `tools/partition/` or `tools/structures.py` (which ports `prep_map.py`'s
-  bridge rules: change both). Branch `claude/partition-onebuild`.
+  bridge rules: change both).
 
-- **Map built as one partition (the plan in `docs/partition-build-plan.md`):** replacing the
-  record-by-record map build with a build that fits one partition of the ground to all the data.
-  Stage 1 (plots divided square to their houses, evidence joined, openings) is on branch
-  `claude/partition-stage-1` on Dan's fork (`danturn/CombeDowner`), for review; the proof of
-  concept is `claude/partition-poc`. New code lives in `tools/partition/` and touches nothing in
-  `prep_map.py`, `prep_tiles.py`, `walls.py`, `roadwidth.py` or `gardens.py`.
 - **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
   fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
   `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so

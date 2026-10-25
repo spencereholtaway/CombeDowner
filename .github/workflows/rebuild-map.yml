@@ -4,7 +4,9 @@
 # squares; the partition (tools/partition/stage.py) needs all of them, so it runs once, on one
 # machine, after them. Start it from the Actions tab
 # ("Rebuild the map", Run workflow) or with `gh workflow run rebuild-map.yml`. With "push" off it
-# only says what would change.
+# only says what would change. It never runs by itself: a push to main doesn't start it. The
+# partition job hasn't been run on GitHub yet, so run it with "push" off first
+# (`gh workflow run rebuild-map.yml -f push=false`) and check that it says nothing would change.
 name: Rebuild the map
 
 on:
