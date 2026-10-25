@@ -64,7 +64,7 @@ from partition.settle import drop_unstood, house_kinds, load_evidence, owners_ne
 from partition.standing import Standing
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
-from structures import canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
+from structures import RW, STEEPEST, canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
 # key in `web/src/map.ts`'s BARRIER_HEIGHT, so no class needs a stand-in here.
@@ -946,32 +946,74 @@ def _ends_on_the_bank(rd, sq, on_bank, edge=3.0):
 
 
 RAMP = {"steps": 0.5}      # the steepest a ramp off a deck falls: these, else a path's or a road's
-PATH_RAMP, STREET_RAMP = 0.125, 0.1
+PATH_RAMP = 0.125
 
 
-def ramp_off_decks(rd, ground, T, near=0.05, most=10):
+def ramp_off_decks(rd, ground, T, near=0.05, most=20):
     """A deck can't stop in the air: where a bridge's record ends at a junction on the bank with its
     span's last point still well above the ground, the same street running on from it comes down
-    from the deck as a ramp, no steeper than a path or a road may be, rather than dropping off it in
-    one step. `prep_map.py`'s rule, for the records the partition cuts a street into; the ramp is an
-    approach on its own embankment, the ground laid up to it (lay_ground), not more deck. Only on
-    the tile's own grid: past it the next square decides. Returns the points ramped."""
+    from the deck as a ramp, no steeper than a path may be or nine tenths of the steepest its kind of
+    road may be, rather than dropping off it in one step; and where that record ends with the ramp
+    still in the air, the ramp carries on down the records that go on from there (a flyover's slip
+    road the data splits off at the end of the bridge). `prep_map.py`'s rule, for the records the
+    partition cuts a street into; the ramp is an approach on its own embankment, the ground laid up
+    to it (lay_ground), not more deck. Only on the tile's own grid: past it the next square decides.
+    Returns the points ramped."""
     x0, y0, dx, dy, nx, ny = T["x0"], T["y0"], T["dx"], T["dy"], T["nx"], T["ny"]
 
     def on_grid(q):
         return x0 + dx <= q[0] <= x0 + (nx - 2) * dx and y0 + dy <= q[1] <= y0 + (ny - 2) * dy
 
+    def at(q):
+        return round(q[0] / near), round(q[1] / near)
+
     def key(r, q):
-        return r["c"], r.get("n", ""), round(q[0] / near), round(q[1] / near)
+        return (r["c"], r.get("n", "")) + at(q)
+
+    def grade_of(r):
+        return RAMP.get(r["c"], PATH_RAMP if r["c"] in GAME_PATHS else STEEPEST.get(r["c"], 0.25) * 0.9)
     ends = {key(r, q): q for r in rd for q in (r["p"][0], r["p"][-1]) if _flag(q) in (1, 2)} if rd else {}
+    ends_at = collections.defaultdict(list)
+    for r in rd:
+        for e in (0, len(r["p"]) - 1):
+            ends_at[at(r["p"][e])].append((r, e))
     # (nor across a junction, where the other ways stay on their ground)
-    meet = collections.Counter((round(q[0] / near), round(q[1] / near)) for r in rd for q in (r["p"][0], r["p"][-1]))
-    streets = collections.Counter((round(q[0] / near), round(q[1] / near)) for r in rd if r["c"] not in GAME_PATHS
-                                  for q in (r["p"][0], r["p"][-1]))
+    meet = collections.Counter(at(q) for r in rd for q in (r["p"][0], r["p"][-1]))
+    streets = collections.Counter(at(q) for r in rd if r["c"] not in GAME_PATHS for q in (r["p"][0], r["p"][-1]))
     ramped = 0
+
+    def ramp(r, j, step, prev, n, e_, seen):
+        nonlocal ramped
+        p, grade, first = r["p"], grade_of(r), j
+        # (a record's far end may be a junction: the ramp goes on down every record from it)
+        while 0 <= j < len(p) and not _flag(p[j]) and n < most and on_grid(p[j]) and \
+                (j == e_ or (j != first and j == (len(p) - 1 if step > 0 else 0)) or meet[at(p[j])] < 3):
+            g = ground(p[j][0], p[j][1])
+            if g is None or prev[2] - g <= 0.6:
+                return
+            p[j] = [p[j][0], p[j][1], round(max(g, prev[2] - math.dist(p[j][:2], prev[:2]) * grade), 1)]
+            r.setdefault("_lay", set()).add(tuple(p[j][:2]))
+            prev = p[j]
+            ramped += 1
+            j += step
+            n += 1
+        if 0 <= j < len(p) or n >= most or not on_grid(prev):
+            return
+        g = ground(prev[0], prev[1])
+        if g is None or prev[2] - g <= 0.6:
+            return
+        seen.add(id(r))
+        for o, e in ends_at[at(prev)]:
+            q, nxt = o["p"], 1 if e == 0 else -1
+            if id(o) in seen or len(q) < 2 or _flag(q[e]) or _flag(q[e + nxt]):
+                continue
+            q[e] = [q[e][0], q[e][1], prev[2]]
+            o.setdefault("_lay", set()).add(tuple(q[e][:2]))
+            ramped += 1
+            ramp(o, e + nxt, nxt, q[e], n + 1, None, seen)
+
     for r in rd:
         p = r["p"]
-        grade = RAMP.get(r["c"], PATH_RAMP if r["c"] in GAME_PATHS else STREET_RAMP)
         # (a street's own approaches already keep its profile's height off the deck, the ground laid
         # to them; and a path's, its steps and dips being what they are: but a named way running on
         # from its bridge's record at a junction on the bank has neither)
@@ -983,25 +1025,13 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=10):
         for i, j, prev in starts:
             step = 1 if j > i else -1
             # (the junction itself only where no other street meets it there, whose ground it is)
-            at = (round(p[j][0] / near), round(p[j][1] / near))
-            e_ = j if i in (-1, len(p)) and streets[at] == (2 if r["c"] not in GAME_PATHS else 0) else None
+            e_ = j if i in (-1, len(p)) and streets[at(p[j])] == (2 if r["c"] not in GAME_PATHS else 0) else None
             g = ground(prev[0], prev[1])
             # (a span that comes down on its bank already meets the ground: the way on from it is
             # the street's, and its hollows are what the street passes over)
             if g is None or prev[2] - g <= 0.6:
                 continue
-            n = 0
-            while 0 <= j < len(p) and not _flag(p[j]) and n < most and on_grid(p[j]) and \
-                    (j == e_ or meet[(round(p[j][0] / near), round(p[j][1] / near))] < 3):
-                g = ground(p[j][0], p[j][1])
-                if g is None or prev[2] - g <= 0.6:
-                    break
-                p[j] = [p[j][0], p[j][1], round(max(g, prev[2] - math.dist(p[j][:2], prev[:2]) * grade), 1)]
-                r.setdefault("_lay", set()).add(tuple(p[j][:2]))
-                prev = p[j]
-                ramped += 1
-                j += step
-                n += 1
+            ramp(r, j, step, prev, 0, e_, set())
     return ramped
 
 
