@@ -959,18 +959,20 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   on the ground under it, so on the line under Bellotts Road, Sydney Place and Meadow Lane (9 within
   3 m of a track, now 0). Cars are left out of the whole outline of a bridge's deck, so a street
   passing under a bridge has no parked cars under it either.
-- [ ] **A path is as wide as its own width tag, and an untagged one takes its kind's default**,
-  now footway 1.5 m, cycleway 2.2 m, bridleway 2.0 m (were 1.8, 2.5, 2.5): of the widths that put
-  the most tagged length within a metre of its tag in the build's own input (even ids), each the
-  widest. Pass 1's road fits are kept; only the paths are refitted (`out/s3-once2`, with pass 2 and
-  the city rerun into `out/s3-city2`). Scored with the odd ids' tags hidden, path widths within
-  1 m would be 0.903 (main's 1.6/2.0 give 0.881); the scoreboard says 1.000 because the build
-  reads the odd ids' tags too. Trade-off, against the same writer on the old city: wall recall
-  0.950 to 0.947 (guessed walls beside footways rolled as fences, as the plots changed shape),
-  pedestrian areas paved 0.611 to 0.605, and one each of "walls a metre apart" and "wall poking
-  past another" beside narrowed footways. Decide whether to keep it.
-- [ ] **A street with a measured width is not narrowed below it**, and where its buildings stand
-  closer than that the lidar is asked first: a footprint edge counts only where the survey sees
+- [ ] **A path is drawn as wide as its own width tag, and an untagged one at its kind's drawn
+  width** (footway 1.5 m, cycleway 2.2 m, bridleway 2.0 m), inside the room its corridor keeps
+  (`corridors.PATHW`, still 1.8 / 2.5 / 2.5): the partition is cut as before and the writer trims
+  each path's face to the path, leaving the verge as ground, except where the verge meets other
+  paving (a path across a square stays paved). Narrowing the corridors themselves and rebuilding
+  the city was tried (`out/s3-city2`): every plot beside a footway moved, guessed walls were rolled
+  as fences and two boundaries came a metre apart, so the room was kept. Scored with the odd ids'
+  tags hidden, path widths within 1 m would be 0.903 (main's defaults 0.881); the scoreboard says
+  0.905 because the build reads the odd ids' tags too.
+- [ ] **A boundary along a mapped wall and a mapped fence takes the nearer**, and of two about as
+  near (0.3 m) a wall before a hedge before a fence. It was picked from a set, so it followed the
+  run's string hashing and a boundary could change kind from one write to the next.
+- [ ] **A street with a measured width gives up at most a metre, and only where the lidar
+  confirms the building**: a footprint edge counts only where the survey sees
   something 1.5 m high within 1.5 m inside it. Shaftesbury Mews (tagged 3.3 m, measured) is back to
   2.5 m and carriageway widths to 0.776 within 1 m. Buildings on a carriageway 9 to 15: the
   measured streets that now run into a footprint.
