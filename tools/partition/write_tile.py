@@ -1039,65 +1039,6 @@ def _grid_points(T, ring, reach):
     return W, gx, gy
 
 
-UNDUG = 1.0       # metres the base square's ground under its own span lies under the survey for it to have been dug
-
-
-def undig_base_spans(T, base_rd, under=()):
-    """The base square's ground was dug out under the old build's bridges. Where the survey, which
-    has its bridges taken out, sees solid ground there instead, the old build bridged nothing (a
-    road over a tunnel's roof, a span run on past its bank), and this build's road would be laid
-    down into the hole: the ground goes back to the survey's, put on the tile's heights by the
-    ground at the span's two ends as `_surveyed_under` does. A span with another way, water or the
-    railway under it (`under`, and the base square's other roads) is left as it is: the survey sees
-    a canal or a road under a footbridge as hardly lower than its banks. This build's own bridges dig
-    it again when the ground is laid to them. The grid's outer ring, which the next square shares,
-    stays."""
-    nx, ny, z0 = T["nx"], T["ny"], T["z0"]
-    grid = np.array(T["h"], dtype=float).reshape(ny, nx) / 10.0 + z0
-    before = grid.copy()
-    # (a way in its tunnel passes under nothing a span would carry)
-    lines, own = [], []
-    for n, r in enumerate(base_rd):
-        for st in stretches({i for i, q in enumerate(r["p"]) if not (len(q) > 3 and q[3] == 2)}):
-            if len(st) > 1:
-                lines.append(LineString([r["p"][i][:2] for i in st])); own.append(n)
-    own += [-1] * len(under)
-    tree = STRtree(lines + list(under))
-    for n, r in enumerate(base_rd):
-        p = r["p"]
-        span = {i for i, q in enumerate(p) if len(q) > 3 and q[3] == 1}
-        for st in stretches(span):
-            deck = LineString([p[i][:2] for i in st]) if len(st) > 1 else None
-            # (a street joining at the span's end is not under it)
-            deck = substring(deck, BANK, deck.length - BANK) if deck is not None and deck.length > 2 * BANK + 0.5 else None
-            if deck is None or any(own[int(k)] != n and tree.geometries[int(k)].intersects(deck) for k in tree.query(deck)):
-                continue
-            ends = [p[i] for i in (max(0, st[0] - 1), min(len(p) - 1, st[-1] + 1))]
-            tile = [ground_at(T, q[0], q[1], split=False) for q in ends]
-            seen = surveyed_ground(np.array([q[0] for q in ends]), np.array([q[1] for q in ends]))
-            if any(g is None for g in tile) or np.isnan(seen).any():
-                continue
-            bed = surveyed_ground(np.array([p[i][0] for i in st]), np.array([p[i][1] for i in st]))
-            if np.isnan(bed).all() or np.nanmin(bed) < min(seen) - UNDUG:
-                continue      # (the survey dips under it: a real bridge, over water, a road or a cutting)
-            run = [p[i] for i in range(max(0, st[0] - 1), min(len(p), st[-1] + 2))]
-            half = r.get("w", 4) / 2 + 1.0
-            got = _grid_points(T, run, half)
-            if got is None:
-                continue
-            W, gx, gy = got
-            inn = shapely.contains_xy(LineString([q[:2] for q in run]).buffer(half, cap_style="flat"), gx, gy)
-            if not inn.any():
-                continue
-            # (the end where the two agree best raises it least)
-            want = surveyed_ground(gx[inn], gy[inn]) + min(g - v for g, v in zip(tile, seen))
-            blk = grid[W]
-            low = ~np.isnan(want) & (blk[inn] < want - UNDUG)
-            vals = blk[inn]; vals[low] = want[low]; blk[inn] = vals
-    grid[0, :], grid[-1, :], grid[:, 0], grid[:, -1] = before[0, :], before[-1, :], before[:, 0], before[:, -1]
-    T["h"] = [int(v) for v in np.round((grid - z0) * 10).ravel()]
-
-
 def lay_ground(T, rd, houses=(), rails=()):
     """Lay the tile's ground to this build's own streets and paths where they meet their bridges,
     by the old build's rules (`prep_map.py`'s flatten, its protection of the ground under a span, cut
@@ -3636,7 +3577,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # a bridge over the canal keeps the headroom its profile gives it for a boat
     canal_lines = [LineString([q[:2] for q in run["p"]]) for run in (canal or {}).get("runs", []) if len(run["p"]) > 1]
     wet_tree = STRtree([w for w in water if w.geom_type == "Polygon"]) if water else None
-    undig_base_spans(T, tile.get("rd") or [], water + rails + canal_lines)
 
     def wet(x, y):
         pt = Point(x, y)
