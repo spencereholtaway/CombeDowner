@@ -1091,3 +1091,31 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   (through both pavements) was a finding: 390 of the 415. With that, the partition has 9 against
   main's 70 (old rule: 415 and 462); the 9 are short stretches, 5 to 7 m, where a path meets a
   pavement at a slant. The change is in Spencer's `check_map.py`: show him.
+
+## Bridges and streets together, on Spencer's latest main
+
+- [ ] **The fourth bridge pass and the streets-clear-of-buildings pass are merged**, with Spencer's
+  main as of e196fd37 (Pulteney Road level over Bath Deep Lock, the Bailbrook and Spring Gardens
+  Road underpasses, roads ramping up to bridge ends). The writer takes both the bridge pass's
+  lock-pound polygons and the streets pass's lidar for measured widths. The whole map was written
+  with the bridge pass's structures (`out/c5-once2`: `out/once-tidy`'s fits) on main's new maps.
+- [ ] **Main's lock rule is ported to `structures.py`**: a road over a lock's chamber clears the
+  higher pound, one below the bottom gates only the lower. Without it Pulteney Road humped 4 m over
+  Bath Deep Lock on its old profile and stepped down 3.7 m to main's new, level ground at the
+  bridge's end. Only 31 edges' heights change. Main's other new rules (stacked roads carried as
+  bridges, underpasses splitting at a bored tunnel, ramps carried on down slip roads at each
+  class's steepest grade) are not ported: the partition's own counts there are already at or
+  below main's except "too steep" (51 against main's 39) and "span ends where its record does"
+  (126 against 99).
+- [ ] **Map check, merged against each pass's final** (same checker): kinked 14 (both 20; main 16),
+  too steep 51 (both 62), ground in the gap 2, no open gap 4, span ends 126 (bridges 126, streets
+  130), building on a carriageway 15 and on a pavement 4 (streets' counts), footpath along a
+  pavement 9. Ground not dug under a canal bridge 1 to 0. The new kink is Pulteney Road at
+  -538,1597: a 0.6 m dip just past our span's end, where main's span runs on 8 m further and its
+  ground is dug for it (as at Winsley Hill and Hensley Gardens).
+- [ ] **Scoreboard**: every line at the better of the two passes (path widths within 1 m 0.905,
+  carriageways 0.776, wall recall 0.950, plot edges 0.417).
+- [ ] **Pictures** (66 pairs against main): 23 combined better, 36 tie, 7 main better. Main is
+  better at South Stoke's plot fences, Linear Park's extra parapet and hedge ring, Winsley Hill's
+  towpath bank, the Mill Lane deck viewpoint, Bathwick Hill's fence down the bank and against the
+  abutment, and the pedestrian way under the line by Bath Spa, which stops short of the bridge.
