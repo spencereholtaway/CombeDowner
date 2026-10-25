@@ -387,7 +387,7 @@ def lidar_tall(sq):
     return tall
 
 
-def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None):
+def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -465,7 +465,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
                     marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None,
                                        (road_lines, road_tree) if not vehicle and road_lines else None,
-                                       (road_lines, road_tree) if road_lines else None)
+                                       (road_lines, road_tree) if road_lines else None, carried)
                     if marked is None:
                         continue
                     for piece, deep, lay, tow in marked:
@@ -497,7 +497,7 @@ APPROACH = 9
 ROAD_RAMP = 0.15
 
 
-def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None):
+def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None, carried=None):
     """[(points, bored indexes)] for a run of points: heights from the street's stored profile, found
     by each point's distance along the whole street so a re-fitted or clipped line still reads the
     right height and bridge mark; the ground's own height where the street has no profile. None if
@@ -515,7 +515,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
             out = []
             for st in stretches({i for i, k in enumerate(keep) if k}):
                 if len(st) >= 2:
-                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others, streets) or []
+                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others, streets, carried) or []
             return out
     if not prof:
         zs = ease_bends(seg, gs, gs, set())
@@ -539,6 +539,9 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
             tow.add(i)
         if any(i0 < near < i1 for i0, i1 in prof["bored"]):
             deep.add(i)
+    # (over the old build's cutting at a tunnel's mouth, left dug, a street well above it is carried across)
+    if carried is not None:
+        spans |= {i for i, (x, y) in enumerate(seg) if i not in decks and zs[i] - gs[i] > 1.5 and carried(x, y)}
     floors = level_footbridges(seg, zs, gs, spans, crossings) if crossings else {}
     # a path that passes under a bridge was dipped to leave headroom, below the ground the tile has
     # there: it keeps its dip instead of being held to the ground, and the ground is dug to it
@@ -1171,6 +1174,167 @@ def _surveyed_under(ground, p, st, xs, ys):
         return np.full(len(xs), np.nan)
     # (the end where the two agree least lowers it least)
     return surveyed_ground(xs, ys) + max(g - s for g, s in zip(tile, seen))
+
+
+FILL_UNDER = 1.0     # metres the base tile's ground under its old span may sit below the survey before it counts as dug
+PORTAL = 8.0         # metres round a tunnel's mouth, and out along the way into it, that the ground is left as dug
+
+
+def _lift(tile, seen):
+    """How far the tile's ground stands above the survey's at a bridge, by the end where the two agree
+    best (the other may be over water the survey has lower)."""
+    return float(np.clip(min((g - s for g, s in zip(tile, seen)), key=abs), -1.5, 1.5))
+
+
+def fill_dug_ground(T, base_rd, tunnels, roads, profiles, houses=(), rails=()):
+    """Where the old build carried a bridge further than this one does, it had dug the ground under
+    its span away below the deck, and a street this build lays at grade there would dip into the
+    hole just off its own bridge's end. Along the ways that run on where the old span did, that ground
+    goes back up to what the lidar saw (the survey has
+    bridges taken out, so under an old span it is the bank, the water or the road below, and filling
+    to it never buries what really passes under), put on the tile's own heights by the ground at the
+    old span's ends. Left as dug: under this build's own spans and decks, along any of its ways that
+    runs below the survey (a dip under a bridge, a cutting, a tunnel), round a tunnel's mouth
+    and along the way into it (filled, the mouth would be half buried), in buildings, and on the
+    outermost ring of the grid, which the next square shares. Returns the predicate for the ground
+    left dug round a tunnel's mouth under an old span, for a street to be carried over there."""
+    nx, ny, z0 = T["nx"], T["ny"], T["z0"]
+    grid = np.array(T["h"], dtype=float).reshape(ny, nx) / 10.0 + z0
+    ours, pts, level = [], [], []
+    for r in roads:
+        prof = (profiles or {}).get(r.get("id"))
+        whole = r["line"] if isinstance(r["line"], LineString) else LineString(r["line"])
+        if not prof or whole.length == 0:
+            continue
+        steps = max(1, len(prof["z"]) - 1)
+        at = [whole.interpolate(i / steps, normalized=True) for i in range(len(prof["z"]))]
+        half = RW.get(r["cls"], 4) / 2
+        on = set(prof["span"]) | set(prof["deck"])
+        # (and a point past each end, where the bridge meets its bank)
+        for st in stretches(on):
+            piece = substring(whole, max(0, st[0] - 1) / steps * whole.length, min(steps, st[-1] + 1) / steps * whole.length)
+            ours.append(piece.buffer(half + LAY_KERB + 1.0, cap_style="flat"))
+        pts.append((at, prof["z"], half, bool(r.get("path")), on))
+        if not r.get("path"):
+            level += [(at[i], prof["z"][i], half) for i in range(len(at)) if i not in on]
+    level_tree = STRtree([q for q, _, _ in level]) if level else None
+
+    def joins(q, z):
+        return level_tree is not None and any(
+            q.distance(level[int(k)][0]) < level[int(k)][2] + 2.0 and 0 < level[int(k)][1] - z < 2.5
+            for k in level_tree.query(q.buffer(8.0)))
+    # every point of this build's ways, but those where a path comes up to a street at grade it joins,
+    # whose height the ground is laid to
+    ways, segs = [], []
+    for at, zs, half, path, on in pts:
+        top = [e for e in (0, len(at) - 1) if path and joins(at[e], zs[e])]
+        free = [not any(q.distance(at[e]) < 6.0 for e in top) for q in at]
+        ways += [(q, z, half) for i, (q, z) in enumerate(zip(at, zs)) if i not in on and free[i]]
+        # (a path's: whether it passes, or comes up to join a street)
+        segs += [(LineString([at[i], at[i + 1]]), half, None if not path else free[i] and free[i + 1]) for i in range(len(at) - 1)]
+    way_tree = STRtree([q for q, _, _ in ways]) if ways else None
+    seg_tree = STRtree([g for g, _, _ in segs]) if segs else None
+    # (nor under the railway)
+    ours += [LineString([q[:2] for q in t["p"]]).buffer(RAIL_HALF) for t in rails if len(t["p"]) > 1]
+    ours = unary_union(ours) if ours else Polygon()
+    mouths = []
+    for t in tunnels or []:
+        for e in (0, -1):
+            q = t["p"][e]
+            mouths.append(Point(q[:2]).buffer(PORTAL))
+            for r in base_rd:
+                p = r["p"]
+                for f in (0, -1):
+                    if len(p) > 1 and math.dist(p[f][:2], q[:2]) < 3.0:
+                        run = p if f == 0 else p[::-1]
+                        line = LineString([c[:2] for c in run])
+                        mouths.append(substring(line, 0, min(line.length, 40.0)).buffer(r.get("w", 4) / 2 + PORTAL / 2))
+    mouths = unary_union(mouths) if mouths else Polygon()
+    filled = 0
+    kept = []
+    for r in base_rd:
+        p = r["p"]
+        marked = stretches({i for i, q in enumerate(p) if len(q) > 3 and q[3] == 1})
+        # (and where it dipped a path of its own well below the survey, for a bridge of its own)
+        if r["c"] in GAME_PATHS and len(p) > 1:
+            sv = surveyed_ground([q[0] for q in p], [q[1] for q in p])
+            marked += stretches({i for i, q in enumerate(p) if len(q) < 4 and not np.isnan(sv[i]) and q[2] < sv[i] - 2 * FILL_UNDER})
+        for st in marked:
+            a, b = max(0, st[0] - 1), min(len(p) - 1, st[-1] + 1)
+            run = p[a:b + 1]
+            if len(run) < 2:
+                continue
+            reach = r.get("w", 4) / 2 + (max(r.get("pv") or [LAY_KERB]) if r["c"] in KERBED else 0.3) + 1.0
+            got = _grid_points(T, run, reach)
+            if got is None:
+                continue
+            W, gx, gy = got
+            foot = LineString([q[:2] for q in run]).buffer(reach)
+            # (only along this build's ways that run on the way the old span did: one crossing under
+            # it was dipped there for the old bridge's headroom, and keeps that dip)
+            ux, uy = run[-1][0] - run[0][0], run[-1][1] - run[0][1]
+            ul = math.hypot(ux, uy) or 1
+            along, across = [], []
+            centre = LineString([q[:2] for q in run])
+            for g, half, passing in (segs[int(k)] for k in seg_tree.query(foot.buffer(T["dx"]))) if seg_tree is not None else ():
+                cos = abs(((g.coords[1][0] - g.coords[0][0]) * ux + (g.coords[1][1] - g.coords[0][1]) * uy) / ul / (g.length or 1))
+                if cos > 0.87:
+                    along.append(g.buffer(half + LAY_KERB + 1.0))
+                elif passing is None or (passing and g.crosses(centre)):
+                    # (nor near enough to a street not along it, or a path passing under, to move the
+                    # ground it reads between the grid's points; a path only joining it may)
+                    across.append(g.buffer(half + T["dx"]))
+            if not along:
+                continue
+            foot = foot.intersection(unary_union(along))
+            inn = shapely.contains_xy(foot.difference(ours), gx, gy)
+            if not inn.any():
+                continue
+            ends = [p[a], p[b]]
+            tile = [ground_at(T, q[0], q[1], split=False) for q in ends]
+            seen = surveyed_ground([q[0] for q in ends], [q[1] for q in ends])
+            if any(g is None for g in tile) or np.isnan(seen).any():
+                continue
+            lift = _lift(tile, seen)
+            # (a way of this build running below the survey there, under a bridge, in a cutting or a
+            # tunnel, keeps its hole)
+            near = [ways[int(k)] for k in way_tree.query(foot.buffer(8.0))] if way_tree is not None else []
+            if near:
+                sv = surveyed_ground([q.x for q, _, _ in near], [q.y for q, _, _ in near]) + lift
+                holes = [q.buffer(half + 1.0) for (q, z, half), v in zip(near, sv) if not np.isnan(v) and z < v - FILL_UNDER]
+                if holes:
+                    inn = shapely.contains_xy(foot.difference(ours).difference(unary_union(holes)), gx, gy)
+                    if not inn.any():
+                        continue
+            want = surveyed_ground(gx[inn], gy[inn]) + lift
+            blk = grid[W]
+            low = ~np.isnan(want) & (blk[inn] < want - FILL_UNDER)
+            if not low.any():
+                continue
+            at_mouth = shapely.contains_xy(mouths, gx[inn], gy[inn]) if not mouths.is_empty else np.zeros(len(want), bool)
+            if (low & at_mouth).any():
+                kept.append(foot.intersection(mouths))
+            up = low & ~at_mouth
+            if across:
+                up &= ~shapely.contains_xy(unary_union(across), gx[inn], gy[inn])
+            vals = blk[inn]
+            vals[up] = want[up]
+            blk[inn] = vals
+            filled += int(up.sum())
+    if filled:
+        keep = np.zeros(grid.shape, dtype=bool)
+        keep[0, :] = keep[-1, :] = keep[:, 0] = keep[:, -1] = True
+        for g in houses:
+            got = _grid_points(T, list(g.exterior.coords), 0.0)
+            if got is not None:
+                W, gx, gy = got
+                blk = keep[W]; blk |= shapely.contains_xy(g, gx, gy)
+        old = np.array(T["h"], dtype=float).reshape(ny, nx) / 10.0 + z0
+        grid[keep] = old[keep]
+        T["h"] = [int(v) for v in np.round((grid - z0) * 10).ravel()]
+    kept = unary_union(kept) if kept else Polygon()
+    shapely.prepare(kept)
+    return lambda x, y: shapely.contains_xy(kept, x, y)
 
 
 def _grid_points(T, ring, reach):
@@ -3770,10 +3934,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     def wet(x, y):
         pt = Point(x, y)
         return wet_tree is not None and any(wet_tree.geometries[int(k)].contains(pt) for k in wet_tree.query(pt))
-    rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir),
+    profiles = once.read_structures(once_dir)
+    as_based = dict(T, h=list(T["h"]))
+    carried = fill_dug_ground(T, tile.get("rd") or [], tile.get("tn") or [], roads, profiles, houses, rail_tracks)
+    rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, profiles,
                               (water, rails + canal_lines,
                                [(Polygon(w["r"][0]), w["z"]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]),
-                              lidar_tall(sq))
+                              lidar_tall(sq), carried)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
@@ -3798,7 +3965,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # (a span run on to the end of its record, there, carries on into the next)
     whole_spans(rd, sq, road_ground, wet, cut=True)
     bridge_kinds(rd, osm_bridges(sq), water, rails, canal_lines, road_ground)
-    follow_laid_ground(tile, laid)
+    # (what the base tile stood on the ground it had dug follows the filling too)
+    follow_laid_ground(tile, lambda x, y, split=True: (
+        0.0 if (g0 := ground_at(as_based, x, y, split)) is None or (g1 := ground_at(T, x, y, split)) is None else g1 - g0))
     # which boundaries stand is settled once the streets are known: a pedestrian street's edge is open
     settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
                      tile.get("sh") or [], row_at, streets, pedestrian_ground(rd))
