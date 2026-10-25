@@ -1156,3 +1156,22 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   the worst are Bailbrook Lane, which the partition's graph joins to the A46 down in the
   Bailbrook underpass, so it comes down to it instead of passing over.
 - [ ] **Scoreboard**: no line moved.
+- [ ] **Follow-up (`out/r7-p`).** A path's span now runs on over ground the laying dug away
+  (`settle_on_laid_ground`, as streets' already did; never onto the towpath): the footbridge at
+  698,1910 ends on its bank. And smoothing no longer ties a road to a street's tunnel where both run
+  on through the point the data gives them (`smooth_network`): Bailbrook Lane crosses the A46's
+  underpass on a bridge instead of coming down 6 m to it; a street's other carriageway in a tunnel
+  of its own is not "over" the underpass. Only street tunnels: with the Two Tunnels Greenway's too,
+  Tucking Mill Lane and the lane over the Combe Down tunnel's north end were made bridges the
+  writer then dropped, left standing off the ground. Changing `joined()` the same way dipped a
+  footway beside Argyle Street under its own bridge, so the junction test is as it was.
+  Map check against r7-l: kinked 10 to 7, too steep 45 to 41, deck end off the road 1 to 0, the rest
+  the same or lower. Scoreboard: no line moved.
+- [ ] **Too steep, 41 against main's 39.** 19 are trunk roads. The data (OSM and Overture both) has
+  them as trunk; `prep_map.py` turns every trunk into primary (`CLASS`, from when the game drew no
+  trunk), so main checks them at primary's 1 in 6.7 and the partition at trunk's 1 in 8. The
+  partition's class is the true one and the game draws trunk, so it is left: decide with Spencer
+  whether the check, or main, should change. Midford Road: 13 of our 14 are main's same 13 on its
+  hill; the 14th (112,-1927) is where its bridge crosses into the next square: the writer drops the
+  stub of span left in this square, with nothing under it here, and the first point drops 1.4 m
+  to the dug ground. Keeping the stub swapped it for two "no open gap" places, so it is left.
