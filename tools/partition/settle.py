@@ -68,6 +68,8 @@ LISTED_HOUSE = 15.0     # metres from such an entry to the building whose front 
 LISTED_RUN = 8.0        # metres from the entry that its railings or wall stand along the edge, unmeasured
 LISTED_WALL = "stone_wall"
 MAPPED_GROUP = {"wall": "wall", "retaining_wall": "wall", "hedge": "hedge", "fence": "fence"}
+MAPPED_RANK = ["wall", "hedge", "fence"]
+MAPPED_TIE = 0.3        # metres: mapped barriers this much further than the nearest are as near
 WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall"}
 GUESSED = {"front", "parcel", "inferred"}
 
@@ -116,15 +118,19 @@ class Evidence:
             near = []
             if self.mapped_tree is not None:
                 near = [self.mapped[int(k)] for k in np.atleast_1d(self.mapped_tree.query(p.buffer(tol)))]
-                near = [MAPPED_GROUP.get(c, "wall") for l, c in near if l.distance(p) <= tol]
-            out.append(max(set(near), key=near.count) if near else None)
+                near = sorted((l.distance(p), MAPPED_GROUP.get(c, "wall")) for l, c in near if l.distance(p) <= tol)
+            # The nearest, and of those about as near, a wall before a hedge before a fence: a fence
+            # mapped along a wall usually stands on it. Picking from a set took whichever the run's
+            # string hashing put first, so the same boundary changed kind from run to run.
+            close = [k for d, k in near if d <= near[0][0] + MAPPED_TIE] if near else []
+            out.append(min(close, key=MAPPED_RANK.index) if close else None)
         return out
 
     def mapped_hedge_or_fence(self, pts, tol=EVIDENCE_NEAR):
         """'hedge' or 'fence' where most of `pts` that have a mapped barrier along them have that
         one, else None."""
         seen = [k for k in self.mapped_at(pts, tol) if k]
-        best = max(set(seen), key=seen.count) if seen else None
+        best = max(sorted(set(seen)), key=seen.count) if seen else None
         return best if best != "wall" and seen.count(best) * 2 > len(seen) else None
 
 
@@ -223,7 +229,7 @@ def take_mapped(e, along, L, n):
     seen = [k for k in along if k]
     if not seen:
         return
-    best = max(set(seen), key=seen.count)
+    best = max(sorted(set(seen)), key=seen.count)
     if seen.count(best) * 2 > len(along):
         e["kind"] = as_mapped(e["kind"], best)
         return
