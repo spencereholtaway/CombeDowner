@@ -832,16 +832,20 @@ def _pieces_of(r, turned=False):
     return [(x, y, _turned(a)) for (x, y), (_, _, a) in zip(starts[::-1], parts[::-1])]
 
 
-def _join_spans(rd, key):
-    ends, meeting = collections.defaultdict(list), collections.Counter()
+def _join_spans(rd, key, under=2.5):
+    ends, meeting = collections.defaultdict(list), collections.defaultdict(list)
     for i, r in enumerate(rd):
         if len(r["p"]) >= 2:
             for e in (0, -1):
-                meeting[key(r["p"][e])] += 1
+                meeting[key(r["p"][e])].append(r["p"][e][2])
                 ends[(r["c"], r.get("n", ""), key(r["p"][e]))].append((i, e))
     link = {}
     for (_, _, at), rs in ends.items():
-        if len(rs) == 2 and rs[0][0] != rs[1][0] and meeting[at] == 2 and any(_flag(rd[i]["p"][e]) for i, e in rs):
+        if len(rs) != 2 or rs[0][0] == rs[1][0] or not any(_flag(rd[i]["p"][e]) for i, e in rs):
+            continue
+        # (a way the data ends at the same point well below the deck passes under it, not into it)
+        deck = max(rd[i]["p"][e][2] for i, e in rs)
+        if sum(1 for z in meeting[at] if deck - z < under) == 2:
             link[rs[0]], link[rs[1]] = rs[1], rs[0]
     if not link:
         return 0
