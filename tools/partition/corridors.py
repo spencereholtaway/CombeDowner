@@ -96,9 +96,13 @@ def side_reach(line, obstacles_tree, obstacles, step=STEP):
     return ts, L, R
 
 
-def fit_cross_section(edge, ts, L, R, hold_out=False):
+def fit_cross_section(edge, ts, L, R, hold_out=False, hard=None):
     """One cross-section per stretch: carriageway width w and pavements (pl, pr), fitted into the
-    corridor (L, R: what stands either side). Tags are observations; hold_out ignores width tags."""
+    corridor (L, R: what stands either side). Tags are observations; hold_out ignores width tags.
+
+    `hard` is the corridor to buildings and mapped barriers alone (Lh, Rh). Where it is given, a
+    street with a width tag is fitted to it instead: a lidar wall run inside a measured street is a
+    hedge leaning out, a row of parked vans or a run a little out of place."""
     cls = edge["cls"]
     ideal, minimum = PRIOR.get(cls, (5.0, 3.5))
 
@@ -108,9 +112,9 @@ def fit_cross_section(edge, ts, L, R, hold_out=False):
                 return tags[key]
         return None
 
-    want_w, want_pl, want_pr = [], [], []
+    want_w, want_pl, want_pr, tagged = [], [], [], []
     for t in ts:
-        w = ideal
+        w, measured = ideal, False
         lanes = obs_at(t, "lanes"); width = None if hold_out else obs_at(t, "width")
         # parsed apart: a lanes tag like "2;1" must not hide a good width beside it
         if lanes:
@@ -120,7 +124,7 @@ def fit_cross_section(edge, ts, L, R, hold_out=False):
                 pass
         if width:
             try:
-                w = float(width)
+                w, measured = float(width), True
             except ValueError:
                 pass
         pl = pr = PAVE[0]
@@ -138,13 +142,17 @@ def fit_cross_section(edge, ts, L, R, hold_out=False):
             pr = 0
         if cls in ("service", "track"):
             pl = pr = 0
-        want_w.append(w); want_pl.append(pl); want_pr.append(pr)
+        want_w.append(w); want_pl.append(pl); want_pr.append(pr); tagged.append(measured)
     fit = []
     for i, t in enumerate(ts):
         w, pl, pr = want_w[i], want_pl[i], want_pr[i]
         l, r = L[i], R[i]
         hl = l - 0.4 if l is not None else None      # keep 0.4 m clear of what stands there
         hr = r - 0.4 if r is not None else None
+        if hard is not None and tagged[i]:
+            gl, gr = hard[0][i], hard[1][i]
+            hl = gl - 0.4 if gl is not None else None
+            hr = gr - 0.4 if gr is not None else None
         for _ in range(6):
             tl, tr = w / 2 + pl, w / 2 + pr
             over_l = hl is not None and tl > hl; over_r = hr is not None and tr > hr

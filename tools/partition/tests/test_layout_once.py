@@ -47,6 +47,22 @@ class LanesAndWidthTest(unittest.TestCase):
         self.assertNotAlmostEqual(self.fit({"lanes": "2", "width": "wide"}), 9.0)
 
 
+class MeasuredWidthTest(unittest.TestCase):
+    def fit(self, soft, hard):
+        e = dict(cls="residential", obs=[(0, 100, {"width": "7.1"})])
+        ts = np.linspace(0, 100, 11)
+        n = len(ts)
+        stretches, _ = fit_cross_section(e, ts, [soft] * n, [soft] * n, hard=([hard] * n, [hard] * n))
+        return stretches[0][2]
+
+    def test_a_lidar_run_inside_a_tagged_street_is_passed_over(self):
+        self.assertEqual(self.fit(soft=3.0, hard=None), [7.1, 2.0, 2.0])
+
+    def test_buildings_still_narrow_a_tagged_carriageway(self):
+        w, _, _ = self.fit(soft=3.0, hard=3.0)
+        self.assertLess(w, 7.1)
+
+
 class RerunTest(unittest.TestCase):
     def test_a_rerun_clears_what_it_owns_and_nothing_else(self):
         with tempfile.TemporaryDirectory() as d:

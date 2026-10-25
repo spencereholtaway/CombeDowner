@@ -427,7 +427,21 @@ def obstacles_for(D, win):
     return bpolys, evidence, obstacles, STRtree(obstacles)
 
 
-def fit_edge(e, otree, obstacles, ts=None, L=None, R=None):
+def hard_obstacles(D, win, bpolys):
+    """The buildings and mapped barriers alone, which a measured carriageway gives way to where the
+    lidar's wall runs don't make it (`fit_cross_section`'s `hard`)."""
+    barriers = [g for g, p in D.lines_near(win, "infrastructure")
+                if p.get("subtype") == "barrier"
+                and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
+    hard = barriers + bpolys
+    return hard, STRtree(hard)
+
+
+def tagged_width(e):
+    return any("width" in tags for _, _, tags in e["obs"])
+
+
+def fit_edge(e, otree, obstacles, ts=None, L=None, R=None, hard=None):
     """One street or path edge fitted on its full length: its cross-sections and the three polygons
     (carriageway, left pavement, right pavement). A pure function of the edge and what stands beside
     it, so the same edge fitted from any window that contains it gives the same result.
@@ -446,7 +460,7 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None):
                     car=_poly_json(car), pl=None, pr=None)
     if ts is None:
         ts, L, R = side_reach(e["line"], otree, obstacles)
-    stretches, sec = fit_cross_section(e, ts, L, R)
+    stretches, sec = fit_cross_section(e, ts, L, R, hard=hard)
     car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
     pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
     pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
@@ -490,7 +504,8 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
     edges = read_graph(out)
     win = edge_window([edges[i]["line"] for i in ids])
     D = Data(raw, bb, log=lambda *_: None)
-    _bpolys, _evidence, obstacles, otree = obstacles_for(D, win)
+    bpolys, _evidence, obstacles, otree = obstacles_for(D, win)
+    hobs, htree = hard_obstacles(D, win, bpolys)
 
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
@@ -501,7 +516,8 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
             rows.append(fit_edge(e, otree, obstacles))
             continue                    # a path has no carriageway: no width to hold out
         ts, L, R = side_reach(e["line"], otree, obstacles)
-        rows.append(fit_edge(e, otree, obstacles, ts=ts, L=L, R=R))
+        hard = side_reach(e["line"], htree, hobs)[1:] if tagged_width(e) else None
+        rows.append(fit_edge(e, otree, obstacles, ts=ts, L=L, R=R, hard=hard))
         held += held_out_checks(e, ts, L, R)
     json.dump(rows, open(os.path.join(out_dir, "corridors.json"), "w"))
     # the width tags of the edges this square owns, with each tag hidden from its own fit: written
