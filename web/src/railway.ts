@@ -33,6 +33,7 @@
 // player sees every train in the same place without anything going over the network. You decide
 // whether a train has hit you, and tell the host, as you would a fall.
 import * as THREE from "three";
+import { Need, bridgePlan } from "./railbridge";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { model, Part } from "./furniture";
 import type { Mover } from "./map";
@@ -221,70 +222,6 @@ const KINDS: Record<string, Kind> = {
 };
 
 /** Flat-shaded geometry with its colours and facings packed into bytes, let go of in memory once it's on the graphics card. */
-const ARCH = 12;                     // metres between a bridge's piers, where they can stand
-const PIER = 0.8;                    // half a pier's length along the line
-
-/** How a track's bridges are built: the distance along it of each point (`s`), the piers, and for
- *  any distance on a bridge the height its sides come down to (an arch's soffit, a girder's or a
- *  low deck's underside, or the ground at a pier or an abutment), whether a steel girder carries it
- *  there, and the ground under it. The piers stand about ARCH apart, as near that as they can
- *  where nothing passes under; between two of them is an arch where the line stands high enough
- *  over the ground for one that long, else a girder. Worked out from the data alone, so every
- *  player builds the same. */
-function bridgePlan(p: number[][], open: (x: number, y: number) => boolean) {
-  const s = [0];
-  for (let k = 1; k < p.length; k++) s.push(s[k - 1] + Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1]));
-  const idx = (sp: number) => { let k = 0; while (k < p.length - 2 && s[k + 1] < sp) k++; return k; };
-  const lerp = (sp: number, f: (q: number[]) => number) => { const k = idx(sp), t = Math.min(1, Math.max(0, (sp - s[k]) / ((s[k + 1] - s[k]) || 1))); return f(p[k]) + (f(p[k + 1]) - f(p[k])) * t; };
-  const ground = (sp: number) => lerp(sp, (q) => q[4] ?? q[2]), top = (sp: number) => lerp(sp, (q) => q[2]);
-  const xy = (sp: number) => [lerp(sp, (q) => q[0]), lerp(sp, (q) => q[1])];
-  const free = (sp: number) => { const [x, y] = xy(sp); return !open(x, y); };
-  const piers: number[] = [], spans: { a: number; b: number; spring: number; rise: number; girder: boolean }[] = [];
-  for (let k = 0; k < p.length; ) {
-    if (p[k][3] !== 1) { k++; continue; }
-    let e = k;
-    while (e + 1 < p.length && p[e + 1][3] === 1) e++;
-    const sa = s[k], sb = s[e], L = sb - sa, sup = [sa];
-    if (L > 2 * PIER) {
-      const n = Math.ceil(L / ARCH);
-      for (let j = 1; j < n; j++) {
-        const want = sa + (L * j) / n;
-        let got: number | null = null;
-        for (let d = 0; d <= ARCH / 3 && got === null; d += 1)
-          for (const c of [want - d, want + d]) if (got === null && c > sa + 3 && c < sb - 3 && top(c) - 1.2 - ground(c) > 1.5 && free(c)) got = c;
-        if (got !== null) sup.push(got);
-      }
-    }
-    sup.push(sb);
-    piers.push(...sup.slice(1, -1));
-    for (let j = 0; j + 1 < sup.length; j++) {
-      const a = sup[j] + PIER, b = sup[j + 1] - PIER, len = b - a;
-      if (len < 2) continue;
-      let low = Infinity, under = Infinity, wet = false;
-      for (let sp = a; sp <= b + 1e-6; sp += 1) { low = Math.min(low, ground(sp)); under = Math.min(under, top(sp) - 1.2); wet ||= !free(sp); }
-      const room = under - low - 0.5, rise = Math.min(len * 0.45, room);
-      // (an arch flatter than a fifth of its length would not stand: over a way under, that's a girder)
-      const girder = wet && rise < len / 5;
-      spans.push({ a, b, spring: under - Math.max(0, rise), rise: Math.max(0, rise), girder });
-    }
-    k = e + 1;
-  }
-  const spanAt = (sp: number) => spans.find((q) => sp >= q.a && sp <= q.b);
-  return {
-    s, piers, ground,
-    span: (sp: number) => spanAt(sp) !== undefined,
-    girder: (sp: number) => spanAt(sp)?.girder ?? false,
-    /** The height the bridge's sides come down to at sp. */
-    bottom(sp: number) {
-      const q = spanAt(sp);
-      if (!q) return ground(sp) - 0.3;
-      if (q.girder || q.rise < 1) return top(sp) - (q.girder ? 1.6 : 1.2);
-      const m = (q.a + q.b) / 2, h = (q.b - q.a) / 2;
-      return q.spring + q.rise * Math.sqrt(Math.max(0, 1 - ((sp - m) / h) ** 2));
-    },
-  };
-}
-
 export function compact(pos: number[], col: number[]): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -314,8 +251,8 @@ export class Railway {
   readonly near: Car[] = [];
   private hitAt = -1e9;
 
-  /** `open`: whether a road, a path or water passes under the line at data (x, y), where no pier may stand. */
-  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, private open: (x: number, y: number) => boolean = () => false) {
+  /** `need`: the headroom wanted under the line at data (x, y) by what passes under it, and where no pier may stand. */
+  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, private need: Need = () => 0) {
     this.geos = trainModels();
     this.doorGeos = this.geos.map((g, i) => doorModels(i, g));
     this.build();
@@ -558,9 +495,13 @@ export class Railway {
       this.far.push({ o: m, x: s.center.x, z: s.center.z, r: s.radius + 650 });
     };
     const C = (hex: string) => { const k = new THREE.Color(hex); return [k.r, k.g, k.b]; };
-    const BALLAST = C("#7b746a"), SLEEPER = C("#4a3d31"), RAIL = C("#6f6a62"), RAILTOP = C("#c4c1ba"), BRICK = C("#8a5a44"), STONE = C("#c3ae84"), DARK = C("#2a2622"), GIRDER = C("#4b5559");
+    const BALLAST = C("#7b746a"), SLEEPER = C("#4a3d31"), RAIL = C("#6f6a62"), RAILTOP = C("#c4c1ba"), BRICK = C("#8a5a44"), STONE = C("#c3ae84"), DARK = C("#2a2622"), GIRDER = C("#6f7b7c");
+    const STONE_IN = C("#b19c74"), BAND = C("#d3c19a"), CAP = C("#dccfae"), VOUSSOIR = C("#cdb88e"), VOUSSOIR2 = C("#b8a27a"), SOFFIT = C("#9c8a68"), GIRDER2 = C("#859092"), UNDER = C("#5a6264");
+    const lerp3 = (a: number[], b: number[], f: number) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+    const twin = { piers: [] as number[][], ends: [] as number[][], girders: [] as number[][] };
     this.d.tracks.forEach((t, ti) => {
-      const p = t.p, plan = bridgePlan(p, this.open);
+      const p = t.p, plan = bridgePlan(p, this.need, twin), m = plan.marks();
+      twin.piers.push(...m.piers); twin.ends.push(...m.ends); twin.girders.push(...m.girders);
       for (let k0 = 0; k0 < p.length - 1; k0 += CHUNK) {
         const pos: number[] = [], col: number[] = [];
         const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => { pos.push(...a, ...b, ...c, ...a, ...c, ...d); for (let q = 0; q < 6; q++) col.push(...cc); };
@@ -581,31 +522,47 @@ export class Railway {
             quad(P(a, s - 0.04, 0.47), P(b, s - 0.04, 0.47), P(b, s + 0.04, 0.47), P(a, s + 0.04, 0.47), RAILTOP);
             quad(P(a, s + 0.04, 0.32), P(b, s + 0.04, 0.32), P(b, s + 0.04, 0.47), P(a, s + 0.04, 0.47), RAIL);
           }
-          // a bridge: brick sides down to its arches (or a steel girder's plate over what passes
-          // under where no arch would fit), and its piers, none in a road, a path or the water
+          // a bridge: Bath-stone sides and parapets down to its arches, with a ring of voussoirs
+          // round each, or a steel plate girder over what no arch would clear
           if (a[3] === 1 && b[3] === 1) {
-            const n = Math.max(1, Math.ceil(l / 1.5));
+            const n = Math.max(1, Math.ceil(l / 0.75));
             for (let u = 0; u < n; u++) {
               const f0 = u / n, f1 = (u + 1) / n, s0 = plan.s[k] + l * f0, s1 = plan.s[k] + l * f1;
               const A = [a[0] + dx * f0, a[1] + dy * f0, a[2] + (b[2] - a[2]) * f0], B = [a[0] + dx * f1, a[1] + dy * f1, a[2] + (b[2] - a[2]) * f1];
               const lowA = plan.bottom(s0) - A[2], lowB = plan.bottom(s1) - B[2];
               if (lowA > -1.5 && lowB > -1.5 && !plan.span(s0)) continue;     // (low enough to be an embankment's top)
-              const steel = plan.girder(s0) && plan.girder(s1), side = steel ? GIRDER : BRICK;
-              for (const w of [2.4, -2.4]) {
-                quad(P(A, w, 0.9), P(B, w, 0.9), P(B, w, lowB), P(A, w, lowA), side);
-                quad(P(A, w, 0.9), P(B, w, 0.9), P(B, w * 1.12, 0.9), P(A, w * 1.12, 0.9), steel ? GIRDER : STONE);
+              const kind = plan.kind((s0 + s1) / 2), steel = kind === "girder";
+              for (const w of [1, -1]) {
+                if (steel) {
+                  quad(P(A, 2.4 * w, 1.1), P(B, 2.4 * w, 1.1), P(B, 2.4 * w, lowB), P(A, 2.4 * w, lowA), GIRDER);
+                  quad(P(A, 2.2 * w, 1.1), P(B, 2.2 * w, 1.1), P(B, 2.55 * w, 1.1), P(A, 2.55 * w, 1.1), GIRDER2);
+                  if (u % 2 === 0) {
+                    const g0 = 0.5 - 0.06 / (l / n), g1 = 0.5 + 0.06 / (l / n), M0 = lerp3(A, B, g0), M1 = lerp3(A, B, g1), m = lowA + (lowB - lowA) * 0.5;
+                    quad(P(M0, 2.47 * w, 1.1), P(M1, 2.47 * w, 1.1), P(M1, 2.47 * w, m), P(M0, 2.47 * w, m), GIRDER2);
+                  }
+                } else {
+                  quad(P(A, 2.4 * w, 1.0), P(B, 2.4 * w, 1.0), P(B, 2.4 * w, lowB), P(A, 2.4 * w, lowA), STONE);
+                  quad(P(A, 2.46 * w, 0.05), P(B, 2.46 * w, 0.05), P(B, 2.46 * w, -0.15), P(A, 2.46 * w, -0.15), BAND);
+                  quad(P(A, 2.5 * w, 1.15), P(B, 2.5 * w, 1.15), P(B, 2.5 * w, 1.0), P(A, 2.5 * w, 1.0), CAP);
+                  quad(P(A, 2.1 * w, 1.15), P(B, 2.1 * w, 1.15), P(B, 2.5 * w, 1.15), P(A, 2.5 * w, 1.15), CAP);
+                  quad(P(A, 2.1 * w, 0.25), P(B, 2.1 * w, 0.25), P(B, 2.1 * w, 1.15), P(A, 2.1 * w, 1.15), STONE_IN);
+                  if (kind === "arch") {
+                    // the ring stands a constant depth off the soffit, so it grows taller where the arch is steep
+                    const slope = (lowB - lowA) / (l / n), ring = Math.min(2.5, 0.65 * Math.hypot(1, slope));
+                    quad(P(A, 2.43 * w, lowA + ring), P(B, 2.43 * w, lowB + ring), P(B, 2.43 * w, lowB), P(A, 2.43 * w, lowA), u % 2 ? VOUSSOIR : VOUSSOIR2);
+                  }
+                }
               }
-              quad(P(A, -2.4, lowA), P(B, -2.4, lowB), P(B, 2.4, lowB), P(A, 2.4, lowA), steel ? DARK : BRICK);
+              quad(P(A, -2.4, lowA), P(B, -2.4, lowB), P(B, 2.4, lowB), P(A, 2.4, lowA), steel ? UNDER : SOFFIT);
             }
-            for (const sp of plan.piers) {
-              if (sp < plan.s[k] || sp >= plan.s[k + 1]) continue;
-              const f = (sp - plan.s[k]) / l, top = a[2] + (b[2] - a[2]) * f - z0 - 1.2, g = plan.ground(sp) - z0 - 1;
-              if (top - g < 0.5) continue;
-              const cx = a[0] + dx * f, cy = a[1] + dy * f;
-              const c = [[-0.8, -2.3], [0.8, -2.3], [0.8, 2.3], [-0.8, 2.3]].map(([u, w]) => [cx + (dx / l) * u + nx * w, -(cy + (dy / l) * u + ny * w)]);
-              for (let q = 0; q < 4; q++) {
-                const C = c[q], D = c[(q + 1) % 4];
-                quad([C[0], g, C[1]], [D[0], g, D[1]], [D[0], top, D[1]], [C[0], top, C[1]], BRICK);
+            // the faces of the piers and abutments under each span's two ends
+            for (const q of plan.spans) {
+              if (q.kind === "wall") continue;
+              for (const sp of [q.a, q.b]) {
+                if (sp < plan.s[k] || sp >= plan.s[k + 1]) continue;
+                const f = (sp - plan.s[k]) / l, M = lerp3(a, b, f), lo = plan.ground(sp) - M[2] - 1, hi = plan.bottom(sp) - M[2];
+                if (hi - lo < 0.3) continue;
+                quad(P(M, -2.4, lo), P(M, 2.4, lo), P(M, 2.4, hi), P(M, -2.4, hi), STONE);
               }
             }
             for (let q = k; q <= k + 1; q++) {
