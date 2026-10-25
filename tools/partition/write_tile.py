@@ -290,7 +290,7 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
         pave.append((min(pv[0], min(m[2] for m in near)) if pv[0] > 0 else 0.0,
                      min(pv[1], min(m[3] for m in near)) if pv[1] > 0 else 0.0))
     if houses is not None and not houses.is_empty:
-        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses, tall)
+        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses, tall, tall is not None)
     moved = [(xy[k][0] + nrm[k][0] * shift[k], xy[k][1] + nrm[k][1] * shift[k]) for k in range(n)]
     runs, i = [], 0
     while i < n - 1:
@@ -323,11 +323,12 @@ LIDAR_TALL = 1.5                # metres above the ground: lower than this, noth
 NARROW_LANE = 1.8               # metres: a car's width, the least a lane squeezed between two buildings is drawn
 
 
-def _between_houses(xy, nrm, shift, width, pave, houses, tall=None):
+def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=False):
     """(shift, width, pave) at each inner point: moved the least it must be for the carriageway to clear the
     houses each side, where there is room between them. Where there is not, the line is centred in the
     gap and the carriageway narrowed to it, down to `NARROW_LANE`, since the buildings are measured and
-    the street's width is a guess, and each pavement stops at the wall beyond it. The ends stay put.
+    the street's width is a guess, and each pavement stops at the wall beyond it. A street with a
+    measured width (`measured`) is centred but not narrowed: the tag is a measurement too. The ends stay put.
     Halfway between two points is measured too and asked of both."""
     n = len(xy)
     reach = max(width) / 2 + HOUSE_SHIFT + 0.5
@@ -355,7 +356,7 @@ def _between_houses(xy, nrm, shift, width, pave, houses, tall=None):
         s = (lo + hi) / 2 if lo > hi else min(hi, max(lo, out[k]))
         if abs(s) <= HOUSE_SHIFT:
             out[k] = s
-            if lo > hi:
+            if lo > hi and not measured:
                 wide[k] = max(NARROW_LANE, min(width[k], hi - lo + 2 * half))
         h, s = wide[k] / 2, out[k]
         left, right = min(v[2] for v in spans), min(v[3] for v in spans)
