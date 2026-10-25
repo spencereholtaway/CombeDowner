@@ -152,6 +152,11 @@ def in_ranges(run, ranges):
     return {i for i, (_, _, t) in enumerate(run) if any(a <= t <= b for a, b in ranges)}
 
 
+def tunnel_inside(idx):
+    """The points of a tunnel's stretches inside it, not at its mouths: a way can only join it there."""
+    return {i for i in idx if i - 1 in idx and i + 1 in idx}
+
+
 def level_structures(run, z, bridges, tunnels):
     """Carry bridges and tunnels straight between the road at either end (`profiles.carry_profile`;
     a tunnel's ends as the survey has them)."""
@@ -413,17 +418,38 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
         if not r["tunnel_ranges"]:
             continue
         shallow = in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
-        pts = [r["run"][i][:2] for i in sorted(shallow)]
-        if len(pts) >= 2:
-            underpasses.append((k, LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0)))
+        # (the cuttings at either end of a bored tunnel are two underpasses, not one through the hill)
+        for st in stretches(shallow):
+            pts = [r["run"][i][:2] for i in st]
+            # (a path through a building's passage, which the data also calls a tunnel, is at the
+            # street's level, with nothing over it to carry)
+            deep = max((elev(r["run"][i][0], r["run"][i][1]) - r["z"][i] for i in st), default=0)
+            if len(pts) >= 2:
+                mid = LineString(pts)
+                underpasses.append((k, mid.buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0), mid, deep))
     if underpasses:
-        under_tree = STRtree([u for _, u in underpasses])
+        under_tree = STRtree([u[1] for u in underpasses])
         for k, r in enumerate(pending):
             for j in under_tree.query(road_lines[k]):
-                if underpasses[int(j)][0] == k:
+                under_k, poly, mid, deep = underpasses[int(j)]
+                if under_k == k:
                     continue
-                poly = underpasses[int(j)][1]
-                r["span"] |= {i for i, q in enumerate(r["run"]) if poly.contains(Point(q[:2]))}
+                # (a street in a tunnel of its own beside it, the other carriageway, is not over it)
+                over = {i for i, q in enumerate(r["run"]) if poly.contains(Point(q[:2]))}
+                if r["c"] not in PATHS:
+                    over -= in_ranges(r["run"], r["tunnel_ranges"])
+                r["span"] |= over
+                # one crossing it is a bridge whatever the survey's ground there (2. keeps it), and so
+                # is one the data lays right on top of the road down in it, along it
+                if deep < 2.5:
+                    continue
+                if road_lines[k].crosses(mid):
+                    r.setdefault("overpass", set()).update(over)
+                else:
+                    half = RW.get(pending[under_k]["c"], 4) / 2 + 0.5
+                    top = {i for i in over if mid.distance(Point(r["run"][i][:2])) < half}
+                    if len(top) >= 3:
+                        r.setdefault("overpass", set()).update(top)
 
     def joined(k, j):
         """Do roads k and j meet: an end of one on the other, or a point of each at the same spot (a
@@ -498,7 +524,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
             a, b, line = span_line(r, st)
             real = any(water_polys[int(j)].intersects(line) for j in water_tree.query(line)) \
                 or any(rail_lines[int(j)].intersects(line) for j in rail_tree.query(line)) \
-                or any(z[i] - elev(run[i][0], run[i][1]) > 2.5 for i in st)
+                or any(z[i] - elev(run[i][0], run[i][1]) > 2.5 for i in st) \
+                or any(i in r.get("overpass", ()) for i in st)
             solid = real
             if not real:
                 for j in road_tree.query(line):
@@ -795,6 +822,36 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     carry_spans()
     carry_spans()
 
+    # 2g. a road the data lays right on top of another, well above it (a lane along the top of a
+    # cutting drawn over the road down in it, or a path whose bridge the data stops short of the
+    # road it crosses), is on a bridge there: the ground is the lower road's. (`prep_map.py` finds
+    # these after the dips; here they come before, so what passes under is dipped for headroom too)
+    for k, r in enumerate(pending):
+        if r["c"] in ("steps", "pedestrian"):
+            continue
+        before = set(r["span"])
+        for j in road_tree.query(road_lines[k].buffer(4.0)):
+            o = pending[int(j)]
+            if int(j) == k or o["c"] in PATHS:
+                continue
+            half, line = RW.get(o["c"], 4) / 2, road_lines[int(j)]
+            for i, q in enumerate(r["run"]):
+                if i in r["span"] or i in r["deck"] or i in r["tow"] or line.distance(Point(q[:2])) > half:
+                    continue
+                m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
+                if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
+                    r["span"].add(i)
+                    r["solid"].add(i)
+        # (and its bridge doesn't touch down for a point or two between them)
+        if r["span"] != before:
+            on = set(r["span"])
+            for i in range(1, len(r["run"]) - 1):
+                if i not in on and i not in r["deck"] and i not in r["tow"] and \
+                        any(i - n in on for n in (1, 2)) and any(i + n in on for n in (1, 2)):
+                    r["span"].add(i)
+                    r["solid"].add(i)
+    carry_spans(True)
+
     # 3. what passes under a road's bridge passes under it (but not the rest of the bridge's own
     # road, nor a road joining it on the bridge)
     dips = []
@@ -817,7 +874,12 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 if x is None:
                     continue
                 o = pending[j]
-                if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 10 for i in o["span"] | o["deck"]):
+                # (but a path coming off a bridge's deck and down under the same bridge, to the
+                # towpath under it, has the deck only behind it)
+                m_ = min(range(len(o["run"]) - 1), key=lambda m: LineString([o["run"][m][:2], o["run"][m + 1][:2]]).distance(x))
+                if any(i in o["span"] | o["deck"] for i in (m_ - 1, m_, m_ + 1, m_ + 2)):
+                    continue
+                if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 10 for i in o["span"]):
                     continue
                 t = line.project(x) / (line.length or 1) * (b - a)
                 lo = a + min(b - a - 1, int(t))
@@ -950,6 +1012,8 @@ def smooth_network(pending, chains, elev):
         order.append((RANK.get(c, 6), -L, ch))
     order.sort(key=lambda o: (o[0], o[1]))
     tun = {k: in_ranges(r["run"], r["tunnel_ranges"]) for k, r in enumerate(pending) if r["tunnel_ranges"]}
+    inside = {k: tunnel_inside(t) for k, t in tun.items() if pending[k]["c"] not in PATHS}
+    below = {}
     for _, _, ch in order:
         pts = [pending[k]["run"][i] for k, i in ch]
         z = np.array([pending[k]["z"][i] for k, i in ch], dtype=float)
@@ -958,7 +1022,11 @@ def smooth_network(pending, chains, elev):
         for m, q in enumerate(pts):
             h = done.get(key(q))
             # a road laid already, meeting this one there: unless it's well above or below (a
-            # bridge's deck and a road passing under it at a point the data happens to give both)
+            # bridge's deck and a road passing under it at a point the data happens to give both),
+            # or both run on through it with one inside a tunnel there (the other passes over)
+            if h is not None and 0 < m < n - 1 and below[key(q)] is not None and \
+                    below[key(q)] != (ch[m][1] in inside.get(ch[m][0], ())):
+                continue
             if h is not None and abs(h - z[m]) < 2.5:
                 z[m] = h
                 fixed[m] = True
@@ -989,6 +1057,7 @@ def smooth_network(pending, chains, elev):
         for m, (k, i) in enumerate(ch):
             pending[k]["z"][i] = float(z[m])
             done[key(pts[m])] = float(z[m])
+            below[key(pts[m])] = (i in inside.get(k, ())) if 0 < m < n - 1 else None
 
 
 def limit_grades(pending, chains, dips):
