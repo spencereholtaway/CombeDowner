@@ -1552,6 +1552,20 @@ def deck_gaps(rd, ground, depth=0.9):
     return out
 
 
+SKIRT = 0.8       # metres outside a deck's parapets where a wall would be the bridge's own side
+
+
+def deck_skirts(gaps):
+    """A strip along each side of each span, just outside its parapets, from one end to the other:
+    the lidar sees the bridge's own side there as a wall, which would stand at the foot of the bank
+    a second time under the parapet. Walls running on from the parapets past the ends are not in it."""
+    out = []
+    for outline, line, cum, under in gaps:
+        half = max(0.5, outline.area / max(0.1, line.length - 2 * BANK) / 2)
+        out.append(line.buffer(half + SKIRT, cap_style="flat").difference(line.buffer(half - 0.05, cap_style="flat")))
+    return out
+
+
 def deck_ends_reach(gaps, past=1.0):
     """The ground a bridge's abutments stand on, at each end of each gap and a metre past it: no
     boundary is drawn there, or a fence panel stands against the abutment's face."""
@@ -2483,7 +2497,7 @@ def _outside_blocked(line, blocked, floor):
 
 
 def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None, blocked=None,
-                    measured=None, houses=(), paths=()):
+                    measured=None, houses=(), paths=(), guess_blocked=None):
     """`br` and `gt` together, from one interval list per edge.
 
     The game builds a wall from the `br` points as one continuous run and never subtracts `gt` from it
@@ -2518,6 +2532,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             continue
         style = BARRIER[e["kind"]]
         height = HEIGHT.get(style, 1.2)
+        seen = e.get("source") == "evidence" or e.get("support", 0) >= SUPPORT
         rank = (e.get("source") == "evidence" or (e.get("source") == "front" and e.get("support", 0) >= SUPPORT),
                 e.get("source") == "front",
                 round(LineString(e["xy"]).length, 1), eid)
@@ -2578,9 +2593,10 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
                               for ca, cb, o in cuts)
             kept, gone = _outside_roads(sub, road_area, 0.1 if beside_gate else MIN_PIECE)
             in_road += gone
-            if blocked is not None:
-                kept = [q for piece in kept for q in _outside_blocked(
-                    piece, blocked, MIN_CUT_PIECE if not beside_gate else 0.1)]
+            for keep_off in (blocked, None if seen else guess_blocked):
+                if keep_off is not None:
+                    kept = [q for piece in kept for q in _outside_blocked(
+                        piece, keep_off, MIN_CUT_PIECE if not beside_gate else 0.1)]
             pieces = []
             for piece in kept:
                 inside = piece.intersection(square)
@@ -3671,10 +3687,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
     # no wall, fence or hedge stands in the gap under a bridge
     gaps = deck_gaps(rd, road_ground)
-    wall_blocked = blocked
+    # a wall the lidar sees running on from a parapet stands; a guessed one stays off the abutment
+    wall_blocked, abutments = blocked, None
     if gaps:
-        wall_blocked = unary_union([g[0] for g in gaps] + deck_ends_reach(gaps) + ([blocked] if blocked is not None else []))
+        wall_blocked = unary_union([g[0] for g in gaps] + deck_skirts(gaps) + ([blocked] if blocked is not None else []))
+        abutments = unary_union(deck_ends_reach(gaps))
         shapely.prepare(wall_blocked)
+        shapely.prepare(abutments)
     door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq)
     gone = {id(o) for o in wrong_side}
     part = dict(part, openings=[o for o in part["openings"] if id(o) not in gone] + door_gates)
@@ -3694,7 +3713,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                          corridor_faces=corridor_area, road_surface=road_area,
                                          blocked=wall_blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses,
                                          paths=[(LineString([q[:2] for q in r["p"]]), r.get("w", 1.8) / 2) for r in rd
-                                                if r["c"] in GAME_PATHS and len(r["p"]) > 1])
+                                                if r["c"] in GAME_PATHS and len(r["p"]) > 1],
+                                         guess_blocked=abutments)
 
     fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br, gt)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
