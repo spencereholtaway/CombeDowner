@@ -1529,8 +1529,10 @@ def settle_on_laid_ground(rd, change, ground, reach=3):
     it, goes up and down with the ground (not the towpath, which keeps the canal's level); and where the ground was dug away from under a street (a
     path dug under it just past the end of its span), the span runs on, by at most `reach` points,
     to where its deck meets the ground as it now is, as `prep_map.py` runs its spans on after its flatten."""
+    towpath = {}
     for r in rd:
         p, lay, tow = r["p"], r.pop("_lay", None) or set(), r.pop("_tow", None) or set()
+        towpath[id(r)] = tow
         if r["c"] not in GAME_PATHS or r["c"] == "pedestrian":
             r["_lay"] = lay
         else:
@@ -1545,14 +1547,15 @@ def settle_on_laid_ground(rd, change, ground, reach=3):
         return len(q) < 4 and g is not None and q[2] - g > by and change(q[0], q[1], False) < -0.1
     streets = [r for r in rd if r["c"] not in GAME_PATHS or r["c"] == "pedestrian"]
     grown = 0
-    for r in streets:
+    # (a path's approach too: its deck's end would otherwise stand in the air over the dug ground)
+    for r in rd:
         p = r["p"]
         span = {i for i, q in enumerate(p) if len(q) > 3 and q[3] == 1}
         for st in stretches(span):
             for e, step in ((st[0], -1), (st[-1], 1)):
                 for k in range(1, reach + 1):
                     i = e + step * k
-                    if not 0 <= i < len(p) or not low(p[i]):
+                    if not 0 <= i < len(p) or not low(p[i]) or tuple(p[i][:2]) in towpath[id(r)]:
                         break
                     span.add(i)
         for i in span:
