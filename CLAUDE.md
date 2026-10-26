@@ -88,11 +88,11 @@ work on it. Useful URL options:
   lifts the backdrop that many metres off the ground, for views from the air). Shift+F3 copies a
   link to where you're standing.
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
-- `?zones=1|0`, `?strange=1|0` and `?challenges=1|0` switch the zones, the strange objects and
-  structures, and the team challenges on or off for one visit (`web/src/features.ts`). By default
-  they're on at danturn.github.io and on a local copy, and off on Spencer's live site. The zones need
-  the strange objects. In a room, the host's switches count for everyone; new code for any of the
-  three should check `feature()` rather than assume it's on.
+- `?progression=1|0` switches the zones, the strange objects and structures, and the team challenges
+  on or off together for one visit (`web/src/features.ts`). By default they're on at
+  danturn.github.io and on a local copy, and off on Spencer's live site. In a room, the host's say
+  counts for everyone; new code for any of the three should check `feature()` rather than assume
+  it's on.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
 

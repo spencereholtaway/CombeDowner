@@ -5,9 +5,8 @@
 //
 // Which copy of the game this is goes by the page's address, the same way the play counts tell
 // them apart (telemetry.ts): on for danturn.github.io and for a copy run on this computer, off
-// anywhere else, Spencer's site included. ?zones=1|0, ?strange=1|0 and ?challenges=1|0 override
-// that for one visit. The zones open only as the structures fill, so the zones are on only with the
-// strange objects.
+// anywhere else, Spencer's site included. ?progression=1|0 switches all three on or off for one
+// visit: they hang together, as the challenges bring the objects and the objects open the zones.
 //
 // Who decides what: the host. Each page reads its own switches once, at the start; the host sends
 // its own with its state ("st", game.ts), and everyone else in the room plays by those, so a player
@@ -28,11 +27,9 @@ function local(): boolean {
 
 function read(): Features {
   const on = location.hostname === "danturn.github.io" || local();
-  const q = new URLSearchParams(location.search);
-  const pick = (k: Feature) => { const v = q.get(k); return v === "1" ? true : v === "0" ? false : on; };
-  const f = { zones: pick("zones"), strange: pick("strange"), challenges: pick("challenges") };
-  f.zones &&= f.strange;
-  return f;
+  const v = new URLSearchParams(location.search).get("progression");
+  const all = v === "1" ? true : v === "0" ? false : on;
+  return { zones: all, strange: all, challenges: all };
 }
 
 /** This page's own switches. */

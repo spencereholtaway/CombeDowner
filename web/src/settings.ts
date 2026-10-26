@@ -36,7 +36,7 @@ const SENS = 1, MUSIC = 0.6, SFX_VOL = 1, BACKGROUND = 1, VOICE = 1;
 /** Your passive mode setting: if you're host, nothing the game runs attacks anyone (game.ts). Other players still can. */
 export let passive = load("cd-passive", 0) === 1;
 
-/** Explore all of the map with no zones (zones.ts): if you're host, for the whole room. ?zones=0 (features.ts) does it for one visit. */
+/** Explore all of the map with no zones (zones.ts): if you're host, for the whole room. ?progression=0 (features.ts) does it for one visit. */
 export let freeRoam = load("cd-freeroam", 0) === 1;
 
 /** Mouse sensitivity, as a multiple of the normal. */
