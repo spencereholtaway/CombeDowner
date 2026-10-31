@@ -102,6 +102,8 @@ BASIN_MIN = 400.0          # square metres: a basin or marina off the canal at l
 BASIN_NECK = 5.0           # metres: water narrower than twice this beside the canal is its own outline wandering, not a basin
 BERTH = 2.6                # metres between boats moored side by side, a narrowboat's beam and fenders
 CHANNEL_CLEAR = 10.0       # metres kept clear of moored boats where a basin opens on to the canal
+ENTRY_REACH = 25.0         # metres: a basin this near the canal with no water mapped between has a channel cut to it
+ENTRY_HALF, ENTRY_IN = 2.5, 3.0   # that channel's half width (a boat's beam and room either side), and how far it runs on into the basin
 VERGE = 2.0                # from the bank's edge to the ground: a grass slope, or a wall and a slope
 TUNNEL_LEDGE = 1.3         # the towpath's ledge through a tunnel
 ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
@@ -542,22 +544,47 @@ def main():
         """The buildings standing in water q (its outline is often rough round them): they stand."""
         return unary_union([bfeats[int(k)].buffer(0.3, join_style=2) for k in btree_all.query(q.buffer(2))] or [Point(1e9, 1e9).buffer(1)])
 
+    def entrance(piece, q):
+        """The way into basin q from the canal: the water mapped between them, where a boat fits
+        through it, or else a channel cut straight through the bank from the nearest point of the
+        canal, unless that would cut the towpath (an entrance there is under a footbridge, which
+        the map would have). None if neither."""
+        parts = piece.difference(q).buffer(-HULL).buffer(HULL)
+        mapped = [g for g in getattr(parts, "geoms", [parts]) if g.geom_type == "Polygon" and g.distance(q) < 1.0 and g.distance(corridor) < 1.5]
+        if mapped: return unary_union(mapped)
+        k = min(range(len(open_runs)), key=lambda j: open_runs[j][0].distance(q))
+        ln = open_runs[k][0]
+        c, a = nearest_points(ln, q)
+        (x0, y0), (x1, y1) = ln.coords
+        bank = min(runs[open_runs[k][2]]["p"], key=lambda p: math.dist(p[:2], (c.x, c.y)))
+        left = (x1 - x0) * (a.y - y0) - (y1 - y0) * (a.x - x0) > 0
+        if bank[7 if left else 8] >= 1.5:
+            print(f"  basin at {[r1(v) for v in a.coords[0]]} lies off the towpath's side: no channel cut")
+            return None
+        L = c.distance(a) or 1
+        ux, uy = (a.x - c.x) / L, (a.y - c.y) / L
+        return LineString([(c.x, c.y), (a.x + ux * ENTRY_IN, a.y + uy * ENTRY_IN)]).buffer(ENTRY_HALF, cap_style="flat")
+
     basins = []
     for w in water:
         rest = w.difference(corridor).difference(lock_zone).difference(beyond)
         for piece in getattr(rest, "geoms", [rest]):
-            if piece.geom_type != "Polygon" or piece.distance(corridor) > 1.5: continue
+            if piece.geom_type != "Polygon" or piece.distance(corridor) > ENTRY_REACH: continue
             body = piece.buffer(-BASIN_NECK).buffer(BASIN_NECK)
             for q in getattr(body, "geoms", [body]):
                 if q.geom_type != "Polygon" or q.area < BASIN_MIN: continue
-                # and the way in from the canal, however narrow
-                a, c = nearest_points(q, corridor)
-                if a.distance(c) > 40: continue
-                way = piece.intersection(LineString([a, c]).buffer(BASIN_NECK + 3.0))
+                way = entrance(piece, q)
+                if way is None: continue
+                # (on into the canal's water a little, so no sliver of bank is left across the mouth)
+                way = unary_union([way, way.buffer(2.0).intersection(corridor)]).buffer(0.8).buffer(-0.8)
                 # its pound: the stretch it opens on to
-                k = min(range(len(open_runs)), key=lambda j: open_runs[j][0].distance(c))
+                k = min(range(len(open_runs)), key=lambda j: open_runs[j][0].distance(way))
                 lv = runs[open_runs[k][2]]["lv"]
-                shape_ = unary_union([q, way]).buffer(1.5).intersection(w).difference(lock_zone).difference(built_on(q))
+                shape_ = unary_union([q.buffer(1.5).intersection(w), way])
+                # (a strip of land by the entrance narrower than a square of the ground's 4 m grid
+                # can't be drawn as land: it's water)
+                shape_ = unary_union([shape_, shape_.buffer(2.0).buffer(-2.0).intersection(way.buffer(6.0))])
+                shape_ = shape_.difference(lock_zone).difference(built_on(q))
                 shape_ = max(getattr(shape_, "geoms", [shape_]), key=lambda g: g.area if g.geom_type == "Polygon" else 0)
                 if shape_.geom_type != "Polygon": continue
                 basins.append(dict(poly=shape_.simplify(0.3), lv=lv, own=False,

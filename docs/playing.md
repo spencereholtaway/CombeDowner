@@ -406,7 +406,10 @@ lock's paving with no gap either side, at every lock (Bath Deep Lock too). The l
 stone, like the bridges; a footbridge over a lock's gates rests on its walls, and a path along a
 lock runs down its paving beside the water. Woods along the canal stop at its banks, so nothing
 hangs low over the water. The boats moored along the banks are where the survey saw boats
-moored (the long rows at Bathampton, Darlington Wharf, Claverton and below Bathwick). The locks work:
+moored (the long rows at Bathampton, Darlington Wharf, Claverton and below Bathwick). A marina
+off the canal, like Bradford-on-Avon's at Widbrook, opens on to it through its entrance as the map
+has it, or through a channel cut in the bank where the map has none, with the canal's banks
+stopping either side of the way in. The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along, leaving a wake that spreads out to the banks, and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over, H or ↑ rings

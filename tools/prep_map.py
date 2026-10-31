@@ -1508,6 +1508,7 @@ if True:
     # water is whatever the lidar caught (often the water itself, or the bank), so the ground is
     # dug to these instead, a little deeper, and the drawn bed and floors are what you stand on.
     CANAL_BED, LOCK_HALF, LOCK_COPE, LOCK_TAIL, LOCK_FLOOR = 1.3, 2.15, 1.2, 2.2, 2.0
+    BASIN_RIM = 4.0         # metres round a basin off the canal that the ground is kept above its water
     # the canal's water is at the levels tools/canal.py worked out (the map's own canal pieces are
     # left out by the game, which draws the canal from that file), so its bed and banks are dug
     # and sloped to those, not to the lowest bank of a piece that might run through a flight of locks
@@ -1575,6 +1576,18 @@ if True:
                         grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
                         blk = OTHER_WET[win]; blk[wet] = True
                     if not at_sea: banks.append((poly, None if is_canal else wz))
+    # a basin's bed is dug wherever its water is, the map's water or not (a channel cut to it:
+    # tools/canal.py), and the ground round it stands at least a little above its water, as the
+    # canal's banks do, or the water would stand over land lower than itself with nothing holding it
+    if canal_lv is not None and cbasins:
+        for bp, blv in cbasins:
+            if not bp.buffer(BASIN_RIM).intersects(BM): continue
+            win, inb = cover_xy(bp, edge=True)
+            inb &= ~flat_in[win]
+            blk = grid[win]; blk[inb] = np.minimum(blk[inb], blv - CANAL_BED); grid[win] = blk
+            win, rim = cover_xy(bp.buffer(BASIN_RIM).difference(bp), edge=True)
+            rim &= ~flat_in[win] & ~canal_bed(GX[win], GY[win])
+            blk = grid[win]; blk[rim] = np.maximum(blk[rim], blv + 0.3); grid[win] = blk
     # the banks: the ground within BANK metres of the water's edge slopes down to just above it,
     # instead of standing where the survey (which is noisy by water) left it, a cliff's drop
     # above; a road's flattened ground is left alone, so a road along the river stays up
