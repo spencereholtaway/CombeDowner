@@ -34,7 +34,8 @@ export interface Building {
 const SIMPLE_ROOFS = new URLSearchParams(location.search).get("roofs") === "simple";
 /** A roof as the lidar shows it, in faces (tools/roofs/faces.py): v the points (x, y, height above
  *  sea level, three numbers each), t its triangles (three point numbers each, anticlockwise from
- *  above), w the walls standing in its steps (x0, y0, foot, top, x1, y1, foot, top each), and z, for
+ *  above), w the walls standing in its steps (x0, y0, foot, top, x1, y1, foot, top each; the game
+ *  draws its own from the faces, roofSeams, as older maps have few), and z, for
  *  each of the building's outlines in turn, the roof's height at the start and end of each wall
  *  (b.r has a point wherever a face meets the walls), which the walls rise to. */
 export interface RoofMesh { v: number[]; t: number[]; w?: number[]; z: number[][] }
@@ -1613,6 +1614,58 @@ export function roofMeshTop(b: Building): number {
 /** Building b's main pitched roof, or null for a flat one. */
 export function roofFit(b: Building): Roof | null {
   return roofsFit(b)[0] ?? null;
+}
+
+const SEAM = 0.25;    // metres: the widest slit closed between two edges lying along each other
+/** Where building b's roof faces leave an open edge, the strips that close it (four corners, x, y
+ *  and height above sea level each, twelve numbers a strip). The map's roofs come with walls in
+ *  only some of their steps, and the points' rounding opens slits a hand's width wide between
+ *  faces and between a face and its wall top, so each open edge is joined to the open edge or wall
+ *  top lying along it: a wall where the two meet at different heights, a thin strip across a slit.
+ *  tools/check_map.py (rule 11) does the same to count what is left open: keep the two in step. */
+export function roofSeams(b: Building): number[] {
+  const m = b.rm;
+  if (!m) return [];
+  const v = m.v, t = m.t, n = v.length / 3, uses = new Map<number, number>();
+  for (let i = 0; i < t.length; i += 3) for (const [a, c] of [[t[i], t[i + 1]], [t[i + 1], t[i + 2]], [t[i + 2], t[i]]]) {
+    const k = Math.min(a, c) * n + Math.max(a, c);
+    uses.set(k, (uses.get(k) ?? 0) + 1);
+  }
+  // [x0, y0, z0, x1, y1, z1, whether it is a wall top]
+  const edges: [number, number, number, number, number, number, boolean][] = [];
+  for (const [k, u] of uses) if (u === 1) {
+    const a = Math.floor(k / n), c = k % n;
+    edges.push([v[3 * a], v[3 * a + 1], v[3 * a + 2], v[3 * c], v[3 * c + 1], v[3 * c + 2], false]);
+  }
+  b.r.forEach((ring, ri) => ring.forEach((p, i) => {
+    const q = ring[(i + 1) % ring.length], z = m.z[ri];
+    if (z && z[2 * i + 1] !== undefined) edges.push([p[0], p[1], z[2 * i], q[0], q[1], z[2 * i + 1], true]);
+  }));
+  const out: number[] = [];
+  for (let i = 0; i < edges.length; i++) {
+    const [ax, ay, az, bx, by, bz, wa] = edges[i];
+    const L = Math.hypot(bx - ax, by - ay);
+    if (L < 0.05) continue;
+    const ux = (bx - ax) / L, uy = (by - ay) / L;
+    for (let j = i + 1; j < edges.length; j++) {
+      const [cx, cy, cz, dx, dy, dz, wb] = edges[j];
+      if (wa && wb) continue;
+      const M = Math.hypot(dx - cx, dy - cy);
+      if (M < 0.05 || Math.abs(ux * (dy - cy) - uy * (dx - cx)) / M > 0.1) continue;
+      const sc = (cx - ax) * ux + (cy - ay) * uy, sd = (dx - ax) * ux + (dy - ay) * uy;
+      const lo = Math.max(0, Math.min(sc, sd)), hi = Math.min(L, Math.max(sc, sd));
+      if (hi - lo < 0.05) continue;
+      const onE = (s: number) => [ax + ux * s, ay + uy * s, az + ((bz - az) * s) / L];
+      const onF = (s: number) => { const f = (s - sc) / (sd - sc); return [cx + (dx - cx) * f, cy + (dy - cy) * f, cz + (dz - cz) * f]; };
+      const gap = (s: number) => { const e = onE(s), f = onF(s); return [f[2] - e[2], Math.hypot(f[0] - e[0], f[1] - e[1])]; };
+      const [g0, w0] = gap(lo), [g1, w1] = gap(hi);
+      if (w0 > SEAM || w1 > SEAM || Math.max(Math.abs(g0), Math.abs(g1), w0, w1) < 0.05) continue;
+      // where the two cross in height, two strips meeting at a point rather than one twisted
+      const cuts = g0 * g1 < 0 ? [lo, lo + ((hi - lo) * g0) / (g0 - g1), hi] : [lo, hi];
+      for (let k = 0; k + 1 < cuts.length; k++) out.push(...onE(cuts[k]), ...onE(cuts[k + 1]), ...onF(cuts[k + 1]), ...onF(cuts[k]));
+    }
+  }
+  return out;
 }
 
 /** Half the width the game draws a road of class c (as world.ts does), or w if it has its own width. */

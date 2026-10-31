@@ -239,7 +239,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   A new kind of thing, or a fix for things clashing, goes into this order as a rule, not as
   a clean-up step on top. Rule 9 of `tools/check_map.py` counts the clashes (lone gates,
   doubled fences, things on walls or indoors, paths through walls, walls off their ground or on a
-  pavement, buildings in the road). Run it before and after
+  pavement, buildings in the road), and rules 12 on (`tools/check_more.py`) count what a player
+  would see as broken: buildings off their ground or in each other, doors and signs off their
+  walls, ways that don't join up, ground steps at square edges, water above its banks, things
+  floating or sunk, pubs and wires in buildings, boats on the bank. Run it before and after
   a map change, and don't let the counts go up.
 - **Multiplayer is peer to peer**, with no server (`net.ts`: Trystero over WebRTC, or
   BroadcastChannel for `?net=local`). The **host is the player with the lowest id**, and if they

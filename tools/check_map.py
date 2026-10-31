@@ -32,11 +32,21 @@ case by case:
     a gate; no tree, shrub or street item stands on a wall or inside a building; no building
     stands on a pavement; and a mapped footpath doesn't run along a drawn pavement (it is that
     pavement).
+11. Roofs are whole, as the game draws them (web/src/world.ts, roofFaces and addBuilding): no
+    open edge left between a lidar roof's faces or between a face and its wall top once the game
+    has closed the seams (map.ts roofSeams, mirrored here), no part of a footprint left bare, no
+    wall drawn facing indoors, no roof reaching well past its walls, no ridge more than 15 m over
+    the eaves, no roof below its ground or not a number, no faces of one roof lying over each
+    other, no two buildings standing in each other, and no footprint too small to draw.
+12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
+    tunnel mouths, pubs and wires, boats.
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check_more   # rules 12 on (tools/check_more.py)
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -331,7 +341,9 @@ def main():
             inside = sum(corr[int(k)].intersection(ln).length for k in ctree.query(ln))
             if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
         fit_together(m, tag, note, f)
+        roofs_whole(m, tag, note)
         under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts)
+        check_more.square(m, tag, note, f)
         return found
 
     # the files are checked a few at once (each on its own), and their failures gathered in order
@@ -667,6 +679,146 @@ def fit_together(m, tag, note, f=None):
         L = line(r["p"])
         on = sum(roads_[int(k)].intersection(L).length for k in rtree.query(L))
         if on > 0.8 * L.length and on > 5: note("9 footpath along a carriageway", on, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{on:.0f} m")
+
+
+SEAM = 0.25    # map.ts roofSeams: the widest slit the game closes between two edges along each other
+
+
+def roof_seams(b):
+    """map.ts roofSeams, in step with it: the strips the game draws to close a lidar roof's open
+    edges, and how much of each open edge they leave open. Returns (strips, open edges), each open
+    edge [x0, y0, x1, y1, metres left open, whether it is a wall top]."""
+    m = b["rm"]
+    v, t = m["v"], m["t"]
+    n = len(v) // 3
+    uses = collections.Counter()
+    for i in range(0, len(t), 3):
+        for a, c in ((t[i], t[i + 1]), (t[i + 1], t[i + 2]), (t[i + 2], t[i])):
+            uses[min(a, c) * n + max(a, c)] += 1
+    edges = [(v[3 * (k // n)], v[3 * (k // n) + 1], v[3 * (k // n) + 2], v[3 * (k % n)], v[3 * (k % n) + 1], v[3 * (k % n) + 2], False)
+             for k, u in uses.items() if u == 1]
+    for ri, ring in enumerate(b["r"]):
+        z = m["z"][ri] if ri < len(m["z"]) else []
+        for i, p in enumerate(ring):
+            q = ring[(i + 1) % len(ring)]
+            if 2 * i + 1 < len(z): edges.append((p[0], p[1], z[2 * i], q[0], q[1], z[2 * i + 1], True))
+    cover = [[] for _ in edges]
+    strips = []
+    for i, (ax, ay, az, bx, by, bz, wa) in enumerate(edges):
+        L = math.hypot(bx - ax, by - ay)
+        if L < 0.05: continue
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        for j in range(i + 1, len(edges)):
+            cx, cy, cz, dx, dy, dz, wb = edges[j]
+            if wa and wb: continue
+            M = math.hypot(dx - cx, dy - cy)
+            if M < 0.05 or abs(ux * (dy - cy) - uy * (dx - cx)) / M > 0.1: continue
+            sc, sd = (cx - ax) * ux + (cy - ay) * uy, (dx - ax) * ux + (dy - ay) * uy
+            lo, hi = max(0, min(sc, sd)), min(L, max(sc, sd))
+            if hi - lo < 0.05: continue
+            on_e = lambda s: (ax + ux * s, ay + uy * s, az + (bz - az) * s / L)
+            on_f = lambda s: tuple(p + (r - p) * (s - sc) / (sd - sc) for p, r in ((cx, dx), (cy, dy), (cz, dz)))
+            e0, e1, f0, f1 = on_e(lo), on_e(hi), on_f(lo), on_f(hi)
+            g0, g1 = f0[2] - e0[2], f1[2] - e1[2]
+            w0, w1 = math.hypot(f0[0] - e0[0], f0[1] - e0[1]), math.hypot(f1[0] - e1[0], f1[1] - e1[1])
+            if w0 > SEAM or w1 > SEAM: continue
+            cover[i].append((lo, hi))
+            cover[j].append(tuple(sorted(((lo - sc) / (sd - sc) * M, (hi - sc) / (sd - sc) * M))))
+            if max(abs(g0), abs(g1), w0, w1) < 0.05: continue
+            strips.append((e0, e1, f1, f0))
+    opened = []
+    for (ax, ay, az, bx, by, bz, wall), cv in zip(edges, cover):
+        L = math.hypot(bx - ax, by - ay)
+        got, end = 0.0, 0.0
+        for lo, hi in sorted(cv):
+            if hi > end: got += hi - max(lo, end); end = hi
+        if L - got > 0.05: opened.append((ax, ay, bx, by, L - got, wall))
+    return strips, opened
+
+
+def roofs_whole(m, tag, note):
+    """Rule 11: every building's roof is whole, as the game draws it."""
+    bl = m.get("bl") or []
+    polys = []
+    for b in bl:
+        ring = b["r"][0]
+        P = Polygon(ring, b["r"][1:]) if len(ring) >= 3 else None
+        if P is not None and not P.is_valid: P = P.buffer(0)
+        polys.append(P)
+    for b, P in zip(bl, polys):
+        if P is None or P.is_empty or P.area < 1:
+            note("11 footprint too small to draw", 1, (tag, round(b["r"][0][0][0]), round(b["r"][0][0][1])), "")
+            continue
+        at = (tag, round(P.centroid.x), round(P.centroid.y))
+        top = b["g"] + b["h"]
+        m_ = b.get("rm")
+        if not m_: continue
+        v, t = m_["v"], m_["t"]
+        if not t:
+            note("11 lidar roof with no faces", P.area, at, f"{P.area:.0f} m2"); continue
+        zs = v[2::3]
+        if not all(math.isfinite(z) for z in v):
+            note("11 roof not a number", 1, at, ""); continue
+        if min(zs) < b["g"]:
+            note("11 roof below its ground", b["g"] - min(zs), at, f"{b['g'] - min(zs):.1f} m")
+        if max(zs) - top > 15:
+            note("11 ridge over 15 m above the eaves", max(zs) - top, at, f"{max(zs) - top:.0f} m")
+        tris = [Polygon([v[3 * k:3 * k + 2] for k in t[i:i + 3]]) for i in range(0, len(t), 3)]
+        tris = [q for q in tris if q.area > 1e-6]
+        U = shapely.union_all(tris)
+        lap = sum(q.area for q in tris) - U.area
+        if lap > 1: note("11 roof faces lying over each other", lap, at, f"{lap:.1f} m2")
+        past = U.difference(P.buffer(0.3)).area
+        if past > 1: note("11 roof reaching past its walls", past, at, f"{past:.1f} m2")
+        strips, opened = roof_seams(b)
+        pieces = [U] + [shapely.make_valid(Polygon([s[:2] for s in q])).buffer(0.01) for q in strips]
+        try: shut = shapely.union_all(pieces)
+        except shapely.errors.GEOSException: shut = shapely.union_all(pieces, grid_size=0.01)
+        bare = P.difference(shut).area
+        if bare > 1: note("11 footprint left without a roof", bare, at, f"{bare:.1f} m2")
+        # (the points' rounding leaves corners a few centimetres open: only a longer opening shows)
+        gap = max([o[4] for o in opened if not o[5] and P.buffer(-0.05).intersects(LineString([o[:2], o[2:4]]))], default=0)
+        if gap > 0.5: note("11 roof open between its faces", gap, at, f"{gap:.1f} m")
+        short = max([o[4] for o in opened if o[5]], default=0)
+        if short > 0.5: note("11 wall top with no roof along it", short, at, f"{short:.1f} m")
+        if walls_facing_in(b): note("11 wall drawn facing indoors", 1, at, "")
+    ok = [(i, p) for i, p in enumerate(polys) if p is not None and p.area >= 1]
+    tree = shapely.STRtree([p for _, p in ok])
+    for a, (i, p) in enumerate(ok):
+        for k in tree.query(p):
+            j, q = ok[int(k)]
+            if j <= i: continue
+            x = p.intersection(q).area
+            if x > 2: note("11 buildings standing in each other", x, (tag, round(p.centroid.x), round(p.centroid.y)), f"{x:.0f} m2")
+
+
+def walls_facing_in(b):
+    """Whether any wall world.ts raises to a lidar roof winds a triangle to face indoors: facing()
+    turns each quad by its diagonals."""
+    sub = lambda a, c: [a[0] - c[0], a[1] - c[1], a[2] - c[2]]
+    cross = lambda a, c: [a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0]]
+    dot = lambda a, c: a[0] * c[0] + a[1] * c[1] + a[2] * c[2]
+    ground, m_ = b["g"], b["rm"]
+    eave_all, base = ground + b["h"], ground - 0.6
+    for ri, ring in enumerate(b["r"]):
+        area = sum(ring[i][0] * ring[(i + 1) % len(ring)][1] - ring[(i + 1) % len(ring)][0] * ring[i][1] for i in range(len(ring)))
+        sign = (1 if area > 0 else -1) * (1 if ri == 0 else -1)
+        zs = m_["z"][ri] if ri < len(m_["z"]) else []
+        for i, p in enumerate(ring):
+            q = ring[(i + 1) % len(ring)]
+            ex, ey = q[0] - p[0], q[1] - p[1]
+            L = math.hypot(ex, ey)
+            if L < 0.05 or 2 * i + 1 >= len(zs): continue
+            za, zb = zs[2 * i], zs[2 * i + 1]
+            eave = max(base + 0.5, min(eave_all, za, zb))
+            if max(za, zb) <= eave + 0.02: continue
+            out = [sign * ey / L, 0, sign * ex / L]
+            A, B, C, D = [p[0], eave, -p[1]], [q[0], eave, -q[1]], [q[0], zb, -q[1]], [p[0], za, -p[1]]
+            quad = (A, B, C, D) if dot(cross(sub(C, A), sub(D, B)), out) >= 0 else (A, D, C, B)
+            for tri in ((quad[0], quad[1], quad[2]), (quad[0], quad[2], quad[3])):
+                n = cross(sub(tri[1], tri[0]), sub(tri[2], tri[0]))
+                if dot(n, n) > 1e-12 and dot(n, out) <= 0: return True
+    return False
 
 
 def _check_one(f):

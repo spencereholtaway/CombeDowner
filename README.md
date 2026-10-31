@@ -545,12 +545,15 @@ Roofs can also be fitted to the lidar: each house is cut into its main body and 
 gets a plain roof (gabled, hipped, mansard, lean-to or flat) whose pitch, height and ridge the
 survey decides, steep where the survey says so. Wings meet the main roof in valleys, as cross
 gables do, and a terrace or a pair of semis is decided together, so a row reads as one roof that
-steps only where the survey shows it really does. The roofs for every square are kept in
+steps only where the survey shows it really does; where one roof steps down to another the step
+has its wall, so no roof shows a gap into the house. The roofs for every square are kept in
 `data/$MAP/measured/faces/`; a building the survey can't see, or whose row the new roofs don't fit
 clearly better, keeps the flat, gabled or hipped roof that fits it best. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
 without them (a row keeps its old roofs where the new ones don't fit the survey clearly better),
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
-in the address draws the old roofs everywhere, to compare.
+in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts
+broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
+walls or too tall, faces lying over each other and buildings standing in each other.
 
 Each map's centre, size and character areas are in `tools/area.py`. To make a map of somewhere
 new, follow [docs/new-area.md](docs/new-area.md): every download (lidar and canopy included),

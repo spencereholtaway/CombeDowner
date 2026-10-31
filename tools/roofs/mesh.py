@@ -39,8 +39,10 @@ def mesh(poly, faces, planes, floor, top):
             T.append([vid(cx, cy, zf(k, cx, cy)) for cx, cy in c])
     tree = shapely.STRtree([g for _, g in faces])
     def face_at(px, py, skip):
-        for i in tree.query(Point(px, py)):
-            if i != skip and faces[i][1].buffer(1e-3).contains(Point(px, py)): return i
+        # by distance: the faces are snapped to a centimetre grid, and buffering one by less than
+        # that leaves nothing, so no step ever found the face beside it
+        for i in tree.query(Point(px, py).buffer(1e-3)):
+            if i != skip and faces[i][1].distance(Point(px, py)) < 1e-3: return i
         return None
     # the steps: along every face edge, a wall from the face on the other side up to this one
     for fi, (k, g) in enumerate(faces):

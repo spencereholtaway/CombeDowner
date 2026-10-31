@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, needUnder } from "./railbridge";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -1857,14 +1857,19 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const uv = (p: number[]) => [dot(p, ua) / 2, dot(p, va) / 2];
       facingTri(roofs, A, B, C, n, uv(A), uv(B), uv(C), flat ? FLAT : roofCol);
     }
-    const w = m.w ?? [];
-    for (let i = 0; i < w.length; i += 8) {
-      const [x0, y0, f0, t0, x1, y1, f1, t1] = w.slice(i, i + 8);
-      const len = Math.hypot(x1 - x0, y1 - y0) || 1, out = [(y1 - y0) / len, 0, (x1 - x0) / len];
-      const q = [[x0, f0 - Z0, -y0], [x1, f1 - Z0, -y1], [x1, t1 - Z0, -y1], [x0, t0 - Z0, -y0]];
-      const uvs = [[0, f0 / 3], [len / 3, f1 / 3], [len / 3, t1 / 3], [0, t0 / 3]];
-      facing(plain, q[0], q[1], q[2], q[3], out, uvs[0], uvs[1], uvs[2], uvs[3], wallCol);
-      facing(plain, q[0], q[1], q[2], q[3], out.map((k) => -k), uvs[0], uvs[1], uvs[2], uvs[3], wallCol);
+    // the steps and slits between faces, closed from the faces themselves (the map's own step
+    // walls, m.w, miss most of them): a wall where they stand up, roof where they lie down
+    const s = roofSeams(b);
+    for (let i = 0; i < s.length; i += 12) {
+      const q = [0, 3, 6, 9].map((k) => [s[i + k], s[i + k + 2] - Z0, -s[i + k + 1]]);
+      let n = cross(sub(q[2], q[0]), sub(q[3], q[1]));
+      if (Math.hypot(n[0], n[1], n[2]) < 1e-6) continue;
+      if (n[1] < 0) n = n.map((k) => -k);
+      const len = Math.hypot(q[1][0] - q[0][0], q[1][2] - q[0][2]);
+      const uvs = [[0, q[0][1] / 3], [len / 3, q[1][1] / 3], [len / 3, q[2][1] / 3], [0, q[3][1] / 3]];
+      const lying = norm(n)[1] > 0.7, g = lying ? roofs : plain, col = lying ? roofCol : wallCol;
+      facing(g, q[0], q[1], q[2], q[3], n, uvs[0], uvs[1], uvs[2], uvs[3], col);
+      if (!lying) facing(g, q[0], q[1], q[2], q[3], n.map((k) => -k), uvs[0], uvs[1], uvs[2], uvs[3], col);
     }
     for (const [x, y] of b.ch ?? []) {
       const z = roofMeshAt(b, x, y);

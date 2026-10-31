@@ -1923,6 +1923,21 @@ for (poly, p), lv in zip(cand, roof_levels):
 print(f"split buildings: {levels} more parts where roof levels change" + (f", {reused} split as the earlier build did" if reused else ""))
 print(f"split buildings: {len(split) - len(cand)} more footprints in all")
 cand = split
+# a building mapped twice (on its own, and again as a wing cut from a bigger block round it)
+# would stand two roofs in each other, fighting to be seen: one is left out, keeping the one with
+# a name. A part standing in a bigger building (a tower, a higher range) covers far less of it and stays
+_seen = shapely.STRtree([c[0] for c in cand]) if cand else None
+_twice = set()
+for i in sorted(range(len(cand)), key=lambda k: (not name(cand[k][1]), k)):
+    poly = cand[i][0]
+    for j in _seen.query(poly):
+        j = int(j)
+        if j != i and j not in _twice and (not name(cand[j][1]), j) < (not name(cand[i][1]), i) \
+                and poly.intersection(cand[j][0]).area >= 0.8 * max(poly.area, cand[j][0].area):
+            _twice.add(i)
+            break
+if _twice: print(f"buildings: {len(_twice)} mapped twice, left out")
+cand = [c for i, c in enumerate(cand) if i not in _twice]
 
 # tree canopy heights (Meta / WRI), for trees, hedges and shrubs, and for spotting trees over roofs
 canopy = None
