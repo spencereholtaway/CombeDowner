@@ -40,8 +40,9 @@ import json, math, os, random, sys
 from collections import defaultdict
 import numpy as np
 import shapely
+import shapely.affinity
 from shapely.geometry import shape, Point, LineString
-from shapely.ops import linemerge, substring, unary_union
+from shapely.ops import linemerge, nearest_points, substring, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
@@ -97,13 +98,99 @@ SIDE_RUN = 8               # points (of 4 m) each side looked at to say which si
 TOW_WIDE = 3.0             # the towpath's bank, from the water's edge (its coping) to its far side
 BANK_WIDE = 1.4            # the bank on the other side
 COPE_W = 0.45              # the stone coping along the water's edge: all the bank there is where it's squeezed
+BASIN_MIN = 400.0          # square metres: a basin or marina off the canal at least this big is open water of its own
+BASIN_NECK = 5.0           # metres: water narrower than twice this beside the canal is its own outline wandering, not a basin
+BERTH = 2.6                # metres between boats moored side by side, a narrowboat's beam and fenders
+CHANNEL_CLEAR = 10.0       # metres kept clear of moored boats where a basin opens on to the canal
 VERGE = 2.0                # from the bank's edge to the ground: a grass slope, or a wall and a slope
 TUNNEL_LEDGE = 1.3         # the towpath's ledge through a tunnel
 ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
              "living_street": 2.5, "service": 1.8, "unknown": 2}
 PAINTS = 7                 # boat liveries the game knows (canal.ts)
+HULL = 1.04                # half a narrowboat's beam (canal.ts HW)
 r1 = lambda v: round(float(v), 1)
 wing = lambda lk: TAIL + (lk["zh"] - lk["zl"]) * WING     # how far a lock's wing walls run below its bottom gates
+
+
+def basin_boats(basins, seen, corridor, infra_file, proj, circle):
+    """Boats moored in the basins and marinas, [x, y, angle, length, paint, level]: where the lidar
+    saw them (tools/moorings.py's entries with no side), or else, in a marina, berthed side by side
+    along its pontoons where they're mapped and nose to tail round its edge where they aren't. The
+    level, which the boats on the canal leave out, marks them as lying off it (they don't cast off)."""
+    rnd = random.Random(1814)
+    seen_boats = [m for m in (json.load(open(seen)) if os.path.exists(seen) else []) if not m[4]]
+    piers = []
+    if os.path.exists(infra_file):
+        for f in json.load(open(infra_file))["features"]:
+            if f["properties"].get("class") not in ("pier", "pontoon", "jetty"): continue
+            g = proj(shape(f["geometry"]))
+            if not g.intersects(circle): continue
+            if g.geom_type.endswith("Polygon"):
+                # (a pontoon drawn as an outline: its long middle line)
+                rect = g.minimum_rotated_rectangle
+                c = list(rect.exterior.coords)
+                sides = sorted([(math.dist(c[i], c[i + 1]), i) for i in range(4)])
+                g = LineString([((c[k][0] + c[k + 1][0]) / 2, (c[k][1] + c[k + 1][1]) / 2) for k in (sides[0][1], sides[1][1])])
+            piers += list(getattr(g, "geoms", [g])) if g.geom_type.endswith("LineString") else []
+    channel = corridor.buffer(CHANNEL_CLEAR)
+    out = []
+    for b in basins:
+        poly, lv = b["poly"], b["lv"]
+        room = poly.buffer(-0.3)
+        laid = []
+
+        def berth(cx, cy, ang, L, seen_=False):
+            hull = shapely.affinity.rotate(shapely.box(cx - L / 2, cy - HULL, cx + L / 2, cy + HULL), ang, origin=(cx, cy), use_radians=True)
+            # (where the survey saw one it's there, whatever the outline says: only overlaps are dropped)
+            if not (poly.buffer(0.5) if seen_ else room).contains(hull) or (not seen_ and not b["own"] and hull.intersects(channel)) \
+                    or any(hull.distance(o) < (0.05 if seen_ else 0.3) for o in laid): return False
+            laid.append(hull)
+            out.append([r1(cx), r1(cy), round(ang, 3), L, rnd.randrange(PAINTS), round(lv, 2)])
+            return True
+
+        mine = [m for m in seen_boats if poly.contains(Point((m[0] + m[2]) / 2, (m[1] + m[3]) / 2))]
+        for x0, y0, x1, y1, _ in mine:
+            L = round(max(7.0, min(21.0, math.dist((x0, y0), (x1, y1)))), 1)
+            ang = math.atan2(y1 - y0, x1 - x0) + (math.pi if rnd.random() < 0.5 else 0)
+            berth((x0 + x1) / 2, (y0 + y1) / 2, ang, L, True)
+        if mine or not b["marina"]: continue
+        for pier in piers:
+            if not pier.intersects(poly): continue
+            pier = pier.intersection(poly)
+            for seg in getattr(pier, "geoms", [pier]):
+                if seg.geom_type != "LineString": continue
+                c = list(seg.coords)
+                for (ax, ay), (bx, by) in zip(c, c[1:]):
+                    span = math.dist((ax, ay), (bx, by))
+                    if span < BERTH: continue
+                    ux, uy = (bx - ax) / span, (by - ay) / span
+                    for side in (1, -1):
+                        nx, ny = -uy * side, ux * side
+                        d = BERTH / 2
+                        while d < span - BERTH / 2:
+                            L = rnd.choice((12, 15, 17, 18, 20, 21))
+                            for L_ in sorted({L, 15, 12, 10}, reverse=True):
+                                if L_ > L: continue
+                                cx, cy = ax + ux * d + nx * (L_ / 2 + 0.8), ay + uy * d + ny * (L_ / 2 + 0.8)
+                                if berth(cx, cy, math.atan2(ny, nx) + (math.pi if rnd.random() < 0.5 else 0), L_): break
+                            d += BERTH
+        # round the edge, nose to tail, wherever the pontoons haven't filled it
+        for ring in [poly.exterior, *poly.interiors]:
+            line = LineString(ring.coords)
+            d = 0.0
+            while d < line.length - 8:
+                L = rnd.choice((12, 15, 17, 18, 20, 21))
+                a, e = line.interpolate(d), line.interpolate(min(line.length, d + L))
+                ang = math.atan2(e.y - a.y, e.x - a.x)
+                m = line.interpolate(d + L / 2)
+                inward = 1 if poly.contains(Point(m.x - math.sin(ang) * 2, m.y + math.cos(ang) * 2)) else -1
+                off = (HULL + 0.4) * inward
+                if berth(m.x - math.sin(ang) * off, m.y + math.cos(ang) * off, ang + (math.pi if rnd.random() < 0.5 else 0), L):
+                    d += L + rnd.uniform(1.0, 2.5)
+                else:
+                    d += 3.0
+    if out: print(f"basins: {len(out)} boats moored in them")
+    return out
 
 
 def main():
@@ -118,8 +205,14 @@ def main():
     # ---- the canal's lines, joined up into stretches between junctions and ends --------------
     feats = json.load(open(os.path.join(src, "water.geojson")))["features"]
     lines, water, rivers = [], [], []
+    marina_water = []          # water the map draws itself that's tagged as a marina (a river's, say)
     for f in feats:
         p = f["properties"]
+        tags = dict(map(tuple, p.get("source_tags") or []))
+        if p.get("class") not in ("canal", "river", "stream", "sea", "ocean") and tags.get("water") == "marina" \
+                and f["geometry"]["type"].endswith("Polygon"):
+            g = proj(shape(f["geometry"]))
+            if g.intersects(circle): marina_water.append(g if g.is_valid else shapely.make_valid(g))
         if p.get("class") == "river":
             g = proj(shape(f["geometry"]))
             if g.intersects(circle): rivers.append(g if g.is_valid else shapely.make_valid(g))
@@ -424,6 +517,63 @@ def main():
         t["tw"] = 1 if r["p"][k][7] > 0 else -1 if r["p"][k][8] > 0 else 0
     for r in runs: r.pop("tw", None)
 
+    # ---- basins and marinas: open water off the canal, at the level of the pound it opens on to ------
+    # The canal is drawn from its middle line and its width, so water mapped as the canal's beyond
+    # that (a marina dug out beside it, a side pond by a lock) would be left out; it's kept here as
+    # a basin of its own, drawn and dug at its pound's level, with the canal's bank left open where
+    # the two meet (web/src/works.ts). A marina the map draws itself (on a river) is kept too, "own",
+    # just for its boats.
+    open_runs = [(LineString([a[:2], b[:2]]), max(a[2], b[2]), i) for i, r in enumerate(runs) for a, b in zip(r["p"], r["p"][1:])
+                 if math.dist(a[:2], b[:2]) > 0.01]
+    corridor = unary_union([ln.buffer(h + 1.0) for ln, h, _ in open_runs]) if open_runs else Point(1e9, 1e9).buffer(1)
+    lock_zone = unary_union([LineString([lk["lo"], lk["hi"]]).buffer(14.0) for lk in locks]) if locks else Point(1e9, 1e9).buffer(1)
+    marina_land = []
+    for f in json.load(open(os.path.join(src, "land_use.geojson")))["features"]:
+        tags = dict(map(tuple, f["properties"].get("source_tags") or []))
+        if tags.get("leisure") == "marina" and f["geometry"]["type"].endswith("Polygon"):
+            g = proj(shape(f["geometry"]))
+            if g.intersects(circle): marina_land.append(g if g.is_valid else shapely.make_valid(g))
+    marina_land = unary_union(marina_land) if marina_land else None
+    # (the canal's own water past where its stretches end, at the edge of the map, isn't a basin)
+    beyond = unary_union(lines).difference(corridor).buffer(10.0) if lines else Point(1e9, 1e9).buffer(1)
+    btree_all = shapely.STRtree(bfeats)
+
+    def built_on(q):
+        """The buildings standing in water q (its outline is often rough round them): they stand."""
+        return unary_union([bfeats[int(k)].buffer(0.3, join_style=2) for k in btree_all.query(q.buffer(2))] or [Point(1e9, 1e9).buffer(1)])
+
+    basins = []
+    for w in water:
+        rest = w.difference(corridor).difference(lock_zone).difference(beyond)
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type != "Polygon" or piece.distance(corridor) > 1.5: continue
+            body = piece.buffer(-BASIN_NECK).buffer(BASIN_NECK)
+            for q in getattr(body, "geoms", [body]):
+                if q.geom_type != "Polygon" or q.area < BASIN_MIN: continue
+                # and the way in from the canal, however narrow
+                a, c = nearest_points(q, corridor)
+                if a.distance(c) > 40: continue
+                way = piece.intersection(LineString([a, c]).buffer(BASIN_NECK + 3.0))
+                # its pound: the stretch it opens on to
+                k = min(range(len(open_runs)), key=lambda j: open_runs[j][0].distance(c))
+                lv = runs[open_runs[k][2]]["lv"]
+                shape_ = unary_union([q, way]).buffer(1.5).intersection(w).difference(lock_zone).difference(built_on(q))
+                shape_ = max(getattr(shape_, "geoms", [shape_]), key=lambda g: g.area if g.geom_type == "Polygon" else 0)
+                if shape_.geom_type != "Polygon": continue
+                basins.append(dict(poly=shape_.simplify(0.3), lv=lv, own=False,
+                                   marina=marina_land is not None and shape_.intersection(marina_land).area > 0.3 * shape_.area))
+    for w in marina_water:
+        for q in getattr(w, "geoms", [w]):
+            if q.geom_type != "Polygon" or q.area < BASIN_MIN: continue
+            # (the map's own water is drawn at the lowest of its banks, a little above: prep_map.py)
+            edge = q.exterior
+            lv = min(T.elev(*edge.interpolate(t, normalized=True).coords[0]) for t in np.linspace(0, 1, 80, endpoint=False)) + 0.1
+            q = q.difference(built_on(q))
+            q = max(getattr(q, "geoms", [q]), key=lambda g: g.area if g.geom_type == "Polygon" else 0)
+            if q.geom_type == "Polygon": basins.append(dict(poly=q.simplify(0.3), lv=round(float(lv), 2), own=True, marina=True))
+    print(f"basins: {sum(not b['own'] for b in basins)} off the canal ({sum(b['marina'] and not b['own'] for b in basins)} marinas), "
+          f"{sum(b['own'] for b in basins)} marinas on other water")
+
     # ---- boats moored along the bank: in rows here and there on the long pound ------------------
     canal_all = unary_union([chains[k] for k in keep])
     crossings = unary_union(roads).intersection(canal_all) if roads else None
@@ -439,6 +589,7 @@ def main():
     seen = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", map_id, "moorings.json")
     if os.path.exists(seen):
         for x0, y0, x1, y1, side in json.load(open(seen)):
+            if not side: continue          # (a boat in a basin, placed below)
             mid = Point((x0 + x1) / 2, (y0 + y1) / 2)
             k = min(keep, key=lambda k: chains[k].distance(mid))
             c, pts = chains[k], runs[index[k]]["p"]
@@ -488,12 +639,16 @@ def main():
                 moor.append([r1(m.x + nx * off), r1(m.y + ny * off), round(ang, 3), L, rnd.randrange(PAINTS)])
                 d += L + rnd.uniform(1.5, 4)
 
+    moor += basin_boats(basins, seen, corridor, os.path.join(src, "infrastructure.geojson"), proj, circle)
+
     out_d = dict(
         runs=runs,
         locks=[dict(n=lk["n"], no=lk["no"], lo=[r1(v) for v in lk["lo"]], hi=[r1(v) for v in lk["hi"]],
                     zl=round(lk["zl"], 2), zh=round(lk["zh"], 2), tl=r1(wing(lk))) for lk in locks],
         tunnels=[dict(n=t["n"], a=[r1(v) for v in t["a"]], b=[r1(v) for v in t["b"]], tw=t["tw"]) for t in tunnels],
         moor=moor,
+        **({"basins": [dict(lv=round(b["lv"], 2), r=[[[r1(x), r1(y)] for x, y in list(ring.coords)[:-1]] for ring in [b["poly"].exterior, *b["poly"].interiors]],
+                            **({"own": 1} if b["own"] else {})) for b in basins]} if basins else {}),
     )
     json.dump(out_d, open(out, "w"), separators=(",", ":"))
     for r in runs:

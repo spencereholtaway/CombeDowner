@@ -1,6 +1,9 @@
 """Where boats moor on a map's canal, from the narrowboats the lidar caught moored there.
 
-Usage: python3 -I tools/moorings.py <map> <dir with lidar/dsm/*.tif> [<canal.json>] [<out.json>]
+Usage: python3 -I tools/moorings.py <map> <dir with lidar/dsm/*.tif> [<canal.json>] [<out.json>] [--basins]
+
+--basins looks again only in the basins and marinas, keeping the moorings along the canal already
+in <out.json> (so the survey is needed only where they are).
 
 e.g. python3 -I tools/moorings.py combe-down data/raw/combe-down/wide
 
@@ -13,9 +16,14 @@ over gaps of less than a metre and a half (boats moored nose to tail), whose roo
 for a boat's (a bush hanging over the water from the bank is lumpier). Those are the moorings:
 tools/canal.py moors its boats along them instead of guessing.
 
+In the basins and marinas off the canal (tools/canal.py writes them in the canal file) the boats
+lie every which way, so there each blob of roof over the water is a boat, or a row of them moored
+side by side.
+
 Writes data/<map>/moorings.json: [[x0, y0, x1, y1, side], ...], each stretch's two ends (metres
 east and north of the map centre, along the canal's line) and which side of the water, 1 to the
-left looking from x0, y0 to x1, y1 and -1 to the right. Small, so it's kept with the map's inputs and
+left looking from x0, y0 to x1, y1 and -1 to the right, or 0 for a boat in a basin (x0, y0 to
+x1, y1 along its middle). Small, so it's kept with the map's inputs and
 a rebuild needs no lidar.
 """
 import glob, json, math, os, sys
@@ -26,14 +34,73 @@ ROOF = (0.7, 2.4)   # a boat's roof above the water, metres
 MIN_LEN = 7.0       # metres of roof for a boat
 GAP = 1.5           # metres between boats moored nose to tail, at most
 LEVEL = 0.7         # metres: the spread of the middle half of a roof's heights, at most
+BASIN_STEP = 0.5    # metres between samples over a basin
+BEAM_ROW = 3.4      # metres: a roof wider than this in a basin is boats moored side by side
+BERTH = 2.3         # metres from one boat's middle to the next, side by side
 MIDDLE = 0.6        # metres: the middle of the canal stays this low, or it's a bridge or a tree over it
 
 
+def basin_boats(basins, dsm):
+    """The boats in the basins and marinas off the canal (tools/canal.py "basins"), each one's ends
+    along its middle as [x0, y0, x1, y1, 0]. Their roofs are blobs of the survey a boat's height
+    over the water. In a marina they're moored side by side, so one blob is often a row of boats:
+    one longer than any boat is a row of them lying across it, else its boats lie along it."""
+    import shapely
+    from scipy import ndimage
+    out = []
+    for b in basins:
+        poly, lv = shapely.Polygon(b["r"][0], b["r"][1:]), b["lv"]
+        x0, y0, x1, y1 = poly.bounds
+        xs, ys = np.arange(x0, x1, BASIN_STEP), np.arange(y0, y1, BASIN_STEP)
+        X, Y = np.meshgrid(xs, ys)
+        inside = shapely.contains_xy(poly.buffer(-0.5), X, Y)
+        roof = np.zeros(X.shape, dtype=bool)
+        for j, i in zip(*np.nonzero(inside)):
+            v = dsm(X[j, i], Y[j, i])
+            roof[j, i] = v is not None and ROOF[0] < v - lv < ROOF[1]
+        blobs, n = ndimage.label(roof)
+        for k in range(1, n + 1):
+            jj, ii = np.nonzero(blobs == k)
+            if len(jj) * BASIN_STEP ** 2 < MIN_LEN * 1.2: continue
+            rect = shapely.MultiPoint(np.column_stack([X[jj, ii], Y[jj, ii]])).minimum_rotated_rectangle.buffer(BASIN_STEP / 2, join_style=2)
+            if rect.geom_type != "Polygon": continue
+            c = list(rect.minimum_rotated_rectangle.exterior.coords)[:4]
+            e = [(math.dist(c[i], c[(i + 1) % 4]), i) for i in range(4)]
+            (long_, li), (short, si) = max(e), min(e)
+            if long_ < MIN_LEN: continue
+            ux, uy = (c[(li + 1) % 4][0] - c[li][0]) / long_, (c[(li + 1) % 4][1] - c[li][1]) / long_
+            cx, cy = sum(q[0] for q in c) / 4, sum(q[1] for q in c) / 4
+            if short <= BEAM_ROW:
+                rows = max(1, round(long_ / 21.0 + 0.3))
+                for r_ in range(rows):
+                    f = (r_ + 0.5) / rows - 0.5
+                    L = long_ / rows
+                    mx, my = cx + ux * f * long_, cy + uy * f * long_
+                    out.append([round(mx - ux * L / 2, 1), round(my - uy * L / 2, 1), round(mx + ux * L / 2, 1), round(my + uy * L / 2, 1), 0])
+                continue
+            # a row of boats side by side: they lie across it if it's longer than a boat
+            if long_ > 23.0:
+                if short < MIN_LEN: continue
+                L, n_, (ax, ay), (bx, by) = short, round(long_ / BERTH), (-uy, ux), (ux, uy)
+            else:
+                L, n_, (ax, ay), (bx, by) = long_, round(short / BERTH), (ux, uy), (-uy, ux)
+            span = (long_ if long_ > 23.0 else short)
+            for r_ in range(max(1, n_)):
+                f = ((r_ + 0.5) / max(1, n_) - 0.5) * span
+                mx, my = cx + bx * f, cy + by * f
+                out.append([round(mx - ax * L / 2, 1), round(my - ay * L / 2, 1), round(mx + ax * L / 2, 1), round(my + ay * L / 2, 1), 0])
+    if basins: print(f"basins: {len(out)} boats seen moored in {len(basins)} basins and marinas")
+    return out
+
+
 def main():
-    map_id, raw = sys.argv[1:3]
+    args = sys.argv[1:]
+    only_basins = "--basins" in args
+    if only_basins: args.remove("--basins")
+    map_id, raw = args[:2]
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-    canal_file = sys.argv[3] if len(sys.argv) > 3 else os.path.join(root, "web", "public", "maps", f"{map_id}-canal.json")
-    out = sys.argv[4] if len(sys.argv) > 4 else os.path.join(root, "data", map_id, "moorings.json")
+    canal_file = args[2] if len(args) > 2 else os.path.join(root, "web", "public", "maps", f"{map_id}-canal.json")
+    out = args[3] if len(args) > 3 else os.path.join(root, "data", map_id, "moorings.json")
     import rasterio
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from area import area
@@ -62,7 +129,9 @@ def main():
 
     c = json.load(open(canal_file))
     found = []
-    for r in c["runs"]:
+    if only_basins:
+        found = [m for m in json.load(open(out)) if m[4]] if os.path.exists(out) else []
+    for r in ([] if only_basins else c["runs"]):
         p, lv = r["p"], r["lv"]
         pts = []
         for a, b in zip(p, p[1:]):
@@ -99,6 +168,7 @@ def main():
                     if len(hs) > 8 and np.percentile(hs, 75) - np.percentile(hs, 25) <= LEVEL:
                         found.append([round(pts[k][0], 1), round(pts[k][1], 1), round(pts[j][0], 1), round(pts[j][1], 1), side])
                 k = j + 1
+    found += basin_boats(c.get("basins", []), dsm)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(found, open(out, "w"))
     total = sum(math.dist(f[:2], f[2:4]) for f in found)

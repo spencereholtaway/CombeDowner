@@ -1530,6 +1530,8 @@ if True:
                 near = ctree.nearest(pts)
                 d = np.hypot(np.ravel(xs) - cxy[near, 0], np.ravel(ys) - cxy[near, 1])
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
+            # the basins off it (a marina): canal.ts draws their water too, at their pound's level
+            cbasins = [(shapely.Polygon(b["r"][0], b["r"][1:]).buffer(0.8), b["lv"]) for b in json.load(open(canal_file)).get("basins", []) if not b.get("own")]
     QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH = 2.5, 1.5, 30.0
     whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
     beaches = unary_union([q for g, p in L("land") if p.get("class") in ("beach", "sand") for q in whole_polys(g)] or [Point(1e9, 1e9)])
@@ -1558,6 +1560,9 @@ if True:
                         # the bed, only as wide as the canal's own water: the rest of the piece is bank
                         lv = canal_lv(GX[win][wet], GY[win][wet])
                         bed = canal_bed(GX[win][wet], GY[win][wet]) & ~canal_in_tunnel(GX[win][wet], GY[win][wet])
+                        for bp, blv in cbasins:
+                            inb = shapely.contains_xy(bp, GX[win][wet], GY[win][wet])
+                            bed |= inb; lv = np.where(inb, blv, lv)
                         blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.maximum(blk[wet], lv + 0.3)); grid[win] = blk
                     elif at_sea:
                         # the harbour's quays stand straight up out of deep water, a metre and a
@@ -2119,17 +2124,22 @@ PED_REACH, PED_DEFAULT = 15.0, 6.0          # (6 m: the width web/src/world.ts g
 fp_tree = shapely.STRtree(footprints)
 
 
-def wall_to_wall(x, y, ux, uy):
-    """Half the paved width at (x, y), for a street running along (ux, uy); None inside a building."""
+def wall_to_wall(x, y, ux, uy, kerbs=None):
+    """Half the paved width at (x, y), for a street running along (ux, uy); None inside a building
+    or on another street. kerbs: the other streets' outlines (carriageway and pavements), which
+    the paving stops at, so where a pedestrian street opens on to a road it isn't laid across it."""
     pt = Point(x, y)
     if any(footprints[int(k)].contains(pt) for k in fp_tree.query(pt)): return None
-    seen = []
+    if kerbs is not None and any(kerbs[0][int(k)].contains(pt) for k in kerbs[1].query(pt)): return None
+    seen, stop = [], PED_REACH
     for s in (1, -1):
         ray = shapely.LineString([(x, y), (x - uy * s * PED_REACH, y + ux * s * PED_REACH)])
         hits = [pt.distance(ray.intersection(footprints[int(k)])) for k in fp_tree.query(ray, predicate="intersects")]
         if hits: seen.append(min(hits))
-    if not seen: return None
-    return min(PED_REACH, max(max(seen), 1.5 if len(seen) == 2 else PED_DEFAULT / 2))
+        if kerbs is not None:
+            stop = min([stop] + [pt.distance(ray.intersection(kerbs[0][int(k)])) for k in kerbs[1].query(ray, predicate="intersects")])
+    if not seen: return None if stop >= PED_REACH else min(stop, PED_DEFAULT / 2)
+    return min(PED_REACH, stop, max(max(seen), 1.5 if len(seen) == 2 else PED_DEFAULT / 2))
 
 
 def rw(r):
@@ -2143,33 +2153,44 @@ def pave(r):
     return max(r.get("pv", [1.7]))
 
 
-ped_roads, widened = [], 0
-for r in roads:
+def paved_wall_to_wall(r, kerbs=None):
+    """A pedestrian street cut into pieces of one width each."""
     pts = r["p"]
-    if r["c"] != "pedestrian" or len(pts) < 2:
-        ped_roads.append(r); continue
     halves = []
     for i in range(len(pts)):
         a, b = pts[max(0, i - 1)], pts[min(len(pts) - 1, i + 1)]
         l = math.hypot(b[0] - a[0], b[1] - a[1]) or 1
-        halves.append(wall_to_wall(pts[i][0], pts[i][1], (b[0] - a[0]) / l, (b[1] - a[1]) / l))
+        halves.append(wall_to_wall(pts[i][0], pts[i][1], (b[0] - a[0]) / l, (b[1] - a[1]) / l, kerbs))
     # the middle of the widths within three points either way: a side alley or a doorway's recess
     # doesn't widen the street
     widths = []
     for i in range(len(pts)):
         near = [h for h in halves[max(0, i - 3):i + 4] if h is not None]
         widths.append(round(2 * float(np.median(near)) * 2) / 2 if near else PED_DEFAULT)
+    if kerbs is not None:
+        # (a point's own reading caps the middle one: the paving at the mouth stops at the road's kerb)
+        widths = [w if h is None else min(w, max(1.5, round(2 * h * 2) / 2)) for w, h in zip(widths, halves)]
     if any(len(q) > 3 for q in pts):        # a street on a bridge stays in one piece
-        ped_roads.append(dict(r, w=float(np.median(widths)))); continue
-    start = 0
+        return [dict(r, w=float(np.median(widths)))]
+    out, start = [], 0
     for i in range(1, len(pts) + 1):
         if i == len(pts) or widths[i] != widths[start]:
             piece = pts[max(0, start - 1):i]       # each piece starts where the one before ended
-            if len(piece) > 1: ped_roads.append(dict(r, p=piece, w=widths[start]))
+            if len(piece) > 1: out.append(dict(r, p=piece, w=widths[start]))
             start = i
-    widened += 1
+    return out
+
+
+# measured once against the buildings alone here (the lidar's walls are looked for as far into the
+# street as that), then again once the other streets are fitted, against their kerbs too
+ped_roads, ped_src = [], []
+for r in roads:
+    if r["c"] != "pedestrian" or len(r["p"]) < 2:
+        ped_roads.append(r); continue
+    ped_roads += [dict(q, _ped=len(ped_src)) for q in paved_wall_to_wall(r)]
+    ped_src.append(r)
 roads = ped_roads
-print(f"pedestrian streets: {widened} measured wall to wall")
+print(f"pedestrian streets: {len(ped_src)} measured wall to wall")
 
 # ---- walls, fences and hedges the lidar sees (tools/walls.py) -------------------------------
 # found first, looking into the streets as far as each could narrow, so the streets can then be
@@ -2201,6 +2222,26 @@ if (found_walls or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
     roads, narrowed = measure(obstacles, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, osm_roads)
     print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
           + ("" if osm_roads else " (no osm-roads.geojson)"))
+
+if ped_src:
+    kerb_polys = []
+    for r in roads:
+        pts = r["p"]
+        if r["c"] in PATHS or len(pts) < 2 or any(len(q) > 3 for q in pts): continue
+        line = shapely.LineString([q[:2] for q in pts])
+        if line.length <= 0: continue
+        pl, pr = r.get("pv", [1.7, 1.7]) if r["c"] in KERBED_RD else (0.0, 0.0)
+        kerb_polys.append(unary_union([line.buffer(rw(r) / 2 + pl, single_sided=True, cap_style="flat"),
+                                       line.buffer(-(rw(r) / 2 + pr), single_sided=True, cap_style="flat")]))
+    kerbs = (kerb_polys, shapely.STRtree(kerb_polys))
+    out, done = [], set()
+    for r in roads:
+        k = r.get("_ped")
+        if k is None: out.append(r); continue
+        if k in done: continue
+        done.add(k)
+        out += paved_wall_to_wall(ped_src[k], kerbs)
+    roads = out
 
 # ---- pavements up to the door ----------------------------------------------------------------
 # Where the houses open straight on to the street (the Bo-Kaap), there's no front garden: each

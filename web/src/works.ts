@@ -23,7 +23,7 @@
 //
 // Nothing here goes over the network: every player builds the same banks from the same canal file.
 import * as THREE from "three";
-import { lockAt, type CanalData } from "./canal";
+import { inRing, lockAt, type CanalData } from "./canal";
 
 const UP = 0.4;          // the coping and the banks stand this far above the water
 const BED = 1.2;         // the bed is this far below it
@@ -77,6 +77,8 @@ export class CanalWorks {
   readonly walls: number[][] = [];
   /** The canal's tunnels where they run through this square. */
   readonly bores: Bore[] = [];
+  /** The basins off the canal near this square (a marina): the canal's banks open where they meet. */
+  private basins: { r: number[][][]; lv: number; x0: number; y0: number; x1: number; y1: number }[] = [];
   private boreCells = new Map<number, number[]>();
 
   /** canal: the canal file; G: this square's grid; ground: its own ground's height at data (x, y). */
@@ -99,6 +101,13 @@ export class CanalWorks {
       }
       return null;
     };
+    for (const b of canal.basins ?? []) {
+      if (b.own) continue;
+      const xs = b.r[0].map((q) => q[0]), ys = b.r[0].map((q) => q[1]);
+      const box = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+      if (box.x1 < x0 - 40 || box.x0 > x1 + 40 || box.y1 < y0 - 40 || box.y0 > y1 + 40) continue;
+      this.basins.push({ r: b.r, lv: b.lv, ...box });
+    }
     for (const run of canal.runs) {
       const p = run.p, n = p.length;
       // only the stretches in or near this square
@@ -192,7 +201,7 @@ export class CanalWorks {
       const side = k === 0 ? 1 : -1, ta = s.a.top[k] - s.a.bank, tb = s.b.top[k] - s.b.bank;
       if (Math.max(ta, tb) < WALL_STEP) continue;
       const oa = (s.a.half + s.a.w[k]) * side, ob = (s.b.half + s.b.w[k]) * side;
-      if (this.water((s.a.x + s.a.nx * oa + s.b.x + s.b.nx * ob) / 2, (s.a.y + s.a.ny * oa + s.b.y + s.b.ny * ob) / 2, s)) continue;
+      if (this.water((s.a.x + s.a.nx * oa + s.b.x + s.b.nx * ob) / 2, (s.a.y + s.a.ny * oa + s.b.y + s.b.ny * ob) / 2, s) !== null) continue;
       this.walls.push([s.a.x + s.a.nx * oa, s.a.y + s.a.ny * oa, s.b.x + s.b.nx * ob, s.b.y + s.b.ny * ob, Math.max(s.a.top[k], s.b.top[k])]);
     }
   }
@@ -263,9 +272,10 @@ export class CanalWorks {
       if (d < bd) { bd = d; best = s; [bt, bo] = this.place(s, x, y); }
     }
     if (!best) return null;
-    // (where stretches run into one another, at a junction's basin, the water wins over any bank)
+    // (where stretches run into one another, at a junction's basin, or a marina opens off the
+    // canal, the water wins over any bank)
     const wet = this.water(x, y);
-    if (wet) return wet.a.lv - BED;
+    if (wet !== null) return wet - BED;
     const t = Math.min(1, Math.max(0, bt)), A = best.a, B = best.b, k = bo >= 0 ? 0 : 1, ao = Math.abs(bo);
     const L = (a: number, b: number) => a + (b - a) * t;
     const half = L(A.half, B.half), lv = L(A.lv, B.lv), w = L(A.w[k], B.w[k]), v = L(A.v[k], B.v[k]);
@@ -275,8 +285,9 @@ export class CanalWorks {
     return top + (g - top) * Math.min(1, (ao - half - w) / (v || 1));
   }
 
-  /** The stretch whose water data (x, y) is over (other than not), if any. */
-  private water(x: number, y: number, not?: Seg): Seg | null {
+  /** The level of the water data (x, y) is over, other than stretch not's: another stretch's, or
+   *  a basin's off the canal, if any. */
+  private water(x: number, y: number, not?: Seg): number | null {
     const G = this.G, list = this.cells.get(Math.floor((y - G.y0) / G.dy) * G.nx + Math.floor((x - G.x0) / G.dx));
     if (!list) return null;
     for (const k of list) {
@@ -284,8 +295,9 @@ export class CanalWorks {
       if (s === not) continue;
       const [t, o] = this.place(s, x, y);
       if (t < 0 || t > 1) continue;
-      if (Math.abs(o) < s.a.half + (s.b.half - s.a.half) * t - 0.05) return s;
+      if (Math.abs(o) < s.a.half + (s.b.half - s.a.half) * t - 0.05) return s.a.lv;
     }
+    for (const b of this.basins) if (x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1 && b.r.every((ring, i) => inRing(ring, x, y) === (i === 0))) return b.lv;
     return null;
   }
 
@@ -336,7 +348,7 @@ export class CanalWorks {
         crowded = false;
         for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
           const u0 = i / nu, u1 = (i + 1) / nu, v0 = j / nv, v1 = (j + 1) / nv, m = at((u0 + u1) / 2, (v0 + v1) / 2);
-          if (this.water(m[0], m[1], cur)) continue;
+          if (this.water(m[0], m[1], cur) !== null) continue;
           quad([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)], Cs ? Cs[0] : c, wall);
         }
         crowded = was;
@@ -363,7 +375,7 @@ export class CanalWorks {
       const at = (S: Station, o: number): [number, number] => [S.x + S.nx * o, S.y + S.ny * o];
       // (does another stretch's water reach its banks? at a junction's basin)
       cur = s;
-      crowded = [A, B].some((S) => [1, -1].some((side) => [S.half + 0.5, S.half + S.w[side > 0 ? 0 : 1] + S.v[side > 0 ? 0 : 1]].some((o) => this.water(S.x + S.nx * o * side, S.y + S.ny * o * side, s))));
+      crowded = [A, B].some((S) => [1, -1].some((side) => [S.half + 0.5, S.half + S.w[side > 0 ? 0 : 1] + S.v[side > 0 ? 0 : 1]].some((o) => this.water(S.x + S.nx * o * side, S.y + S.ny * o * side, s) !== null)));
       for (const k of [0, 1]) {
         const side = k === 0 ? 1 : -1;
         const P = (S: Station, o: number, h: number) => { const [x, y] = at(S, o * side); return [x, y, h]; };
