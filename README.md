@@ -167,7 +167,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Build label.** The foot of the start screen (and the note that comes up if the map stops loading) says which build the page is, so you can tell if you're on an old one.
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties (against the computer's keeper, or a shoot-out with friends in goal) and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
-  things to wear in the wardrobe.
+  things to wear in the wardrobe. And somewhere along the bottom of Royal Victoria Park, follow the guitars to a car that
+  someone's left with the door open and a tape going.
 - **Trophies**: bronze, silver and gold for every kind of job (finish one, then a three-star or silver
   time, then gold), and daft milestones for riding, fighting, pubs, landmarks and wandering about Bath. A
   "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and

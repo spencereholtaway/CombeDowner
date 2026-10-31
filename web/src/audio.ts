@@ -289,7 +289,7 @@ export function setMusicVolume(v: number) {
 
 let hush = 1;
 /** Turn the soundtrack down while other music plays close by (the record player on Solsbury Hill,
- *  recordplayer.ts): 1 is as it is, 0 is off. */
+ *  recordplayer.ts, or the tape in the Golf Driver, golfdriver.ts): 1 is as it is, 0 is off. */
 export function hushMusic(level: number) {
   if (level === hush || (Math.abs(level - hush) < 0.02 && level !== 1)) return;
   hush = level;

@@ -27,17 +27,18 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
-import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
+import { CAR_PAINT, carSteerable, glass, GOLF_DRIVER_SHAPE, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
 import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
 export { MAKES };
 import { Cockpit } from "./cockpit";
+import { driverDressing, driverSpot, PETROL_BLUE } from "./golfdriver";
 import { GLASS, glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
 import { CHIP, CHIP_LAMPS, chipDecals, chipParts } from "./chipvan";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
-export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "paramount" | "alizee" | "chipvan";
+export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "golfdriver" | "paramount" | "alizee" | "chipvan";
 /** Arleen's coaches (coaches.ts): a Plaxton Paramount or a Van Hool Alizée. */
 export const isCoach = (k: VKind) => k === "paramount" || k === "alizee";
 
@@ -150,9 +151,14 @@ export const SPECS: Record<VKind, Spec> = {
     offroad: true, paint: LR_PAINT,
   },
   golf: {   // every Golf about is a Mk1 GTI (makes.ts): very nearly an XR3i
-    name: "Volkswagen Golf GTI", L: 3.8, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 41, accel: 6.3, brake: 11, rev: 7,
+    name: "Volkswagen Golf GTI", L: 3.7, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 41, accel: 6.3, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: GOLF_PAINT,
+  },
+  golfdriver: {   // the one Golf Driver, parked on Royal Avenue by Royal Victoria Park (golfdriver.ts): the GTI's looks on a 1.6
+    name: "Volkswagen Golf Driver", L: 3.7, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 37, accel: 5.5, brake: 11, rev: 7,
+    steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+    paint: [PETROL_BLUE],
   },
   // Arleen's coaches (coaches.ts): long and heavy, slow off the mark but happy at seventy on the open road
   paramount: {
@@ -360,6 +366,7 @@ const PARTS: Record<VKind, () => Part[]> = {
   car: () => [],   // the street furniture's own model (buildBody)
   landrover: () => [],   // and the Land Rover's
   golf: () => [],        // and the Golf GTI's
+  golfdriver: () => [],
   chipvan: chipParts,
   paramount: () => coachParts(0),
   alizee: () => coachParts(1),
@@ -401,6 +408,7 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"), school: bus("school"),
     landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
     golf: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
+    golfdriver: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
     paramount: COACH_LAMPS, alizee: COACH_LAMPS, chipvan: CHIP_LAMPS,
   };
 })();
@@ -544,17 +552,25 @@ function geometryOf(kind: VKind): [THREE.BufferGeometry | null, THREE.BufferGeom
 }
 
 /** The front wheels as meshes of their own, each about its own centre, so they can be turned. */
+/** The six planes round box b, each facing out, so what's behind all of them is inside it (for Vehicle.cutAway). */
+export function boxPlanes(b: THREE.Box3): THREE.Plane[] {
+  const P = (x: number, y: number, z: number, c: number) => new THREE.Plane(new THREE.Vector3(x, y, z), c);
+  return [P(1, 0, 0, -b.max.x), P(-1, 0, 0, b.min.x), P(0, 1, 0, -b.max.y), P(0, -1, 0, b.min.y), P(0, 0, 1, -b.max.z), P(0, 0, -1, b.min.z)];
+}
+
 function wheelMeshes(wheels: Wheel[], mat: THREE.Material): THREE.Mesh[] {
   return wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y, w.z); m.rotation.order = "YZX"; return m; });
 }
 
 function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; wheels: THREE.Mesh[] } {
   trimMat ??= glossy(new THREE.MeshLambertMaterial({ vertexColors: true }), 0.6);
-  if (kind === "car" || kind === "landrover" || kind === "golf") {
-    const g = new THREE.Group(), car = carSteerable(carShape(kind === "landrover" ? LAND_ROVER : kind === "golf" ? GOLF : Math.max(0, MAKES.indexOf(make)))), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
+  if (kind === "car" || kind === "landrover" || kind === "golf" || kind === "golfdriver") {
+    const shape = kind === "golfdriver" ? GOLF_DRIVER_SHAPE : carShape(kind === "landrover" ? LAND_ROVER : kind === "golf" ? GOLF : Math.max(0, MAKES.indexOf(make)));
+    const g = new THREE.Group(), car = carSteerable(shape), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
     g.add(new THREE.Mesh(car.body, mat));
     const wheels = wheelMeshes(car.wheels, trimMat);
     g.add(...wheels);
+    if (kind === "golfdriver") g.add(driverDressing(mat, trimMat));
     g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
     return { body: g, wheels };
   }
@@ -654,6 +670,7 @@ export class Vehicle implements Mover {
   private cockpit: Cockpit | null = null;   // the inside, while its driver's looking out from it (cockpit.ts)
   private cutPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];   // and the box its cabin's cut out of the body by, in its own frame and in the world
   private uncut: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];  // the body's own materials, put back when the driver looks from outside again
+  private ajar = false;            // the inside shown through an open door while it's parked (doorway)
   private lights: THREE.MeshBasicMaterial[] = [];   // the police car's blue lights
   private lean = 0;                // body roll in corners, and a Robin teetering on two wheels
   private roll = 0;                // how far over it is, eased
@@ -709,6 +726,7 @@ export class Vehicle implements Mover {
 
   /** The driver's own view from inside, on or off (game.ts): the inside drawn round them, and their own figure hidden. */
   inside(on: boolean) {
+    if (on && this.ajar) this.doorway(null);
     if (on && !this.cockpit) {
       const S = this.spec, bus = isBus(this.kind);
       const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
@@ -716,28 +734,49 @@ export class Vehicle implements Mover {
       this.cockpit = new Cockpit({ kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
         decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined });
       this.body.add(this.cockpit.group);
-      if (this.cockpit.cut) this.cutAway(this.cockpit.cut);
-    } else if (!on && this.cockpit) {
-      for (const [m, mat] of this.uncut) { for (const x of [m.material].flat()) x.dispose(); m.material = mat; }
-      this.uncut = []; this.cutPlanes = [];
-      this.body.remove(this.cockpit.group);
-      this.cockpit.dispose();
-      this.cockpit = null;
-    }
+      if (this.cockpit.cut) this.cutAway(boxPlanes(this.cockpit.cut));
+    } else if (!on && this.cockpit && !this.ajar) this.dropCockpit();
     if (this.figures[0]) this.figures[0].visible = !!this.seats[0] && !this.cockpit;
+  }
+
+  private dropCockpit() {
+    for (const [m, mat] of this.uncut) { for (const x of [m.material].flat()) x.dispose(); m.material = mat; }
+    this.uncut = []; this.cutPlanes = [];
+    this.body.remove(this.cockpit!.group);
+    this.cockpit!.dispose();
+    this.cockpit = null;
+  }
+
+  /**
+   * A door left open on a parked car (golfdriver.ts): the body cut away through the doorway (the
+   * space behind all of planes b, in its own frame) and the inside drawn behind it, so you can see in
+   * to the seats; null shuts it. Never while someone's driving from inside, whose view it would spoil.
+   */
+  doorway(b: THREE.Plane[] | null) {
+    if (b && !this.ajar && !this.cockpit) {
+      const S = this.spec;
+      this.cockpit = new Cockpit({ kind: this.kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0], doorway: true });
+      this.body.add(this.cockpit.group);
+      this.cutAway(b);
+      this.ajar = true;
+    } else if (!b && this.ajar) {
+      this.dropCockpit();
+      this.ajar = false;
+    }
+    if (!this.ajar) return;
+    this.root.updateMatrixWorld(true);
+    for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
   }
 
   /**
    * A car's body is solid up to its windows, so from the driver's seat you'd look down on to the top
    * of it, like a floor at the height of the doors. While you drive from inside, the body's cut away
-   * round the cabin (box b, in its own frame) so the cockpit's floor, seats and doors show instead.
-   * Only on your own screen: it's done with copies of the body's materials, clipped to that box.
+   * round the cabin (the space behind all the planes in space, in its own frame) so the cockpit's floor,
+   * seats and doors show instead. Only on your own screen: it's done with copies of the body's
+   * materials, clipped to that space.
    */
-  private cutAway(b: THREE.Box3) {
-    const P = (x: number, y: number, z: number, c: number) => new THREE.Plane(new THREE.Vector3(x, y, z), c);
-    // each plane faces out of the box, so a point is cut only if it's behind all six: inside it
-    this.cutPlanes = [P(1, 0, 0, -b.max.x), P(-1, 0, 0, b.min.x), P(0, 1, 0, -b.max.y), P(0, -1, 0, b.min.y), P(0, 0, 1, -b.max.z), P(0, 0, -1, b.min.z)]
-      .map((local) => ({ local, world: local.clone() }));
+  private cutAway(space: THREE.Plane[]) {
+    this.cutPlanes = space.map((local) => ({ local, world: local.clone() }));
     const planes = this.cutPlanes.map((p) => p.world);
     const cut = (m: THREE.Material) => {
       const c = m.clone();
@@ -798,6 +837,7 @@ export class Vehicle implements Mover {
   sit(k: number, id: string, colour: string) {
     if (k < 0 || k >= this.seats.length) return;
     this.seats[k] = id;
+    if (k === 0 && id) this.doorway(null);
     let f = this.figures[k];
     if (id && !f) {
       const [al, up, ac] = this.spec.seats[k];
@@ -1203,6 +1243,9 @@ export class Vehicles {
     // and in the square with the top of Old Bond Street in, Mr D's chip van (last, so nothing else's number moves)
     const chips = this.chipSpot(map);
     if (chips) add("chipvan", chips.x, chips.z, chips.a);
+    // and in the square with Royal Avenue in, the Golf Driver in its space, in place of the car the map parked there
+    const golf = driverSpot(map);
+    if (golf) add("golfdriver", golf.x, golf.z, golf.a);
   }
 
   /** Where Mr D's chip van is parked: at the top of Old Bond Street, on its west side just south of

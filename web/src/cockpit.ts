@@ -7,17 +7,18 @@
 // different: a big flat wheel nearly lying down on its column, a long low dash under a split
 // windscreen, the cab's green side panels, and an old mechanical ticket machine on its post by the
 // door, with a crank handle and a coin tray: no screens, they're old buses. Arleen's coaches (coaches.ts) have the same
-// sort of cab, under their own raked windscreen, in grey, with no ticket machine.
+// sort of cab, under their own raked windscreen, in grey, with no ticket machine. A parked car with
+// its driver's door left open (golfdriver.ts) shows the same inside through the doorway.
 //
-// Who decides what: it's only ever drawn for whoever's driving, on their own screen, so nothing here
-// goes over the network.
+// Who decides what: it's only ever drawn on each player's own screen (for whoever's driving, or
+// through an open door), so nothing here goes over the network.
 import * as THREE from "three";
 import { model, Part } from "./furniture";
 
 /** Where a kind's windscreen starts, metres ahead of the driver's seat, and how far back its top leans. */
 const SCREEN: Record<string, [number, number]> = {
   xr3i: [1.2, 0.83], robin: [0.92, 0.6], nova: [0.87, 0.54], metro: [0.83, 0.46], sierra: [1.2, 0.88], police: [1.2, 0.88],
-  golf: [1.05, 0.7], landrover: [0.67, 0.02], car0: [1.45, 0.9], car1: [1.55, 0.82], car2: [1.67, 1.04], transit: [0.49, 0.46], icecream: [0.31, 0.45], chipvan: [0.55, 0.49], milkfloat: [0.55, 0],
+  golf: [0.91, 0.37], golfdriver: [0.91, 0.37], landrover: [0.67, 0.02], car0: [1.45, 0.9], car1: [1.55, 0.82], car2: [1.67, 1.04], transit: [0.49, 0.46], icecream: [0.31, 0.45], chipvan: [0.55, 0.49], milkfloat: [0.55, 0],
   c5: [0.9, 0], roller: [0.7, 0],
 };
 const OPEN = new Set(["c5", "roller"]);
@@ -26,7 +27,7 @@ const SHAPE_DIMS: Record<string, [number, number]> = { car0: [1.44, 0.9], car1: 
 
 /** What the cockpit needs to know about the vehicle. kind: its kind, or for an everyday car "car" and its shape's number.
  *  seat: the driver's [along, up, across]. decks and base: a bus's. */
-export interface CockpitOf { kind: string; L: number; W: number; H: number; waist: number; seat: number[]; decks?: number; base?: number; coach?: { foot: number[]; top: number[] } }
+export interface CockpitOf { kind: string; L: number; W: number; H: number; waist: number; seat: number[]; decks?: number; base?: number; coach?: { foot: number[]; top: number[] }; doorway?: boolean }
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r: number, h: number, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg);
@@ -78,7 +79,9 @@ export class Cockpit {
     const [al, up, ac] = d.seat, [screen, rake] = SCREEN[d.kind] ?? SCREEN.car0, ey = this.eye.y;
     const yd = Math.min(ey - 0.25, d.waist + 0.02);     // the top of the dash, along the bottom of the windows
     const front = al + screen - 0.02, deep = Math.max(0.15, screen - 0.55), back = front - deep;
-    const half = d.W / 2 - 0.08, roof = d.H - 0.06;
+    // from the seat the lining sits a little above the real roof: at its true height the wide view makes it crowd the top of
+    // the screen. Seen through an open door from outside it has to stay under the roof
+    const half = d.W / 2 - 0.08, roof = d.doorway ? d.H - 0.06 : d.H + 0.02;
     const parts: Part[] = [];
     if (d.kind !== "c5") {
       parts.push([box(deep, 0.2, half * 2), d.kind === "landrover" ? "#5a5f55" : DASH, (front + back) / 2, yd - 0.1, 0]);   // the dashboard
@@ -89,15 +92,18 @@ export class Cockpit {
       // the cabin itself: the body is cut away round it while you drive (vehicles.ts), so it needs a
       // floor, the doors' insides, seats, the hump down the middle and a footwell under the dash
       const rear = Math.max(-d.L / 2 + 0.3, al - 1.45), len = front - rear, mid = (front + rear) / 2, wide = d.W / 2 - 0.03;
-      const SEAT = d.kind === "xr3i" || d.kind === "golf" ? "#3c3a44" : d.kind === "landrover" ? "#4a4a42" : "#3a3a3e";
+      const SEAT = d.kind === "xr3i" || d.kind === "golf" || d.kind === "golfdriver" ? "#3c3a44" : d.kind === "landrover" ? "#4a4a42" : "#3a3a3e";
       this.cut = new THREE.Box3(new THREE.Vector3(rear, up + 0.01, -wide), new THREE.Vector3(front, d.waist + 0.1, wide));
-      parts.push([box(len, 0.03, wide * 2), "#2a2826", mid, up - 0.005, 0]);                                    // the carpet
-      for (const z of [wide - 0.03, -wide + 0.03]) {
-        parts.push([box(len, d.waist + 0.06 - up, 0.06), TRIM, mid, (d.waist + 0.06 + up) / 2, z]);              // the doors' insides
+      // seen through an open door from outside, the floor can't hang below the body's sills
+      const fl = d.doorway ? Math.max(up, 0.32) : up;
+      parts.push([box(len, 0.03, wide * 2), "#2a2826", mid, fl - 0.005, 0]);                                    // the carpet
+      // seen from outside through the open driver's door (doorway), that door's inside goes with the door
+      for (const z of d.doorway ? [-wide + 0.03] : [wide - 0.03, -wide + 0.03]) {
+        parts.push([box(len, d.waist + 0.06 - fl, 0.06), TRIM, mid, (d.waist + 0.06 + fl) / 2, z]);              // the doors' insides
         parts.push([box(0.5, 0.05, 0.09), "#2c2d30", al + 0.1, d.waist - 0.14, z - Math.sign(z) * 0.06]);       // and their armrests
       }
-      if (d.kind !== "c5") parts.push([box(0.08, Math.max(0.05, yd - 0.2 - up), wide * 2), "#1f2022", front - 0.04, (yd - 0.2 + up) / 2, 0]);   // the footwell's end, under the dash
-      parts.push([box(Math.max(0.1, back - al + 0.4), 0.16, 0.24), "#2a2b2e", (back + al - 0.4) / 2, up + 0.08, 0]);   // the hump down the middle
+      if (d.kind !== "c5") parts.push([box(0.08, Math.max(0.05, yd - 0.2 - fl), wide * 2), "#1f2022", front - 0.04, (yd - 0.2 + fl) / 2, 0]);   // the footwell's end, under the dash
+      parts.push([box(Math.max(0.1, back - al + 0.4), 0.16, 0.24), "#2a2b2e", (back + al - 0.4) / 2, fl + 0.08, 0]);   // the hump down the middle
       // the front seats, yours and the one beside it, and a bench in the back if there's room
       for (const z of [ac, -ac]) {
         parts.push([box(0.5, 0.14, 0.48), SEAT, al + 0.05, up + 0.32, z], [box(0.12, 0.62, 0.48).rotateZ(0.18), SEAT, al - 0.27, up + 0.68, z]);
@@ -113,7 +119,8 @@ export class Cockpit {
       const base = [front + 0.02, yd - 0.02], top = [front + 0.02 - rake, roof];
       for (const z of [half - 0.02, -half + 0.02]) parts.push(strut(base, top, z, 0.07, 0.08, TRIM));       // the windscreen pillars
       parts.push([box(0.08, 0.05, half * 2), TRIM, top[0] - 0.02, roof - 0.02, 0]);                            // the rail over the windscreen
-      const rear = Math.max(-d.L / 2 + 0.3, al - 1.5);
+      // and from outside the lining mustn't run on past the roof into the back window
+      const rear = Math.max(-d.L / 2 + 0.3, al - (d.doorway ? 0.95 : 1.5));
       parts.push([box(top[0] - rear, 0.025, half * 2 - 0.04), LINING, (top[0] + rear) / 2, roof - 0.03, 0]);  // the roof lining
       for (const z of [half - 0.03, -half + 0.03]) parts.push([box(0.1, roof - d.waist, 0.05), TRIM, al - 0.4, (roof + d.waist) / 2, z]);   // the pillars behind the doors
       parts.push([box(0.03, 0.05, 0.2), "#1c1d1f", top[0] - 0.1, roof - 0.1, 0], [box(0.005, 0.04, 0.18), "#8b97a1", top[0] - 0.118, roof - 0.1, 0]);   // the mirror
@@ -123,7 +130,7 @@ export class Cockpit {
       // the steering wheel, on a column rising towards you, and the dials behind it
       const hub = new THREE.Vector3(Math.max(al + 0.3, Math.min(back - 0.05, al + 0.45)), d.waist, ac);
       this.wheel(hub, d.kind === "landrover" || d.kind === "roller" ? 0.2 : 0.18, 0.4, d.kind === "roller" ? "#2a2a2a" : "#161718");
-      this.dials(new THREE.Vector3(back - 0.003, yd + 0.03, ac), 0.045, 0.1);
+      if (!d.doorway) this.dials(new THREE.Vector3(back - 0.003, yd + 0.03, ac), 0.045, 0.1);   // (two dozen little meshes, unseen from outside)
     } else {
       // the C5 steers by handlebars under your knees
       parts.push([box(0.04, 0.03, 0.42), "#1b1c1d", al + 0.3, up + 0.32, ac]);

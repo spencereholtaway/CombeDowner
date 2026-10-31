@@ -141,6 +141,7 @@ add("Exploring", "silver", "pub20", "Regular", "Walk into 20 different pubs", ()
 add("Exploring", "gold", "puball", "Pub Crawl Champion", "Walk into every pub in Bath", () => state().tot.pubs >= 5 && seen("pubs") >= state().tot.pubs);
 add("Exploring", "bronze", "pint1", "Cheers", "Have a pint", () => num("pints") >= 1);
 add("Exploring", "silver", "pint10", "Hollow Legs", "Have ten pints", () => num("pints") >= 10);
+add("Exploring", "silver", "tape", "Bath Moon Rising", "Find the tape left in a petrol blue Golf");
 
 for (const sp of LANDMARKS) {
   const [name, how] = LM_TEXT[sp.name] ?? [`See ${sp.name}`, `Visit ${sp.name}`];
