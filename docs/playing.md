@@ -903,10 +903,10 @@ night out, to try it.)
 Every nursery and primary school has a safe zone: its grounds and 200 m round them. Nothing that
 fights turns up in one. No gang of naughty boys hangs about there, no team turns out on a pitch
 there, the Flag Lads never take over a pub within reach of one or send a ladder lad, and a Wanted
-man never has a stop near one, nor do his mates turn up there if he runs into one. Nothing to pick
+man never has a stop near one. Nothing to pick
 up turns up there either, apart from rides and ladders: no markers, paintballs, pints or fizz, no
-drops, and a prize won on a pitch in one is a ride. A gang already chasing you will follow you in;
-they just never start there. The schools come from the map's names: nurseries, pre-schools,
+drops, and a prize won on a pitch in one is a ride. A chase can still run through one; nothing
+just starts there. The schools come from the map's names: nurseries, pre-schools,
 playgroups, infant, junior, primary, church and prep schools, and Three Ways School.
 
 ### Cats

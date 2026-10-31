@@ -65,7 +65,7 @@
 // ("lost") or for good ("away").
 //
 // He never hangs about within 290 m of a nursery or primary school's grounds, so neither he nor his
-// lookouts start within 200 m of one, and his mates don't turn up there if he runs into one (safezones.ts).
+// lookouts start within 200 m of one (safezones.ts). Once he's on the run, anything goes.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { FEAT_ARITY, MOUNTS, NAUGHTY, CRICKET, RUGBY, SOCIETY, featsOf, look, withFeats } from "./naughtyboys";
@@ -749,10 +749,8 @@ class Wanted implements Job {
         } else if (this.has("mob") && !this.mobbed && (hurt || b.target)) {
           this.mobbed = true; this.clean = false;
           const at = clearSpot(this.w.map, b.x + 25, b.z, 10) ?? [b.x, b.z];
-          if (!inSafeZone(this.w.map, at[0], at[1])) {   // not by a nursery or primary school
-            this.crew.push(...ch.bring(at[0], at[1], this.lookCrew(), 2 + this.offer.stars, players, undefined, 5));
-            this.say("His mates have turned up!");
-          }
+          this.crew.push(...ch.bring(at[0], at[1], this.lookCrew(), 2 + this.offer.stars, players, undefined, 5));
+          this.say("His mates have turned up!");
         } else if (!this.spotted && !this.warned && this.lookouts.some((l) => ch.get(l.i, l.gen)?.target)) {
           this.warned = true; this.clean = false; this.move(true); this.say("A lookout's phoned ahead! He's on the move");
         } else if (!this.spotted && !b.target && (this.movedT += dt) > MOVE_EVERY) this.move(false);
@@ -972,7 +970,7 @@ class Wanted implements Job {
     for (const c of this.crew) ch.setOn(c.i, c.gen, by, p.x, p.z);
     if (this.has("mob")) {
       const a = Math.random() * Math.PI * 2, at = clearSpot(this.w.map, b.x + Math.cos(a) * 45, b.z + Math.sin(a) * 45, 12);
-      if (at && !inSafeZone(this.w.map, at[0], at[1])) for (const c of ch.bring(at[0], at[1], this.lookCrew(), 1 + this.offer.stars, players, undefined, 4)) { this.crew.push(c); ch.setOn(c.i, c.gen, by, p.x, p.z); }
+      if (at) for (const c of ch.bring(at[0], at[1], this.lookCrew(), 1 + this.offer.stars, players, undefined, 4)) { this.crew.push(c); ch.setOn(c.i, c.gen, by, p.x, p.z); }
     }
     this.say("His mates are coming to spring him!");
   }
