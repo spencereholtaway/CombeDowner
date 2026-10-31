@@ -41,9 +41,11 @@ def spot(x, y):
     return zlib.crc32(f"{round(x, 1)},{round(y, 1)}".encode())
 
 
-def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None):
+def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=()):
     """Doors (and, if a list is given, bay windows: 1930s suburban semis and detached houses
-    usually have one beside the door, often two storeys high). keys: see buildings.classify."""
+    usually have one beside the door, often two storeys high). keys: see buildings.classify.
+    walls (lines): a door goes in another bay of its wall rather than open on to one of them."""
+    wtree = shapely.STRtree(list(walls)) if len(walls) else None
     lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in roads
              if r["c"] not in ("footway", "steps", "path", "cycleway", "bridleway", "track") and len(r["p"]) > 1]
     tree = shapely.STRtree(lines)
@@ -74,10 +76,16 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None):
         n = bays_on(L, door=True)
         if b["kind"] == "terrace": k = 0 if rr.random() < 0.5 else n - 1
         else: k = n // 2 if n % 2 or rr.random() < 0.5 else n // 2 - 1
+        nx, ny = uy, -ux
+        mx, my = a[0] + ux * L / 2, a[1] + uy * L / 2
+        if (mx - c.x) * nx + (my - c.y) * ny < 0: nx, ny = -nx, -ny
+        def blocked(k):
+            px, py = a[0] + ux * L * (k + 0.5) / n, a[1] + uy * L * (k + 0.5) / n
+            step = LineString([(px + nx * 0.15, py + ny * 0.15), (px + nx * 0.75, py + ny * 0.75)])
+            return wtree is not None and any(walls[int(j)].intersects(step) for j in wtree.query(step))
+        if blocked(k): k = next((j for j in sorted(range(n), key=lambda j: abs(j - k)) if not blocked(j)), k)
         f = (k + 0.5) / n
         px, py = a[0] + ux * L * f, a[1] + uy * L * f
-        nx, ny = uy, -ux
-        if (px - c.x) * nx + (py - c.y) * ny < 0: nx, ny = -nx, -ny
         ang = math.atan2(uy, ux)
         if math.sin(ang) * nx - math.cos(ang) * ny < 0: ang += math.pi
         px, py = px + nx * 0.03, py + ny * 0.03

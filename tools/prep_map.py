@@ -2219,7 +2219,8 @@ osm_roads = load_osm(os.path.join(src_dir, "osm-roads.geojson"), proj)
 if (found_walls or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
     from roadwidth import measure
     obstacles = [shapely.LineString(w["p"]) for w in found_walls] + [f.exterior for f in footprints]
-    roads, narrowed = measure(obstacles, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, osm_roads)
+    roads, narrowed = measure(obstacles, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, osm_roads,
+                              houses_from=len(found_walls))
     print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
           + ("" if osm_roads else " (no osm-roads.geojson)"))
 
@@ -2288,6 +2289,72 @@ if DOOR_ZONES & ({z[0] for z in A.zones} | {A.default_zone}):
     roads, _doors = _to_the_door(roads)
     print(f"streets: {_doors} with their pavements run up to the house fronts")
 
+# ---- pavements up to the shop fronts -----------------------------------------------------------
+# A shop opens straight on to the pavement, anywhere: in front of one the pavement runs on up to
+# its front (up to DOOR_REACH past the street's own), so no front garden is left there to guess.
+# It's measured a stretch between two points at a time, as a row of shops seldom stands in one
+# line, and never across another street's carriageway to a shop on the far side of it.
+from shops import businesses
+found, shop_log = businesses(src_dir, A.bbox, proj, [c[0] for c in cand], info, L("place"), inside,
+                             getattr(pack, "SIGN_NAMES", None), getattr(pack, "SIGN_SKIP", ()))
+_shop_tree = shapely.STRtree([cand[b["b"]][0] for b in found]) if found else None
+shopfront = [_shop_tree is not None and len(_shop_tree.query(f.representative_point(), predicate="intersects")) > 0
+             for f in footprints]
+
+
+def _to_the_shops(roads):
+    cars = [(r.get("n") or id(r), shapely.LineString([q[:2] for q in r["p"]]).buffer(rw(r) / 2, cap_style=2))
+            for r in roads if r["c"] not in PATHS and len(r["p"]) > 1]
+    car_tree = shapely.STRtree([g for _, g in cars])
+    out, n = [], 0
+    for r in roads:
+        pts = r["p"]
+        if r["c"] not in KERBED_RD or any(len(q) > 3 for q in pts):
+            out.append(r); continue
+        half, was = rw(r) / 2, list(r.get("pv", [PAVE_W, PAVE_W]))
+        me = r.get("n") or id(r)
+        seg = []
+        for a, b in zip(pts, pts[1:]):
+            line = shapely.LineString([a[:2], b[:2]])
+            if line.length < 0.5: seg.append(list(was)); continue
+            here = []
+            for k, s in enumerate((1, -1)):           # left, then right, looking along the points
+                strip = lambda v: line.buffer(s * (half + v), single_sided=True, cap_style=2).difference(line.buffer(half, cap_style=2))
+                # the pavement grows out from its kerb until it meets a building: if that's a shop,
+                # it reaches its front
+                v, met = was[k], None
+                while v < was[k] + DOOR_REACH and met is None:
+                    g = strip(v + 0.5)
+                    if any(cars[int(j)][0] != me and cars[int(j)][1].intersection(g).area > 0.1 for j in car_tree.query(g)):
+                        met = []; break
+                    hit = [int(j) for j in fp_tree.query(g) if footprints[int(j)].intersection(g).area > 0.1]
+                    if hit: met = hit
+                    else: v += 0.5
+                # (None: an opening between the buildings, such as an alley's mouth)
+                here.append(None if met is None else v if met and all(shopfront[j] for j in met) else was[k])
+            seg.append(here)
+        # an opening one stretch long between two shop fronts is paved across, at the narrower of
+        # the two pavements either side of it
+        for k in (0, 1):
+            for i, h in enumerate(seg):
+                if h[k] is not None: continue
+                a = seg[i - 1][k] if i > 0 else None
+                b = seg[i + 1][k] if i + 1 < len(seg) else None
+                h[k] = min(a, b) if a is not None and b is not None and min(a, b) > was[k] else was[k]
+        if all(v == was for v in seg):
+            out.append(r); continue
+        n += 1
+        start = 0
+        for i in range(1, len(seg) + 1):
+            if i == len(seg) or seg[i] != seg[start]:
+                out.append(dict(r, p=pts[start:i + 1], w=rw(r), pv=seg[start]))
+                start = i
+    return out, n
+
+
+roads, _shops = _to_the_shops(roads)
+print(f"streets: {_shops} with their pavements run up to the shop fronts along them")
+
 # ---- no street runs through a house ----------------------------------------------------------
 # Buildings went down first and don't move: where a street's line runs on through one (a drive
 # mapped on into a garage, a lane drawn across a house), the street stops at its wall, half a
@@ -2351,9 +2418,22 @@ print(f"footpaths: {_cut / 1000:.1f} km lying along a street's carriageway left 
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
 from gardens import plots, _ahead
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
-corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
-    rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0.3), cap_style=2)
-    for r in roads if len(r["p"]) > 1]
+
+
+def _corridor(r):
+    """A street's ground: its carriageway and pavements. A pavement run on up to the house or shop
+    fronts on one side, wider than an ordinary one, is only on that side, so it doesn't take the
+    gardens over the road."""
+    line = shapely.LineString([(a, b) for a, b, *_ in r["p"]])
+    if r["c"] not in KERBED or pave(r) <= PAVE_W or line.length <= 0:
+        return line.buffer(rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0.3), cap_style=2)
+    pl, pr = r["pv"]
+    return unary_union([line.buffer(rw(r) / 2 + PAVE_W, cap_style=2),
+                        line.buffer(rw(r) / 2 + pl, single_sided=True, cap_style=2),
+                        line.buffer(-(rw(r) / 2 + pr), single_sided=True, cap_style=2)])
+
+
+corridor = [_corridor(r) for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
 open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
 # a paved square or pedestrian street (Kingston Parade, Abbey Churchyard) is nobody's garden, holes
@@ -2543,9 +2623,7 @@ phones = phone_boxes(L("osm")) if os.path.exists(f"{src_dir}/osm.geojson") else 
 fx, marks = street_furniture(roads, L("infrastructure") + phones, gate_list, RW, gelev, proj, inside, rnd, keyed=True)
 
 # ---- shop signs ----------------------------------------------------------------
-from shops import businesses, shop_signs
-found, shop_log = businesses(src_dir, A.bbox, proj, [c[0] for c in cand], info, L("place"), inside,
-                             getattr(pack, "SIGN_NAMES", None), getattr(pack, "SIGN_SKIP", ()))
+from shops import shop_signs
 for line in shop_log: print("shops:", line)
 src_count = {s: sum(1 for b in found if b["src"] == s) for s in ("osm", "fsa", "overture")}
 print(f"shops: {len(found)} businesses ({', '.join(f'{n} {s}' for s, n in src_count.items() if n)})")
@@ -3180,7 +3258,8 @@ print(f"gates: {moved} moved into a real wall, {opened} left as an open front")
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
 bays = []
-doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys)
+doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys,
+                    walls=[shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1])
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
 ctx.water = water_all

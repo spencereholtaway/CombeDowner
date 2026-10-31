@@ -37,9 +37,10 @@ LANES = {"service": 2.5, "unknown": 2.5}     # lanes and drives, fitted between 
 WALKS = {"footway", "path", "cycleway"}     # mapped footpaths that can be a street's pavement
 
 
-def _side_reach(tree, obstacles, p, nrm, t, s):
+def _side_reach(tree, obstacles, p, nrm, t, s, houses_from=None):
     """For each point p (looking out to side s, +1 left, -1 right), the distance to the first wall
-    or building front in reach that runs along the street (within 35 degrees), or None."""
+    or building front in reach that runs along the street (within 35 degrees), or None; and, if
+    houses_from is given (obstacles from there on are buildings), whether that's a building."""
     import shapely
     out = []
     cos_tol = np.cos(np.radians(35))
@@ -58,8 +59,8 @@ def _side_reach(tree, obstacles, p, nrm, t, s):
             q0, q1 = ob.interpolate(max(0, at - 0.5)), ob.interpolate(min(ob.length, at + 0.5))
             v = np.array([q1.x - q0.x, q1.y - q0.y]); v /= (np.linalg.norm(v) or 1)
             if abs(float(v @ t[i])) < cos_tol: continue
-            best = d
-        out.append(best)
+            best, house = d, houses_from is not None and int(k) >= houses_from
+        out.append(best if houses_from is None else (best, best is not None and house))
     return out
 
 
@@ -106,7 +107,7 @@ def osm_tags(osm_roads):
     return find
 
 
-def measure(obstacles, roads, RW, kerbed, osm_roads=None):
+def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses_from=None):
     """Roads with the narrowed ones cut into pieces that each carry "w" (the carriageway's width)
     and "pv" (its pavements' widths, [left, right]). obstacles are the walls the lidar found
     (tools/walls.py) and the buildings' outlines, as lines."""
@@ -143,20 +144,34 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None):
         t = b - a
         t /= np.maximum(np.linalg.norm(t, axis=1), 1e-6)[:, None]
         nrm = np.stack([-t[:, 1], t[:, 0]], 1)        # to the left
-        sides = [_side_reach(tree, obstacles, p, nrm, t, s) for s in (1, -1)] if tree is not None else [[None] * len(p)] * 2
+        reach = [_side_reach(tree, obstacles, p, nrm, t, s, houses_from) for s in (1, -1)] if tree is not None and houses_from is not None else None
+        sides = [[d for d, _ in rs] for rs in reach] if reach else \
+            [_side_reach(tree, obstacles, p, nrm, t, s) for s in (1, -1)] if tree is not None else [[None] * len(p)] * 2
         w0, pave0 = RW[r["c"]], (PAVE if r["c"] in kerbed else 0.0)
         soft, hard = SOFT.get(r["c"], 5.0), NARROWEST.get(r["c"], LANES.get(r["c"], 3.5))
+        # A street's end is a junction, where the next street's tags and footpaths begin, so they
+        # are read a few metres in from it: one reading at the corner would otherwise spread over
+        # the street (below) and take away a pavement it has.
+        seg = np.linalg.norm(np.diff(p, axis=0), axis=1)
+        inner = p.copy()
+        inner[0] = p[0] + t[0] * min(3.0, seg[0] / 2)
+        inner[-1] = p[-1] - t[-1] * min(3.0, seg[-1] / 2)
         fits = []
         for i in range(len(p)):
-            ow, oside = tags(p[i], t[i])
+            ow, oside = tags(inner[i], t[i])
             w = min(w0, max(hard, ow)) if ow else w0
             pv = [pave0 * oside[0], pave0 * oside[1]] if oside else [pave0, pave0]
             for k, side in enumerate((1, -1)):
-                if pv[k] and walked(p[i], t[i], side, w0 / 2 + pave0 + 3.0): pv[k] = 0.0
+                if pv[k] and walked(inner[i], t[i], side, w0 / 2 + pave0 + 3.0): pv[k] = 0.0
             room = []
             for s in sides:
                 near = [v for v in s[max(0, i - 6):i + 7] if v is not None]
-                room.append(float(np.median(near)) - SPARE if len(near) >= 3 else None)
+                rm = float(np.median(near)) - SPARE if len(near) >= 3 else None
+                # a building is no gate pier: one seen even at a single point keeps the street off it
+                if reach:
+                    hs = [d for d, h in reach[len(room)][max(0, i - 1):i + 2] if h]
+                    if hs: rm = min(min(hs) - SPARE, rm if rm is not None else 1e9)
+                room.append(rm)
             over = lambda: any(rm is not None and w / 2 + pv[k] > rm + 1e-6 for k, rm in enumerate(room))
             if over():
                 w = max(min(w, soft), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
