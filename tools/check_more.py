@@ -16,14 +16,20 @@
 17. Where the game sends players: a pub's door is outside, near a street and inside the force
     field; an overhead wire doesn't run through a building or low over a road.
 18. Boats: a moored boat is on the canal's water, not in a lock, under a bridge or in another boat.
+19. The railway is watertight, as the game builds it (tools/watertight.ts runs the game's own
+    web/src/railway.ts over the squares' ground): nowhere on its track bed, bridges or platforms is
+    what you stand on well below what's drawn ("falls through the floor"), and no ray from standing
+    height on, under or beside the line passes into its body (under its ballast, deck or platform,
+    above the ground and an arch's opening) without meeting a face ("sky through the ground").
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
 """
-import functools, json, math, os, subprocess
+import functools, json, math, os, subprocess, tempfile
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
+from shapely.ops import substring
 
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 VEHICLE = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown",
@@ -88,6 +94,25 @@ def _set_pieces(centre):
     return out
 
 
+@functools.lru_cache(maxsize=2)
+def watertight(root, map_id):
+    """Rule 19's findings over the whole map, from tools/watertight.ts bundled with the game's code;
+    none if that can't be run. Called once before the squares are checked, so it runs only once."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    web = os.path.join(os.path.dirname(here), "web")
+    try:
+        js = subprocess.run([os.path.join(web, "node_modules", ".bin", "esbuild"), "--bundle", "--platform=node", "--format=esm",
+                             "--loader=ts", "--log-level=error",
+                             "--banner:js=globalThis.location={search:''};globalThis.window=globalThis;"
+                             "globalThis.document={createElement:()=>({getContext:()=>new Proxy({},{get:()=>()=>({})})})};"],
+                            input=open(os.path.join(here, "watertight.ts")).read(), cwd=web, capture_output=True, text=True, check=True).stdout
+        with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
+            f.write(js); f.flush()
+            return json.loads(subprocess.run(["node", f.name, os.path.abspath(root), map_id], capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return []
+
+
 def _unmask(m, pieces):
     """The square as the game shows it: what a set piece hides taken out."""
     if not pieces: return
@@ -101,6 +126,33 @@ def _unmask(m, pieces):
     for k in ("tr", "sb", "dr", "by", "sh"):
         if m.get(k): m[k] = [q for q in m[k] if not hide(+q[0], +q[1])]
     m["sp"] = [list(p.exterior.coords) for p in near for p in getattr(p, "geoms", [p])]
+
+
+@functools.lru_cache(maxsize=12)
+def _terrain_of(path):
+    return terrain(json.load(open(path))["t"]) if os.path.exists(path) else None
+
+
+def beyond(f, m, ground):
+    """ground, and past the square's edge the ground of the square there (a building held by this
+    square can reach over its edge, standing on the next square's ground in the game)."""
+    x0, y0, x1, y1 = m["b"]
+    size = x1 - x0
+    try:
+        ti, tj = (int(n) for n in os.path.basename(f)[:-5].split("_"))
+    except ValueError:
+        return ground
+
+    def at(x, y):
+        x, y = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(y, float))
+        out = np.asarray(ground(x, y), float).copy()
+        di, dj = np.floor((x - x0) / size).astype(int), np.floor((y - y0) / size).astype(int)
+        for a, b in set(zip(di.tolist(), dj.tolist())) - {(0, 0)}:
+            g = _terrain_of(os.path.join(os.path.dirname(f), f"{ti + a}_{tj + b}.json"))
+            k = (di == a) & (dj == b)
+            if g is not None: out[k] = g(x[k], y[k])
+        return out
+    return at
 
 
 @functools.lru_cache(maxsize=24)
@@ -215,7 +267,7 @@ def square(m, tag, note, f):
         return ~hits(dtree, p)
 
     drawn = surface(m, ground)
-    buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, drawn, note, at, off_deck, pts)
+    buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, beyond(f, m, drawn), note, at, off_deck, pts)
     streets(m, roads, rlines, rtree, marked, homes, solid, ground, note, at, sq, f)
     land_and_water(m, waters, ground, note, at, sq, f)
     small_things(m, roads, rlines, rtree, solid, wtree, drawn, note, at, off_deck, pts, hits, inner)
@@ -229,6 +281,9 @@ def square(m, tag, note, f):
             dz = q[2] - float(ground(ox, oy))
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
+    for w in watertight(root, map_id):
+        if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
+    street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
 
 
@@ -455,6 +510,84 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         p = Point(q[1], q[2])
         g = min((rlines[int(k)].distance(p) for k in rtree.query(p.buffer(10))), default=10)
         if g > 1.5: note("15 path gate off its path", g, at(q[1], q[2]), f"{q[0]} {g:.1f} m off")
+
+
+KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}   # (a living street is paved flush)
+FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
+
+
+def longest_run(lines):
+    """The length of the longest unbroken stretch of `lines`."""
+    parts = shapely.line_merge(shapely.union_all([g for g in getattr(lines, "geoms", [lines]) if g.geom_type in ("LineString", "MultiLineString")] or [LineString()]))
+    return max((g.length for g in getattr(parts, "geoms", [parts])), default=0.0)
+
+
+def faces_of(m):
+    """The streets' faces (sf) as the game draws them: each kind's triangles, unioned."""
+    sf = m.get("sf")
+    if not sf or "o" not in sf: return {}
+    v = np.cumsum(np.asarray(sf["v"], float).reshape(-1, 3), axis=0) / 100 + [sf["o"][0], sf["o"][1], 0]
+    out = {}
+    for k in FACE_KINDS:
+        if not sf.get(k): continue
+        tri = np.cumsum(np.asarray(sf[k], np.int64)).reshape(-1, 3)
+        polys = shapely.polygons(np.stack([v[tri[:, 0], :2], v[tri[:, 1], :2], v[tri[:, 2], :2]], axis=1))
+        out[k] = shapely.union_all(shapely.make_valid(polys[shapely.area(polys) > 1e-6]))
+    return out
+
+
+def levels_of(m):
+    """Each street face kind's corner heights, by where the corner is."""
+    sf = m.get("sf")
+    v = np.cumsum(np.asarray(sf["v"], float).reshape(-1, 3), axis=0) / 100 + [sf["o"][0], sf["o"][1], 0]
+    out = {}
+    for k in ("path", "pave"):
+        ids = np.unique(np.cumsum(np.asarray(sf.get(k) or [], np.int64)))
+        out[k] = {(round(v[i, 0], 2), round(v[i, 1], 2)): v[i, 2] for i in ids}
+    return out
+
+
+def street_faces(m, roads, rlines, marked, note, at, sq):
+    """Where a path or a pedestrian area meets a street, each keeps to its own ground: no paving or path
+    lies over a kerbed street's carriageway (a sawtooth of paving into the road where a pedestrian
+    area's edge runs along it), and no path's strip runs along a pavement beside it (it is that pavement)."""
+    F = faces_of(m)
+    if not F: return
+    inner = sq.buffer(-3)
+    soft = shapely.union_all([F[k] for k in ("pave", "path", "front", "drive", "grass", "dirt", "gravel") if k in F] or [Polygon()])
+    for r, ln, mk in zip(roads, rlines, marked):
+        if r["c"] not in KERBED or mk or ln.length < 6: continue
+        core = substring(ln, 2, ln.length - 2)
+        # (the middle of the road only: a record's width and its drawn carriageway differ by a little)
+        band = core.buffer(1.0, cap_style="flat").intersection(inner)
+        over = band.intersection(soft).area
+        if over > 0.5:
+            c = band.intersection(soft).representative_point()
+            note("9 paving over a carriageway", over, at(c.x, c.y), f"{r['c']} {r['n']!r} {over:.1f} m2")
+    if "pave" in F:
+        # (two faces drawn over each other flicker in the game, and a pavement over the road hides it)
+        cars = shapely.union_all([F[k] for k in ("road", "service") if k in F] or [Polygon()])
+        both = F["pave"].intersection(cars).intersection(inner)
+        for g in getattr(both, "geoms", [both]):
+            if g.geom_type == "Polygon" and g.area > 0.5:
+                c = g.representative_point()
+                note("9 pavement over the road", g.area, at(c.x, c.y), f"{g.area:.1f} m2")
+    if "path" in F and "pave" in F:
+        edge = F["pave"].boundary
+        # (a footway up a bank beside the street, a step off the pavement's level, is a path of its own)
+        zs = levels_of(m)
+        for g in getattr(F["path"], "geoms", [F["path"]]):
+            if g.geom_type != "Polygon" or not inner.intersects(g): continue
+            shared = g.exterior.intersection(edge.buffer(0.05))
+            # (its longest stretch: a path leaving the pavement at a slant at both ends runs along it nowhere)
+            along = longest_run(shared)
+            steps = [abs(zs["path"][k] - zs["pave"][k]) for k in
+                     ((round(x, 2), round(y, 2)) for x, y in shapely.get_coordinates(shared))
+                     if k in zs["path"] and k in zs["pave"]]
+            if steps and max(steps) > 0.4: continue
+            if along > 6:
+                c = g.representative_point()
+                note("9 path strip along a pavement", along, at(c.x, c.y), f"{along:.0f} m")
 
 
 def gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits):

@@ -183,6 +183,7 @@ def low(x, y, r):
 
 STEP = 4.0
 BANK = 10.0     # metres back from the water's edge over which the ground slopes down to it
+RIM = 4.0       # metres round a pond or a river that hold its water in, a step above it
 if TILE is None:
     nx, ny = int(math.ceil((X1 - X0) / STEP)) + 1, int(math.ceil((Y1 - Y0) / STEP)) + 1
     dx, dy = (X1 - X0) / (nx - 1), (Y1 - Y0) / (ny - 1)
@@ -1575,7 +1576,7 @@ if True:
                     else:
                         grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
                         blk = OTHER_WET[win]; blk[wet] = True
-                    if not at_sea: banks.append((poly, None if is_canal else wz))
+                    if not at_sea: banks.append((poly, None if is_canal else wz, entry))
     # a basin's bed is dug wherever its water is, the map's water or not (a channel cut to it:
     # tools/canal.py), and the ground round it stands at least a little above its water, as the
     # canal's banks do, or the water would stand over land lower than itself with nothing holding it
@@ -1596,7 +1597,14 @@ if True:
         for bp in whole_polys(g):
             win, inn = cover_xy(bp.buffer(2.5))
             BUILT[win][inn] = True
-    for poly, wz in banks:
+    # each pond's or river's own rim (out to RIM past its edge), at its water's level: another
+    # piece's bank lower down doesn't take it away, or a pond beside the river would hang over it
+    RIM_LV = np.full(grid.shape, -np.inf)
+    for poly, wz, _ in banks:
+        if wz is None: continue
+        win, rim = cover_xy(poly.buffer(RIM), edge=True)
+        blk = RIM_LV[win]; blk[rim] = np.maximum(blk[rim], wz); RIM_LV[win] = blk
+    for poly, wz, _ in banks:
         edge = poly.exterior
         x0, y0, x1, y1 = poly.bounds
         i0, i1 = max(0, int((x0 - BANK - X0) / dx)), min(nx - 1, int((x1 + BANK - X0) / dx) + 1)
@@ -1609,9 +1617,12 @@ if True:
         near = ~shapely.contains_xy(poly, px, py) & (flat_w[win] > flat_f[win] + 1.5 * dx) & ~BUILT[win]
         if PROTECT is not None: near &= ~PROTECT[win]                                                   # (nor a bridge's abutments)
         if not near.any(): continue
+        lip = (canal_lv(px, py) if wz is None else np.full(px.shape, wz)) + 0.3
+        near &= ~(RIM_LV[win] > lip)
+        if not near.any(): continue
         d = shapely.distance(edge, shapely.points(px[near], py[near]))
         s = np.clip(d / BANK, 0, 1); s = s * s * (3 - 2 * s)
-        lip = (canal_lv(px[near], py[near]) if wz is None else wz) + 0.3
+        lip = lip[near]
         want = lip + (grid[win][near] - lip) * s
         blk = grid[win]
         blk[near] = np.minimum(blk[near], want)
@@ -1767,6 +1778,47 @@ if True:
             dug += int((new < cur - 0.05).sum())
             blk[near] = new; grid[win] = blk
         if dug: print(f"canal: the ground dug down under its bridges at {dug} vertices")
+# a pond's or a river's water stands no higher than the ground round its edge, which holds it in:
+# the rim out to RIM is laid a little above the water wherever it's free to be (as a basin's is),
+# and a pond on its own, whose rim is a road, a building or a bridge's abutment lower than its
+# water, comes down to that, its bed dug down with it
+if True:
+    rimmed = lowered = 0
+    rim_lift = 0.0
+    bank_tree = shapely.STRtree([b[0] for b in banks])
+    for k, (poly, wz, entry) in enumerate(banks):
+        if wz is None or not poly.buffer(RIM).intersects(BM): continue
+        win, rim = cover_xy(poly.buffer(RIM).difference(poly), edge=True)
+        rim &= ~OTHER_WET[win]
+        if canal_lv is not None: rim &= ~canal_bed(GX[win], GY[win])
+        if not rim.any(): continue
+        fixed = flat_in[win] | (flat_w[win] < flat_f[win] + 1.0) | BUILT[win]
+        if PROTECT is not None: fixed |= PROTECT[win]
+        blk = grid[win]
+        held = blk[rim & fixed]
+        alone = all(int(o) == k for o in bank_tree.query(poly, predicate="dwithin", distance=1.0))
+        if alone and len(held) and held.min() < wz + 0.1:
+            low = round(float(held.min()) - 0.1, 1)
+            bwin, wet = cover_xy(poly, edge=True)
+            wet &= ~flat_in[bwin]
+            was = grid[bwin].copy()
+            bed = grid[bwin]; bed[wet] = np.minimum(bed[wet], low - 0.6); grid[bwin] = bed
+            # (a pond too small for the grid to dig a bed under it keeps its level, rather than
+            # come down below its own floor)
+            mid = poly.representative_point()
+            if gelev0(mid.x, mid.y) > low + 0.1:
+                grid[bwin] = was
+            else:
+                wz = low
+                entry["z"] = wz
+                lowered += 1
+            blk = grid[win]
+        up = rim & ~fixed & (blk < wz + 0.1)
+        rimmed += int(up.sum())
+        if up.any(): rim_lift = max(rim_lift, float((wz + 0.1 - blk[up]).max()))
+        blk[up] = wz + 0.1
+        grid[win] = blk
+    if rimmed or lowered: print(f"water: rims raised at {rimmed} vertices (by up to {rim_lift:.1f} m), {lowered} ponds brought down to the ground holding them")
 # a span's marks run on to where its deck meets the ground as it finally is, now the water's
 # beds and banks and the canal's are laid (the ground under a bridge's end may have gone down)
 regrown = 0
@@ -1877,11 +1929,24 @@ if TILE is not None:
     # buildings this far past the margin are classed too, so a terrace that runs over the edge is
     # one terrace, the same from both sides
     WORK = box(X0 - 150, Y0 - 150, X1 + 150, Y1 + 150)
+    _size, _circle = CELLS * D, Point(*A.field_centre).buffer(A.half, 256)
+    _tile_box = lambda i, j: box(G.x0 + i * _size, G.y0 + j * _size, G.x0 + (i + 1) * _size, G.y0 + (j + 1) * _size)
+    _built = lambda i, j: 0 <= i <= 2 and 0 <= j <= 2 or _tile_box(i, j).intersects(_circle)    # as prep_tiles.py
+
+    def keeper(poly):
+        """The tile a building belongs to: the one holding its middle, or, at the map's edge where that
+        one isn't built, the built one holding most of it, so it isn't left out with its door standing."""
+        c = poly.centroid
+        at = (math.floor((c.x - G.x0) / _size), math.floor((c.y - G.y0) / _size))
+        if _built(*at): return at
+        x0, y0, x1, y1 = poly.bounds
+        near = [(i, j) for i in range(math.floor((x0 - G.x0) / _size), math.floor((x1 - G.x0) / _size) + 1)
+                for j in range(math.floor((y0 - G.y0) / _size), math.floor((y1 - G.y0) / _size) + 1) if _built(i, j)]
+        return max(near, key=lambda t: (poly.intersection(_tile_box(*t)).area, t), default=at)
 for g, p in L("building"):
     for poly in (polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
-            c = poly.centroid
-            p = dict(p, _own=own(c.x, c.y))      # whole, in the tile holding its middle
+            p = dict(p, _own=keeper(poly) == (ti, tj))      # whole, in the tile holding its middle
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
@@ -1944,6 +2009,23 @@ cand = split
 # a building mapped twice (on its own, and again as a wing cut from a bigger block round it)
 # would stand two roofs in each other, fighting to be seen: one is left out, keeping the one with
 # a name. A part standing in a bigger building (a tower, a higher range) covers far less of it and stays
+def _same_building(a, b):
+    """Two outlines of one building: most of the bigger covered, or all but a sliver of the smaller
+    and well over half the bigger (two guesses at one house, a little apart)."""
+    over, small, big = a.intersection(b).area, min(a.area, b.area), max(a.area, b.area)
+    return over >= 0.8 * big or (over >= 0.8 * small and over >= 0.6 * big)
+
+
+def _hollow_unseen(holed, whole):
+    """Whether the lidar sees roof, not a courtyard, where one outline of a building has a hole and
+    the other covers it: the one covering it sees as high a roof (its lowest eighth of points no lower)."""
+    if not holed.interiors or whole.interiors or STORE is None or STORE.record: return False
+    if not whole.contains(shapely.Polygon(holed.exterior).difference(holed).buffer(-0.2)): return False
+    from mapdata import key as _key
+    a, b = STORE.bld.get(_key(holed)), STORE.bld.get(_key(whole))
+    return bool(a and b and a.get("p12") is not None and b.get("p12") is not None and b["p12"] >= a["p12"] - 0.5)
+
+
 _seen = shapely.STRtree([c[0] for c in cand]) if cand else None
 _twice = set()
 for i in sorted(range(len(cand)), key=lambda k: (not name(cand[k][1]), k)):
@@ -1951,8 +2033,8 @@ for i in sorted(range(len(cand)), key=lambda k: (not name(cand[k][1]), k)):
     for j in _seen.query(poly):
         j = int(j)
         if j != i and j not in _twice and (not name(cand[j][1]), j) < (not name(cand[i][1]), i) \
-                and poly.intersection(cand[j][0]).area >= 0.8 * max(poly.area, cand[j][0].area):
-            _twice.add(i)
+                and _same_building(poly, cand[j][0]):
+            _twice.add(j if not name(cand[j][1]) and _hollow_unseen(cand[j][0], poly) else i)
             break
 if _twice: print(f"buildings: {len(_twice)} mapped twice, left out")
 cand = [c for i, c in enumerate(cand) if i not in _twice]
@@ -2071,9 +2153,74 @@ def ground_offset(poly):
 # roofs fitted to the lidar (tools/roofs/shapes.py), kept as faces by each building's outline as built
 from roofs import mesh as roof_faces
 FACES = roof_faces.load(A.id, f"{TILE[0]}_{TILE[1]}") if TILE is not None else {}
+
+
+def _faced(poly):
+    """Whether the lidar's roof is kept for this outline as built (it is found by the outline)."""
+    ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
+    holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
+    return bool(ring) and roof_faces.ring_key({"r": [ring, *holes]}) in FACES
+
+
+def give_way(cand, info, fresh):
+    """Two outlines mapped over one another (a block mapped whole and again as its parts, a house
+    mapped again inside its terrace, two guesses at one semi) would stand walls and roofs inside each
+    other. Where one lies within the other, the bigger has it cut out, as a courtyard or a notch, so
+    each part stands on its own ground at its own height; where they only overlap, the overlap goes
+    from the smaller. An outline whose lidar roof is kept isn't cut (the roof is fitted to it), nor
+    is a pitched roof given a hole it would span, nor is an outline cut in two. A part standing inside
+    another gets a courtyard of its own only where the lidar or the mapped heights put it higher or
+    lower than the rest; at the same height it is one roof, and the part is left out of the whole.
+    Returns how many were cut, and which parts were left out."""
+    def known(n):
+        return fresh[n] or cand[n][1].get("height") or cand[n][1].get("num_floors")
+
+    def level(n):
+        return info[n]["eaves"], info[n]["eaves"] + (info[n]["roof"]["rise"] if info[n]["roof"] else 0)
+
+    polys = [c[0] for c in cand]
+    tree = shapely.STRtree(polys)
+    faced = [None] * len(polys)
+    is_faced = lambda i: faced[i] if faced[i] is not None else faced.__setitem__(i, _faced(polys[i])) or faced[i]
+    cut, merged = 0, set()
+    for i in range(len(polys)):
+        for j in sorted(int(k) for k in tree.query(polys[i])):
+            if j <= i or i in merged or j in merged: continue
+            a, b = polys[i], polys[j]
+            over = a.intersection(b).area
+            if over < 0.5: continue
+            big, small = (i, j) if a.area >= b.area else (j, i)
+            # (where they only overlap, the smaller gives way unless its lidar roof is kept, then the bigger)
+            order = [big] if over >= 0.8 * polys[small].area else [small, big]
+            for k in order:
+                rest = polys[k].difference(polys[small if k == big else big])
+                if is_faced(k) or rest.geom_type != "Polygon" or rest.area < 0.5 * polys[k].area: continue
+                if len(rest.interiors) > len(polys[k].interiors):
+                    if info[k]["roof"]: continue
+                    o = small if k == big else big
+                    if not (known(o) and known(k) and max(abs(x - y) for x, y in zip(level(o), level(k))) >= 1.0):
+                        merged.add(o)
+                        break
+                rest = rest.simplify(0.05)
+                if not rest.is_valid or rest.geom_type != "Polygon": continue
+                polys[k] = rest
+                cand[k] = (rest, cand[k][1])
+                cut += 1
+                break
+    return cut, merged
+
+
+_mapped = [c[0] for c in cand]      # (the doors' colours and bay windows were placed on these)
+_cut, _merged = give_way(cand, info, fresh)
+if _cut: print(f"buildings: {_cut} outlines cut where another stands in them")
+if _merged:
+    print(f"buildings: {len(_merged)} parts at the height of the building round them left as one with it")
+    cand, info, fresh, _mapped = ([x for n, x in enumerate(l) if n not in _merged] for l in (cand, info, fresh, _mapped))
+    if keys is not None: keys = [k for n, k in enumerate(keys) if n not in _merged]
 blds, footprints, bld_props, bld_fresh = [], [], [], []
+as_built = [c[0] for c in cand]     # each outline as the game draws it, for the doors to stand on its walls
 at_measured, uphill, faced = 0, [0, 0], 0       # (unmeasured, measured on ground not the map's)
-for (poly, p), b, f in zip(cand, info, fresh):
+for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
     ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
     if not ring: continue       # a sliver with no area once rounded: nothing to build
     holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
@@ -2094,8 +2241,12 @@ for (poly, p), b, f in zip(cand, info, fresh):
         # lower floor on its downhill side
         eaves = max(ground + b["eaves"], top + UPHILL_WALL)
         uphill[measured_at is not None] += 1
-    out = dict(r=[ring, *holes], h=round(eaves - ground, 1), g=r1(ground), c=b["kind"], n=name(p),
-               m={"stone": "s", "brick": "k", "buff": "y", "render": "r", "paint": "c"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - ground))
+    # the walls go down to the lowest ground along them, not only at the corners: a long wall over a
+    # dip or a lowered street would otherwise stand clear of the ground in the middle
+    foot = shapely.LinearRing(ring) if len(ring) >= 3 else None
+    lowest = min([ground] + [gelev(q.x, q.y) for q in (foot.interpolate(t) for t in np.arange(0.5, foot.length, 1.0))]) if foot else ground
+    out = dict(r=[ring, *holes], h=round(eaves - lowest, 1), g=r1(lowest), c=b["kind"], n=name(p),
+               m={"stone": "s", "brick": "k", "buff": "y", "render": "r", "paint": "c"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - lowest))
     if b["roof"]:
         out["rr"] = [[r1(x), r1(y)] for x, y in b["roof"]["rect"]]
         out["rp"] = round(b["roof"]["rise"], 1)
@@ -2114,6 +2265,8 @@ for (poly, p), b, f in zip(cand, info, fresh):
     if b["storeys"]:
         out["st"] = b["storeys"]
     blds.append(out)
+    _drawn = shapely.Polygon(out["r"][0], [h for h in out["r"][1:] if len(h) >= 3]).buffer(0)
+    if _drawn.geom_type == "Polygon" and not _drawn.is_empty: as_built[n_c] = _drawn
     # (what is kept clear of the building is the outline as built, not the one before cleaning)
     built = shapely.Polygon(ring, holes).buffer(0)
     footprints.append(max(getattr(built, "geoms", [built]), key=lambda g: g.area) if not built.is_empty else poly)
@@ -3287,7 +3440,7 @@ print(f"gates: {moved} moved into a real wall, {opened} left as an open front")
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
 bays = []
-doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys,
+doors = front_doors(as_built, info, roads, gelev, rnd, bays, keys, mapped=_mapped,
                     walls=[shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1])
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
@@ -3369,9 +3522,11 @@ print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path 
 # telegraph poles go up once the walls and buildings are down, each clear of them
 from landscape import telegraph, string_wires
 from buildings import zone_at
+_items = shapely.STRtree([shapely.Point(q[1], q[2]) for q in fx if q[0] not in ("car", "wheelie")])
 tpoles, twires = telegraph(_whole_streets(roads), doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True,
                            clear=lambda x, y: not (near_line(shapely.Point(x, y), 0.2)
-                                                   or len(indoor.query(shapely.Point(x, y), predicate="within"))),
+                                                   or len(indoor.query(shapely.Point(x, y), predicate="within"))
+                                                   or len(_items.query(shapely.Point(x, y), predicate="dwithin", distance=0.5))),
                            widths=RW)
 fx += tpoles
 for r in roads:
@@ -3545,6 +3700,9 @@ if TILE is not None:
         fp=[q for q in paths if mid(q, 0, 2)], dv=[q for q in drive_strips if mid(q, 0, 2)],
         tr=[q for q in trees if own(q[0], q[1])], fx=[q for q in fx if own(q[1], q[2])], sh=[q for q in signs if own(q[0], q[1])],
         lm=[q for q in marks_lm if own(q[1], q[2])], dr=[q for q in doors if own(q[0], q[1])], sb=[q for q in shrub_list if own(q[0], q[1])],
+        # (the doors just over the edge, for the partition to open a boundary across the edge in front of
+        # them the same from both sides; it takes them out again)
+        drn=[q for q in doors if not own(q[0], q[1]) and TX0 - 6 <= q[0] <= TX1 + 6 and TY0 - 6 <= q[1] <= TY1 + 6],
         by=[q for q in bays if own(q[0], q[1])], pi=[q for q in pitch_list if own(q[1], q[2])],
         cn=canopy_grid, pl=places,
     )

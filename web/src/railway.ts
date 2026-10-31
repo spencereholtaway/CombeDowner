@@ -1,6 +1,6 @@
 // The railways (laid out by tools/railway.py): Brunel's Great Western main line through Bath Spa
 // and Oldfield Park, and the line down the Limpley Stoke valley past Dundas that joins it at
-// Bathampton. Ballast, sleepers and rails, bridges on arches or girders with no pier in what passes
+// Bathampton. Ballast, sleepers and rails on a bank down to the ground, bridges on arches or girders with no pier in what passes
 // under them, stone mouths on the tunnels, and the
 // station platforms. InterCity 125s run the main line and Sprinters the valley line, stopping at
 // the stations, keeping left and sounding their horns at anyone near the line. Stand on the line
@@ -60,6 +60,12 @@ const SHOW = 1100;                   // trains are drawn within this of the play
 const SOLID = 160;                   // and block and carry within this
 const AHEAD = 400;                   // metres of clear track a train keeps in front of it
 const CHUNK = 150;                   // track points to a mesh (fewer, longer meshes are quicker to draw)
+// The track bed's sides go on down as a bank, so wherever the ground falls away beside the line
+// there's an embankment under it, not a gap: buried where the ground is level with the line (the
+// squares flatten it there), which can't be known here, as the squares load later than this is built.
+const BANK_DEPTH = 5, BANK_SLOPE = 1.5;     // metres down, and out per metre down
+const BANK_REACH = 2.3 + BANK_DEPTH * BANK_SLOPE;
+const WALL_SKIRT = 3;                       // metres a solid bridge stretch's sides go below its recorded ground
 // Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
 // reach (the stations' canopies are a little over 4 m at the eaves). A platform shorter than
 // CANOPY_SHORT gets none; one LONG_PLATFORM or more gets two, at the 2nd and 4th of five parts.
@@ -249,7 +255,7 @@ export class Railway {
   private group = new THREE.Group();
   private far: { o: THREE.Object3D; x: number; z: number; r: number }[] = [];
   private cullT = 0;
-  private cells = new Map<string, number[][]>();      // bridge decks: [track, point] by 16 m square
+  private cells = new Map<string, number[][]>();      // the track's segments [track, point] by 16 m square, by all they reach
   private plat: { n: string; no: string; r: number[][]; z: number; x0: number; x1: number; y0: number; y1: number }[] = [];
   private boards: { pl: number; x: number; y: number; a: number; tex: THREE.CanvasTexture; ctx: CanvasRenderingContext2D; o: THREE.Object3D; shown: string }[] = [];
   private boardT = 0;
@@ -258,7 +264,8 @@ export class Railway {
   private hitAt = -1e9;
 
   /** `need`: the headroom wanted under the line at data (x, y) by what passes under it, and where no pier may stand. */
-  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, private need: Need = () => 0) {
+  /** `ground`: the ground's own detail texture, for the banks to look like the grass round them. */
+  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, private need: Need = () => 0, private groundTex: THREE.Texture | null = null) {
     this.geos = trainModels();
     this.doorGeos = this.geos.map((g, i) => doorModels(i, g));
     this.build();
@@ -500,25 +507,72 @@ export class Railway {
       const s = g.boundingSphere!;
       this.far.push({ o: m, x: s.center.x, z: s.center.z, r: s.radius + 650 });
     };
+    const bankMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: this.groundTex, side: THREE.DoubleSide });
+    const addBank = (pos: number[], col: number[]) => {
+      if (!pos.length) return;
+      const uv: number[] = [];
+      for (let q = 0; q < pos.length; q += 3) uv.push(pos[q] / 7, pos[q + 2] / 7);     // (as the terrain's, so the two meet without a seam in the grain)
+      const g = compact(pos, col);
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+      const m = new THREE.Mesh(g, bankMat);
+      m.receiveShadow = true;
+      this.group.add(m);
+      const sp = g.boundingSphere!;
+      this.far.push({ o: m, x: sp.center.x, z: sp.center.z, r: sp.radius + 650 });
+    };
     const C = (hex: string) => { const k = new THREE.Color(hex); return [k.r, k.g, k.b]; };
-    const BALLAST = C("#7b746a"), SLEEPER = C("#4a3d31"), RAIL = C("#6f6a62"), RAILTOP = C("#c4c1ba"), BRICK = C("#8a5a44"), STONE = C("#c3ae84"), DARK = C("#2a2622"), GIRDER = C("#6f7b7c");
+    const BANK = C("#6e7f4c"), BALLAST = C("#7b746a"), SLEEPER = C("#4a3d31"), RAIL = C("#6f6a62"), RAILTOP = C("#c4c1ba"), BRICK = C("#8a5a44"), STONE = C("#c3ae84"), DARK = C("#2a2622"), GIRDER = C("#6f7b7c");
     const STONE_IN = C("#b19c74"), BAND = C("#d3c19a"), CAP = C("#dccfae"), VOUSSOIR = C("#cdb88e"), VOUSSOIR2 = C("#b8a27a"), SOFFIT = C("#9c8a68"), GIRDER2 = C("#859092"), UNDER = C("#5a6264");
     const lerp3 = (a: number[], b: number[], f: number) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
     const twin = { piers: [] as number[][], ends: [] as number[][], girders: [] as number[][] };
+    // Two tracks side by side on one viaduct share its deck: between them there's no parapet, only
+    // the deck carried across to halfway, closed down to its own underside there in case the two
+    // stand at different heights. `beside` is how far off the other track is on side w, if one is.
+    const SHARED = 5;
+    const decks = new Map<string, number[][]>();
+    this.d.tracks.forEach((t, ti) => t.p.forEach((q, k) => {
+      if (k + 1 >= t.p.length || q[3] !== 1 || t.p[k + 1][3] !== 1) return;
+      const c = `${Math.floor(q[0] / 16)},${Math.floor(q[1] / 16)}`;
+      (decks.get(c) ?? decks.set(c, []).get(c)!).push([ti, k]);
+    }));
+    const beside = (ti: number, M: number[], nx: number, ny: number, w: number): number | null => {
+      let best: number | null = null;
+      for (let i = Math.floor((M[0] - SHARED) / 16); i <= Math.floor((M[0] + SHARED) / 16); i++)
+        for (let j = Math.floor((M[1] - SHARED) / 16); j <= Math.floor((M[1] + SHARED) / 16); j++)
+          for (const [t, k] of decks.get(`${i},${j}`) ?? []) {
+            if (t === ti) continue;
+            const a = this.d.tracks[t].p[k], b = this.d.tracks[t].p[k + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+            const f = ((M[0] - a[0]) * vx + (M[1] - a[1]) * vy) / l2;
+            if (f < 0 || f > 1) continue;
+            const ox = a[0] + vx * f - M[0], oy = a[1] + vy * f - M[1], across = (ox * nx + oy * ny) * w, d = Math.hypot(ox, oy);
+            if (across > 0.9 * d && d > 3 && d < SHARED && (best === null || d < best)) best = d;
+          }
+      return best;
+    };
     this.d.tracks.forEach((t, ti) => {
       const p = t.p, plan = bridgePlan(p, this.need, twin), m = plan.marks();
       twin.piers.push(...m.piers); twin.ends.push(...m.ends); twin.girders.push(...m.girders);
       for (let k0 = 0; k0 < p.length - 1; k0 += CHUNK) {
-        const pos: number[] = [], col: number[] = [];
-        const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => { pos.push(...a, ...b, ...c, ...a, ...c, ...d); for (let q = 0; q < 6; q++) col.push(...cc); };
+        const pos: number[] = [], col: number[] = [], bpos: number[] = [], bcol: number[] = [];
+        const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => {
+          const [P, Q] = cc === BANK ? [bpos, bcol] : [pos, col];
+          P.push(...a, ...b, ...c, ...a, ...c, ...d); for (let q = 0; q < 6; q++) Q.push(...cc);
+        };
         for (let k = k0; k < Math.min(p.length - 1, k0 + CHUNK); k++) {
           const a = p[k], b = p[k + 1];
           if (a[3] === 2 && b[3] === 2) continue;      // in a tunnel: the hill hides it
           const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
           const P = (q: number[], off: number, h: number) => [q[0] + nx * off, q[2] - z0 + h, -(q[1] + ny * off)];
+          const bank = (A: number[], B: number[]) => {
+            for (const s of [1, -1]) quad(P(A, 2.3 * s, -0.3), P(B, 2.3 * s, -0.3), P(B, BANK_REACH * s, -0.3 - BANK_DEPTH), P(A, BANK_REACH * s, -0.3 - BANK_DEPTH), BANK);
+          };
+          for (let i = Math.floor((Math.min(a[0], b[0]) - BANK_REACH) / 16); i <= Math.floor((Math.max(a[0], b[0]) + BANK_REACH) / 16); i++)
+            for (let j = Math.floor((Math.min(-a[1], -b[1]) - BANK_REACH) / 16); j <= Math.floor((Math.max(-a[1], -b[1]) + BANK_REACH) / 16); j++)
+              (this.cells.get(`${i},${j}`) ?? this.cells.set(`${i},${j}`, []).get(`${i},${j}`)!).push([ti, k]);
           // ballast with sloping shoulders, sleepers, then the two rails
           quad(P(a, -1.6, 0.25), P(b, -1.6, 0.25), P(b, 1.6, 0.25), P(a, 1.6, 0.25), BALLAST);
           for (const s of [1, -1]) quad(P(a, 1.6 * s, 0.25), P(b, 1.6 * s, 0.25), P(b, 2.3 * s, -0.3), P(a, 2.3 * s, -0.3), BALLAST);
+          if (a[3] !== 1 || b[3] !== 1) bank(a, b);
           for (let u = 0; u < l; u += 1.5) {
             const f0 = u / l, f1 = Math.min(1, (u + 0.25) / l);
             const A = [a[0] + dx * f0, a[1] + dy * f0, a[2] + (b[2] - a[2]) * f0], B = [a[0] + dx * f1, a[1] + dy * f1, a[2] + (b[2] - a[2]) * f1];
@@ -536,9 +590,17 @@ export class Railway {
               const f0 = u / n, f1 = (u + 1) / n, s0 = plan.s[k] + l * f0, s1 = plan.s[k] + l * f1;
               const A = [a[0] + dx * f0, a[1] + dy * f0, a[2] + (b[2] - a[2]) * f0], B = [a[0] + dx * f1, a[1] + dy * f1, a[2] + (b[2] - a[2]) * f1];
               const lowA = plan.bottom(s0) - A[2], lowB = plan.bottom(s1) - B[2];
-              if (lowA > -1.5 && lowB > -1.5 && !plan.span(s0)) continue;     // (low enough to be an embankment's top)
-              const kind = plan.kind((s0 + s1) / 2), steel = kind === "girder";
+              if (lowA > -1.5 && lowB > -1.5 && !plan.span(s0)) { bank(A, B); continue; }     // (low enough to be an embankment's top)
+              const kind = plan.kind((s0 + s1) / 2), steel = kind === "girder", M = lerp3(A, B, 0.5);
+              const reach = [1, -1].map((w) => beside(ti, M, nx, ny, w));
               for (const w of [1, -1]) {
+                const other = reach[w > 0 ? 0 : 1];
+                if (other !== null) {
+                  const h = other / 2;
+                  quad(P(A, 1.6 * w, 0.25), P(B, 1.6 * w, 0.25), P(B, h * w, 0.25), P(A, h * w, 0.25), BALLAST);
+                  quad(P(A, h * w, 0.25), P(B, h * w, 0.25), P(B, h * w, lowB), P(A, h * w, lowA), steel ? UNDER : SOFFIT);
+                  continue;
+                }
                 // the ballast's shoulders fall away under the sides, so the cess beside the track is
                 // laid flat out to them, with no slot down into the bridge
                 quad(P(A, 1.6 * w, 0.25), P(B, 1.6 * w, 0.25), P(B, (steel ? 2.4 : 2.1) * w, 0.25), P(A, (steel ? 2.4 : 2.1) * w, 0.25), BALLAST);
@@ -550,7 +612,10 @@ export class Railway {
                     quad(P(M0, 2.47 * w, 1.1), P(M1, 2.47 * w, 1.1), P(M1, 2.47 * w, m), P(M0, 2.47 * w, m), GIRDER2);
                   }
                 } else {
-                  quad(P(A, 2.4 * w, 1.0), P(B, 2.4 * w, 1.0), P(B, 2.4 * w, lowB), P(A, 2.4 * w, lowA), STONE);
+                  // a solid stretch's side goes on below the ground the line's data records under it, as
+                  // the squares' own ground can lie lower (buried where it doesn't)
+                  const skirt = kind === "wall" ? WALL_SKIRT : 0;
+                  quad(P(A, 2.4 * w, 1.0), P(B, 2.4 * w, 1.0), P(B, 2.4 * w, lowB - skirt), P(A, 2.4 * w, lowA - skirt), STONE);
                   quad(P(A, 2.46 * w, 0.05), P(B, 2.46 * w, 0.05), P(B, 2.46 * w, -0.15), P(A, 2.46 * w, -0.15), BAND);
                   quad(P(A, 2.5 * w, 1.15), P(B, 2.5 * w, 1.15), P(B, 2.5 * w, 1.0), P(A, 2.5 * w, 1.0), CAP);
                   quad(P(A, 2.1 * w, 1.15), P(B, 2.1 * w, 1.15), P(B, 2.5 * w, 1.15), P(A, 2.5 * w, 1.15), CAP);
@@ -562,25 +627,25 @@ export class Railway {
                   }
                 }
               }
-              quad(P(A, -2.4, lowA), P(B, -2.4, lowB), P(B, 2.4, lowB), P(A, 2.4, lowA), steel ? UNDER : SOFFIT);
+              const wide = reach.map((o) => (o === null ? 2.4 : o / 2));
+              quad(P(A, -wide[1], lowA), P(B, -wide[1], lowB), P(B, wide[0], lowB), P(A, wide[0], lowA), steel ? UNDER : SOFFIT);
             }
             // the faces of the piers and abutments under each span's two ends
             for (const q of plan.spans) {
               if (q.kind === "wall") continue;
               for (const sp of [q.a, q.b]) {
                 if (sp < plan.s[k] || sp >= plan.s[k + 1]) continue;
-                const f = (sp - plan.s[k]) / l, M = lerp3(a, b, f), lo = plan.ground(sp) - M[2] - 1, hi = plan.bottom(sp) - M[2];
-                if (hi - lo < 0.3) continue;
+                // up to the deck, not only to the springing, so nothing is seen past the arch's last
+                // facet into the pier; and down past the ground the data records, as a wall's sides go
+                const f = (sp - plan.s[k]) / l, M = lerp3(a, b, f), lo = plan.ground(sp) - M[2] - 1 - WALL_SKIRT, hi = 0.2;
+                if (plan.bottom(sp) - M[2] - (plan.ground(sp) - M[2] - 1) < 0.3) continue;
                 quad(P(M, -2.4, lo), P(M, 2.4, lo), P(M, 2.4, hi), P(M, -2.4, hi), STONE);
               }
-            }
-            for (let q = k; q <= k + 1; q++) {
-              const key = `${Math.floor(p[q][0] / 16)},${Math.floor(-p[q][1] / 16)}`;
-              (this.cells.get(key) ?? this.cells.set(key, []).get(key)!).push([ti, Math.min(q, p.length - 2)]);
             }
           }
         }
         add(pos, col);
+        addBank(bpos, bcol);
       }
     });
     // tunnel mouths: a stone face with the arch, black inside
@@ -617,16 +682,32 @@ export class Railway {
       const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
       const x0 = Math.min(...xs) - 6, x1 = Math.max(...xs) + 6, y0 = Math.min(...ys) - 6, y1 = Math.max(...ys) + 6;
       const near = tracks2.flatMap((p) => p.slice(1).map((q, i) => [p[i], q]).filter(([a, b]) => Math.max(a[0], b[0]) > x0 && Math.min(a[0], b[0]) < x1 && Math.max(a[1], b[1]) > y0 && Math.min(a[1], b[1]) < y1));
+      // A platform up on a viaduct is walled down to the ground the viaduct stands on (the lowest
+      // the line's bridges record near it), but over anything that passes under (a road, the river)
+      // it stops as high as it ever did: an arch under the line beside it ends at its wall.
+      let low = top - 4;
+      for (const p of tracks2) for (const q of p) if (q[3] === 1 && q[4] !== undefined && q[0] > x0 - 10 && q[0] < x1 + 10 && q[1] > y0 - 10 && q[1] < y1 + 10) low = Math.min(low, q[4] - z0 - 0.3);
+      let over = Infinity;
       for (let q = 0; q < ring.length; q++) {
         const A = ring[q], B = ring[(q + 1) % ring.length];
-        pos2.push(A[0], top, -A[1], B[0], top, -B[1], B[0], top - 4, -B[1], A[0], top, -A[1], B[0], top - 4, -B[1], A[0], top - 4, -A[1]);
-        for (let k = 0; k < 6; k++) col2.push(...BRICK);
+        const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+        const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+        const byTrack = near.some(([a, b]) => segDist(a, b, mx, my) < 3.4);
+        const n = Math.max(1, Math.ceil(len / 3));
+        for (let u = 0; u < n; u++) {
+          const P0 = [A[0] + ((B[0] - A[0]) * u) / n, A[1] + ((B[1] - A[1]) * u) / n], P1 = [A[0] + ((B[0] - A[0]) * (u + 1)) / n, A[1] + ((B[1] - A[1]) * (u + 1)) / n];
+          // (only what passes under it, not a street running alongside whose reach just touches its edge)
+          const ix = (-(B[1] - A[1]) / (len || 1)) * (area > 0 ? 1 : -1) * 1.5, iy = ((B[0] - A[0]) / (len || 1)) * (area > 0 ? 1 : -1) * 1.5;
+          const mid = [(P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2], under = this.need(mid[0] + ix, mid[1] + iy);
+          const headroom = under > 0 ? Math.max(under, this.need(P0[0], P0[1]), this.need(P1[0], P1[1]), this.need(mid[0], mid[1])) : 0;
+          const foot = headroom > 0 ? Math.max(top - 4, low + 0.3 + headroom) : Math.min(top - 4, low);
+          if (headroom > 0) over = Math.min(over, foot);
+          pos2.push(P0[0], top, -P0[1], P1[0], top, -P1[1], P1[0], foot, -P1[1], P0[0], top, -P0[1], P1[0], foot, -P1[1], P0[0], foot, -P0[1]);
+          for (let k = 0; k < 6; k++) col2.push(...BRICK);
+        }
         // an edge by the track (its middle within a rail's width of a train's side): its strips,
         // laid inward (the ring's inside is to the left going round anticlockwise)
-        const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
-        if (len < 0.5) continue;
-        const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
-        if (!near.some(([a, b]) => segDist(a, b, mx, my) < 3.4)) continue;
+        if (len < 0.5 || !byTrack) continue;
         const s = area > 0 ? 1 : -1, nx = (-(B[1] - A[1]) / len) * s, ny = ((B[0] - A[0]) / len) * s;
         const strip = (w0: number, w1: number, h: number, c: number[]) => {
           const P = (Q: number[], w: number) => [Q[0] + nx * w, top + h, -(Q[1] + ny * w)];
@@ -635,6 +716,8 @@ export class Railway {
         };
         strip(0, 0.45, 0.01, COPING); strip(0.5, 0.9, 0.012, STUDS); strip(1.05, 1.15, 0.012, YELLOW);
       }
+      // over a road or path its walls stop at the headroom, so it has an underside there, like a bridge's
+      if (over < Infinity) for (let q = 0; q < surf.count; q++) { pos2.push(surf.getX(q), over, surf.getZ(q)); col2.push(...SOFFIT); }
       add(pos2, col2);
       this.plat.push({ n: pl.n, no: pl.no ?? "", r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
     }
@@ -886,25 +969,44 @@ export class Railway {
     });
   }
 
-  /** What there is to stand on at scene (x, z): a platform, or the deck of a railway bridge. Or null. */
-  floor(x: number, z: number): number | null {
-    const y = -z;
+  /** What there is to stand on at scene (x, z) for feet at y: a platform, the deck of a railway
+   *  bridge, or the track bed and its banks (the highest of them you're on or can step up to). Or null. */
+  floor(x: number, z: number, y = Infinity): number | null {
+    const yy = -z;
     for (const p of this.plat) {
-      if (x < p.x0 || x > p.x1 || y < p.y0 || y > p.y1) continue;
+      if (x < p.x0 || x > p.x1 || yy < p.y0 || yy > p.y1) continue;
       let inside = false;
       for (let i = 0, j = p.r.length - 1; i < p.r.length; j = i++) {
         const [xi, yi] = p.r[i], [xj, yj] = p.r[j];
-        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+        if (yi > yy !== yj > yy && x < ((xj - xi) * (yy - yi)) / (yj - yi) + xi) inside = !inside;
       }
       if (inside) return p.z;
     }
-    let best: number | null = null, bd = 2.5;
+    let best: number | null = null;
     for (const [t, k] of this.cells.get(`${Math.floor(x / 16)},${Math.floor(z / 16)}`) ?? []) {
       const a = this.d.tracks[t].p[k], b = this.d.tracks[t].p[k + 1];
       const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
-      const f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
-      const d = Math.hypot(x - a[0] - vx * f, y - a[1] - vy * f);
-      if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * f - this.z0 + 0.3; }
+      const f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (yy - a[1]) * vy) / l2));
+      const d = Math.hypot(x - a[0] - vx * f, yy - a[1] - vy * f), h = a[2] + (b[2] - a[2]) * f - this.z0;
+      const top = a[3] === 1 && b[3] === 1 ? (d < 2.5 ? h + 0.3 : null) : bedAt(d, h);
+      if (top !== null && top <= y + 0.6 && (best === null || top > best)) best = top;
+    }
+    return best;
+  }
+
+  /** The height of the ballast's shoulders and the bank below them at scene (x, z) where the line
+   *  runs on the ground, for grass to grow on the bank as on the ground beside it; -Infinity off them. */
+  bankAt(x: number, z: number): number {
+    let best = -Infinity;
+    for (const [t, k] of this.cells.get(`${Math.floor(x / 16)},${Math.floor(z / 16)}`) ?? []) {
+      const a = this.d.tracks[t].p[k], b = this.d.tracks[t].p[k + 1];
+      if (a[3] === 1 && b[3] === 1) continue;
+      const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+      const f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (-z - a[1]) * vy) / l2));
+      const d = Math.hypot(x - a[0] - vx * f, -z - a[1] - vy * f);
+      if (d < 1.6) continue;
+      const h = bedAt(d, a[2] + (b[2] - a[2]) * f - this.z0);
+      if (h !== null && h > best) best = h;
     }
     return best;
   }
@@ -1134,6 +1236,14 @@ function inside(ring: number[][]): [number, number] {
 }
 
 /** How far (x, y) is from the segment a-b. */
+/** The height of the track bed and its banks d metres out from a track at height h, as drawn. */
+function bedAt(d: number, h: number): number | null {
+  if (d <= 1.6) return h + 0.25;
+  if (d <= 2.3) return h + 0.25 - ((d - 1.6) / 0.7) * 0.55;
+  if (d <= BANK_REACH) return h - 0.3 - (d - 2.3) / BANK_SLOPE;
+  return null;
+}
+
 function segDist(a: number[], b: number[], x: number, y: number): number {
   const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
   const f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));

@@ -159,6 +159,10 @@ def load(map_id, sq):
 
 
 
+OUTLINE_SNAP = 0.11    # metres: one decimetre's rounding, and no more
+SEAM_PARTNER = 0.15    # metres: another face's point this near is the same seam's other end
+
+
 def for_game(kept, lift):
     """A kept roof as the game reads it (map.ts RoofMesh), lifted by lift metres from the survey's
     frame into the map's: the outline with its added points, and the roof."""
@@ -167,4 +171,18 @@ def for_game(kept, lift):
     w = [r2_(a + (lift if k % 4 >= 2 else 0)) if k % 4 >= 2 else r1(a) for q in kept["w"] for k, a in enumerate(q)]
     z = [[r2_(a + lift) for pair in ring for a in pair] for ring in kept["z"]]
     rings = [[[r1(x), r1(y)] for x, y in ring] for ring in kept["r"]]
+    # a roof point on the outline rounds to the outline's point, not a decimetre off it, which would
+    # open a sliver between the roof and the wall's top; but not when that would part it from a
+    # neighbouring face's point beside it, which would open the seam between the two faces instead
+    corners = np.array([q for ring in rings for q in ring], float)
+    xy = np.array(v, float).reshape(-1, 3)[:, :2]
+    target = {}
+    for i, (x, y) in enumerate(xy):
+        d = np.hypot(corners[:, 0] - x, corners[:, 1] - y)
+        k = int(np.argmin(d))
+        if 0 < d[k] <= OUTLINE_SNAP: target[i] = k
+    for i, k in target.items():
+        d = np.hypot(xy[:, 0] - xy[i, 0], xy[:, 1] - xy[i, 1])
+        if any(target.get(int(j)) != k for j in np.nonzero((d > 0) & (d <= SEAM_PARTNER))[0]): continue
+        v[3 * i], v[3 * i + 1] = float(corners[k, 0]), float(corners[k, 1])
     return rings, dict(v=v, t=[i for tri in kept["t"] for i in tri], w=w, z=z)

@@ -257,6 +257,9 @@ def main():
     # ---- across the seams: a shrub one square planted where its neighbour's gate, front path or
     # drive comes in goes, so the way through stays clear from square to square
     if done:
+        if not staged:
+            opened = clear_doorsteps_unpartitioned([t for t, _ in done], out_of)
+            if opened: print(f"boundaries opened in front of doors in {opened} squares")
         changed = clear_seams([t for t, _ in done], set(tiles), out_of)
         if changed: print(f"shrubs cleared from gateways across the seams in {changed} squares")
         # a span of wire crosses a square's edge: each hangs from its poles wherever they were put up
@@ -291,6 +294,29 @@ def run_partition(map_id, src_dir, out_dir, only, jobs):
     cmd = [sys.executable, "-I", os.path.join(TOOLS, "partition", "stage.py"), map_id, src_dir, out_dir, "--jobs", str(jobs)]
     if only: cmd += ["--only", *(f"{a},{b}" for a, b in only)]
     return subprocess.run(cmd).returncode
+
+
+def clear_doorsteps_unpartitioned(built, out_of):
+    """On a map the partition doesn't lay out, open each square's walls and fences in front of its
+    doors and those just over its edge, as the partition does, and drop the doors over the edge it
+    was given for that. Returns how many square files had a boundary opened."""
+    from partition.write_tile import clear_doorsteps, ground_at
+    opened = 0
+    for t in built:
+        d = json.load(open(out_of(t)))
+        if "drn" not in d: continue
+        near = d.pop("drn")
+        br = d.get("br") or []
+        new_br, new_gt = clear_doorsteps(br, d.get("gt") or [], (d.get("dr") or []) + near,
+                                         lambda x, y, T=d["t"]: ground_at(T, x, y))
+        if new_br != br:
+            opened += 1
+            d["br"] = new_br
+            if "gt" in d: d["gt"] = new_gt
+        tmp = out_of(t) + ".tmp"
+        json.dump(d, open(tmp, "w"), separators=(",", ":"))
+        os.replace(tmp, out_of(t))
+    return opened
 
 
 def clear_seams(built, tiles, out_of):

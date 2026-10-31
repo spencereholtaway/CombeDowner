@@ -109,12 +109,13 @@ TUNNEL_LEDGE = 1.3         # the towpath's ledge through a tunnel
 ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
              "living_street": 2.5, "service": 1.8, "unknown": 2}
 PAINTS = 7                 # boat liveries the game knows (canal.ts)
+WAY_CLEAR = 1.0           # metres either side of a mapped path's line kept clear of a moored boat: a pontoon's walkway and a little room
 HULL = 1.04                # half a narrowboat's beam (canal.ts HW)
 r1 = lambda v: round(float(v), 1)
 wing = lambda lk: TAIL + (lk["zh"] - lk["zl"]) * WING     # how far a lock's wing walls run below its bottom gates
 
 
-def basin_boats(basins, seen, corridor, infra_file, proj, circle):
+def basin_boats(basins, seen, corridor, infra_file, proj, circle, ways):
     """Boats moored in the basins and marinas, [x, y, angle, length, paint, level]: where the lidar
     saw them (tools/moorings.py's entries with no side), or else, in a marina, berthed side by side
     along its pontoons where they're mapped and nose to tail round its edge where they aren't. The
@@ -135,6 +136,11 @@ def basin_boats(basins, seen, corridor, infra_file, proj, circle):
                 g = LineString([((c[k][0] + c[k + 1][0]) / 2, (c[k][1] + c[k + 1][1]) / 2) for k in (sides[0][1], sides[1][1])])
             piers += list(getattr(g, "geoms", [g])) if g.geom_type.endswith("LineString") else []
     channel = corridor.buffer(CHANNEL_CLEAR)
+    # (the pontoons' walkways and any bridge over the water, as the game draws them, kept clear of hulls)
+    water = unary_union([b["poly"] for b in basins]) if basins else None
+    ways = [(g, path) for g, path in ways if water is not None and g.intersects(water)]
+    walks = unary_union([g.buffer(WAY_CLEAR if path else 4.0) for g, path in ways]) if ways else None
+    piers += [ln for g, path in ways if path for ln in getattr(g, "geoms", [g]) if ln.geom_type == "LineString"]
     out = []
     for b in basins:
         poly, lv = b["poly"], b["lv"]
@@ -145,6 +151,7 @@ def basin_boats(basins, seen, corridor, infra_file, proj, circle):
             hull = shapely.affinity.rotate(shapely.box(cx - L / 2, cy - HULL, cx + L / 2, cy + HULL), ang, origin=(cx, cy), use_radians=True)
             # (where the survey saw one it's there, whatever the outline says: only overlaps are dropped)
             if not (poly.buffer(0.5) if seen_ else room).contains(hull) or (not seen_ and not b["own"] and hull.intersects(channel)) \
+                    or (not seen_ and walks is not None and hull.intersects(walks)) \
                     or any(hull.distance(o) < (0.05 if seen_ else 0.3) for o in laid): return False
             laid.append(hull)
             out.append([r1(cx), r1(cy), round(ang, 3), L, rnd.randrange(PAINTS), round(lv, 2)])
@@ -355,12 +362,13 @@ def main():
         runs.append(dict(lv=round(level[k], 2), p=pts))
 
     # ---- aqueducts: where the canal crosses a valley on arches --------------------------------
-    roads, big = [], []
+    roads, big, ways = [], [], []
     for f in json.load(open(os.path.join(src, "segment.geojson")))["features"]:
         if f["properties"].get("subtype") not in ("road", "rail"): continue
         g = proj(shape(f["geometry"]))
         if not g.intersects(circle): continue
         roads.append(g)
+        ways.append((g, f["properties"]["subtype"] == "road" and f["properties"].get("class") in PATHS))
         if f["properties"]["subtype"] == "rail" or f["properties"].get("class") not in PATHS: big.append(g)
     under = unary_union(big + rivers)     # what passes under an aqueduct: no pier on it (paths can go round)
     for k in keep:
@@ -629,7 +637,9 @@ def main():
                 room = d1 - d + 1.0
                 L = rnd.choice([v for v in (21, 20, 18, 17, 15, 12) if v <= room] or [round(min(room, 10.0), 1)])
                 i0 = int(d / c.length * (len(pts) - 1))
-                half = pts[min(len(pts) - 1, i0)][2]
+                i1 = int(math.ceil((d + L) / c.length * (len(pts) - 1)))
+                # (as far out as the narrowest water along the boat, where the canal narrows past it)
+                half = min(q[2] for q in pts[min(len(pts) - 1, i0):min(len(pts), i1 + 1)])
                 m, a, b = c.interpolate(d + L / 2), c.interpolate(d), c.interpolate(d + L)
                 ang = math.atan2(b.y - a.y, b.x - a.x)
                 off = side * (half - 1.15)
@@ -666,7 +676,7 @@ def main():
                 moor.append([r1(m.x + nx * off), r1(m.y + ny * off), round(ang, 3), L, rnd.randrange(PAINTS)])
                 d += L + rnd.uniform(1.5, 4)
 
-    moor += basin_boats(basins, seen, corridor, os.path.join(src, "infrastructure.geojson"), proj, circle)
+    moor += basin_boats(basins, seen, corridor, os.path.join(src, "infrastructure.geojson"), proj, circle, ways)
 
     out_d = dict(
         runs=runs,

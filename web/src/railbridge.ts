@@ -193,3 +193,23 @@ export function needUnder(tracks: number[][][], ways: { p: number[][]; reach: nu
     return n;
   };
 }
+
+const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+const FOOT = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
+const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
+
+/** The headroom wanted under the railway, by what passes under it: a van's under a street, a
+ *  walker's under its pavements and a path, a narrowboat's under the canal, a little over water.
+ *  Here rather than in world.ts so the map checks build the bridges exactly as the game does. */
+export function railNeed(tracks: number[][][], roads: { p: number[][]; c: string; w?: number; pv?: number[]; bridge?: unknown }[], lines: { p: number[][]; c: string }[], ponds: number[][][], canalRuns: { p: number[][] }[]): Need {
+  const ways: { p: number[][]; reach: number; need: number }[] = [];
+  for (const r of roads) {
+    if (r.bridge) continue;
+    const foot = FOOT.has(r.c), width = r.w ?? RW[r.c] ?? 4, pv = Math.max(...(r.pv ?? [1.7, 1.7]));
+    ways.push({ p: r.p, reach: width / 2 + (KERBED.has(r.c) ? pv : 0.3) + 1, need: 2.3 });
+    if (!foot) ways.push({ p: r.p, reach: width / 2 + 0.3, need: 3.4 });
+  }
+  for (const l of lines) ways.push({ p: l.p, reach: 2, need: l.c === "canal" ? 2.8 : 0.8 });
+  for (const run of canalRuns) ways.push({ p: run.p, reach: 6, need: 2.8 });
+  return needUnder(tracks, ways, ponds);
+}

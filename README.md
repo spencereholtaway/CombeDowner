@@ -36,7 +36,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   road runs on under it unbroken, for walking or driving under; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
   round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
-  under it. A short bridge is all one or the other, and no pier stands in the way. A road the map
+  under it. A short bridge is all one or the other, and no pier stands in the way. You can walk the
+  whole line without falling through it: along its viaducts, up its grassy embankments, and on to
+  the platforms, which are walled down to the ground under a station on a viaduct. A road the map
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
   face, with the ground and the lanes over it left as they are and one headwall over the
   openings where two bores come out side by side. A tunnel cars drive through is a modern
@@ -58,7 +60,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
   pavement or parked cars; in front of a shop the pavement runs on up to its front, with no
-  front garden, and a front door opens clear of any wall or fence; paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
+  front garden, and a front door opens clear of any wall or fence, on a wall with open ground
+  outside it (never a terrace's party wall or into a neighbour's extension); paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
   dog-leg between gardens goes round them rather than through them; flights of steps are solid treads climbing between the ground at each
   end, turning at their landings, with handrails along them where the map has them. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
