@@ -75,7 +75,8 @@ function markTri(mask: Uint8Array, W: number, H: number, ax: number, ay: number,
  * Built a step at a time (yields between), so a square of Bath loading in doesn't stall the game.
  */
 export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: number, z: number) => number, kinds: THREE.Color[],
-  time: { value: number }, roadWidth: (r: { c: string; w?: number }) => number, paths: Set<string>, kerbed: Set<string>, pavement: number): Generator<void, Grass> {
+  time: { value: number }, roadWidth: (r: { c: string; w?: number }) => number, paths: Set<string>, kerbed: Set<string>, pavement: number,
+  rail: number[][][] = []): Generator<void, Grass> {
   const T = D.t;
   const touch = navigator.maxTouchPoints > 1;
   const RADIUS = touch ? 26 : 42, CELL = 8, STEP = touch ? 0.62 : 0.5;   // STEP: spacing between tufts
@@ -107,6 +108,17 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   let rdk = 0;
   for (const r of D.rd) { line(r.p, roadWidth(r) + (kerbed.has(r.c) ? 2 * Math.max(...(r.pv ?? [pavement])) + 0.6 : paths.has(r.c) ? 0.5 : 0.8)); if (++rdk % 300 === 299) yield; }
   for (const w of D.wl) line(w.p, 2.2);
+  // nor through the top of the railway's ballast where the line runs on the ground (railway.ts):
+  // its shoulders and bank grow grass like the ground beside them
+  for (const p of rail) {
+    let run: number[][] = [];
+    for (let k = 0; k <= p.length; k++) {
+      const q = p[k];
+      if (q && q[3] !== 1 && q[3] !== 2) { run.push(q); continue; }
+      if (run.length > 1) line(run, 3.4);
+      run = q ? [q] : [];
+    }
+  }
   // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
   for (const t of D.tn ?? []) for (const [end, k] of [[t.p.slice(0, 6), 0], [t.p.slice(-6), t.p.length - 1]] as const) line(end, 2 * boreHalf(t, k) + 1);
   // nor on a square's street and path faces, kerbs and all: their outlines here, their insides below

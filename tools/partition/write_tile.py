@@ -414,6 +414,12 @@ def stretch_samples(t0, t1, corners):
     return [t0] + sorted(clear + kept) + [t1]
 
 
+# m2 more of a house a street run on to the square's edge may reach over than its piece did: the
+# next square, which doesn't hold that house, runs its own piece on to the edge, so refusing a corner
+# this small left the street with a gap at the seam
+EDGE_GRAZE = 0.5
+
+
 def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None,
                          portals=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
@@ -509,7 +515,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 return True
             ww, vv = (piece[1], piece[2]) if piece is not None else (ww, vv)
             band = lambda q: LineString(q).buffer(ww / 2 + max(vv), cap_style="flat").intersection(house_area).area
-            return band(pts) <= (band(piece[0]) if piece is not None else 0.0) + 0.05
+            return band(pts) <= (band(piece[0]) if piece is not None else 0.0) + EDGE_GRAZE
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             # (the faces stop at the square's edge, so a point by it can't be measured across; the
@@ -1337,6 +1343,7 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
             ramped += 1
             ramp(o, e + nxt, nxt, q[e], n + 1, None, seen, lay)
 
+    plan = []
     for r in rd:
         p = r["p"]
         # (a street's own approaches already keep its profile's height off the deck, the ground laid
@@ -1354,18 +1361,26 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
                     and 0.6 < deck_at.get(at(p[e]), p[e])[2] - p[e][2] <= JOIN_STEP:
                 starts.append((e - step, e, deck_at[at(p[e])], True))
         for i, j, prev, joined in starts:
-            step = 1 if j > i else -1
             # (the junction itself only where no other street meets it there, whose ground it is, or
             # where it is another way's deck end)
             e_ = j if joined or (i in (-1, len(p)) and streets[at(p[j])] == (2 if r["c"] not in GAME_PATHS else 0)) else None
-            g = ground(prev[0], prev[1])
-            # (a span that comes down on its bank already meets the ground: the way on from it is
-            # the street's, and its hollows are what the street passes over)
-            if g is None or prev[2] - g <= 0.6:
-                continue
-            # (a junction's ways come up to the deck on the ground the survey has: laid to them, it
-            # buried the paths that pass under the bridge's end)
-            ramp(r, j, step, prev, 0, e_, set(), not joined)
+            plan.append((r, i, j, prev, joined, e_))
+    # (where the bridge's own street runs on from its deck's end and leaves the junction on its
+    # ground, the other ways meeting there stay with it, not rising to the deck on their own)
+    on_ground = {at(r["p"][j]) for r, i, j, prev, joined, e_ in plan if not joined and e_ is None}
+    for r, i, j, prev, joined, e_ in plan:
+        p = r["p"]
+        if joined and at(p[j]) in on_ground:
+            continue
+        step = 1 if j > i else -1
+        g = ground(prev[0], prev[1])
+        # (a span that comes down on its bank already meets the ground: the way on from it is
+        # the street's, and its hollows are what the street passes over)
+        if g is None or prev[2] - g <= 0.6:
+            continue
+        # (a junction's ways come up to the deck on the ground the survey has: laid to them, it
+        # buried the paths that pass under the bridge's end)
+        ramp(r, j, step, prev, 0, e_, set(), not joined)
     return ramped
 
 
@@ -1834,6 +1849,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
 
     deck_nodes = {(q[0], q[1]) for r in rd if r["c"] not in GAME_PATHS or r["c"] == "pedestrian"
                   for q in r["p"] if flagged(q, 1)}
+    mouths = [tuple(q[:2]) for t in tunnels or () if len(t["p"]) > 1 for q in (t["p"][0], t["p"][-1])]
 
     def hold(run, reach, core=0.0):
         # (the ground under a street or the railway on the ground stays as the base tile laid it,
@@ -1865,6 +1881,11 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
                                  and not (in_tube and in_tube(*q[:3]))}):
                 for a, b in zip(st, st[1:]):
                     hold([p[a], p[b]], reach, 0.0 if a in at_deck or b in at_deck else r.get("w", 4) / 2 + 0.5)
+        elif mouths:
+            # (a path's last metres into a tunnel lie in the mouth's cutting: the ground is laid to
+            # them, so the hill laid over the tunnel's roof doesn't ease back over its floor)
+            r["_lay"] = lay | {tuple(q[:2]) for q in p if not flagged(q, 1, 2) and not (in_tube and in_tube(*q[:3]))
+                               and any(math.dist(q[:2], m) < PORTAL for m in mouths)}
     for t in rails:
         for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0}):
             if len(st) >= 2:
@@ -2014,6 +2035,12 @@ def follow_laid_ground(tile, change):
                 dz = change(row[xi], row[xi + 1])
                 if abs(dz) > 0.05:
                     row[zi] = round(row[zi] + dz, 2)
+    # (and a stream along its bed, which was laid on the base tile's ground)
+    for w in tile.get("wl") or []:
+        for q in w.get("p") or []:
+            dz = change(q[0], q[1])
+            if abs(dz) > 0.05:
+                q[2] = round(q[2] + dz, 2)
     return moved
 
 
@@ -2724,11 +2751,81 @@ def pave_slivers(pave, paving, buildings, kept, width=SLIVER):
     solid = unary_union([pave, *(g.intersection(near) for g in paving if not g.is_empty),
                          *(b for b in buildings if near.intersects(b))])
     r = width / 2
-    gap = solid.buffer(r).buffer(-r).difference(solid)
+    # (only within reach: closed past it, where the other paving was cut off, it reached over a road)
+    gap = solid.buffer(r).buffer(-r).intersection(near).difference(solid)
     if kept is not None and not kept.is_empty:
         gap = gap.difference(kept)
     fill = [g for g in getattr(gap, "geoms", [gap]) if g.geom_type == "Polygon" and g.area > 0.05 and g.distance(pave) < 0.01]
     return unary_union([pave, *fill]) if fill else pave
+
+
+ALONG_REACH = 2.5      # metres out from a pavement that a footway mapped beside it reaches
+ALONG_LEAST = 4.0      # metres of a path's strip along a pavement before it is taken for that pavement
+ALONG_STEP = 0.4       # metres a footway beside a pavement may lie off its street's level and still be paved as it
+ALONG_CELL = 6.0       # metres: the stretch of such a footway whose level is judged at a time
+
+
+def longest_run(lines):
+    """The length of the longest unbroken stretch of `lines`."""
+    parts = shapely.line_merge(unary_union([g for g in getattr(lines, "geoms", [lines]) if g.geom_type in ("LineString", "MultiLineString")] or [LineString()]))
+    return max((g.length for g in getattr(parts, "geoms", [parts])), default=0.0)
+
+
+def paths_along_pavements(path, pave, reach=ALONG_REACH, least=ALONG_LEAST, off_level=None):
+    """`path` less the strips of it lying along a pavement, and those strips. A footway mapped beside a
+    street (OpenStreetMap's own line for the pavement) gets its own path face, which lay against the
+    drawn pavement as a second, rougher strip between it and the walls: it is that pavement, as far
+    out as such a footway reaches. A path leaving the pavement end on, across a verge or into a
+    square, touches it only across its own width, and stays a path. Nor is a footway up a bank beside
+    the street (`off_level`): paved, it would be laid at the street's level, a step below its ground."""
+    if path.is_empty or pave.is_empty:
+        return path, Polygon()
+    pave = unary_union([g for g in getattr(pave, "geoms", [pave]) if g.geom_type in ("Polygon", "MultiPolygon")] or [Polygon()])
+    near = path.intersection(pave.buffer(reach, join_style="mitre"))
+    # (the outlines are simplified together after this, closing a few centimetres between the two)
+    edge = pave.boundary.buffer(SURFACE_TOLERANCE + 0.05)
+    shapely.prepare(edge)
+    take = []
+    for g in getattr(near, "geoms", [near]):
+        if g.geom_type != "Polygon" or g.area < 0.5:
+            continue
+        # (its longest stretch along it: a path leaving the pavement at a slant at each end shares more
+        # than its width in all, but runs along it nowhere)
+        shared = longest_run(g.exterior.intersection(edge))
+        if shared <= least:
+            continue
+        if off_level is None:
+            take.append(g)
+            continue
+        # (judged a few metres at a time, where it meets the pavement: a long footway beside a street
+        # that climbs past a bank only there is that pavement everywhere else, and stays a strip of its
+        # own, a step off it, there)
+        x0, y0, x1, y1 = g.bounds
+        cells = [box(x, y, x + ALONG_CELL, y + ALONG_CELL) for x in np.arange(x0, x1, ALONG_CELL)
+                 for y in np.arange(y0, y1, ALONG_CELL)]
+        meet, behind = [], []
+        for piece in shapely.intersection(g, cells):
+            for q in getattr(piece, "geoms", [piece]):
+                if q.geom_type != "Polygon" or q.area <= 0.05:
+                    continue
+                seam = q.exterior.intersection(edge)
+                if seam.length < 0.5:
+                    behind.append(q)
+                elif not off_level(seam):
+                    meet.append(q)
+        if meet:
+            near_meet = unary_union(meet).buffer(0.05)
+            take += meet + [q for q in behind if near_meet.intersects(q)]
+    if not take:
+        return path, Polygon()
+    along = unary_union(take)
+    rest = path.difference(along)
+    # (and the edge of a footway left past the reach, too thin to be a path of its own)
+    thin = rest.difference(rest.buffer(-0.5).buffer(0.5))
+    edge = along.buffer(0.05)
+    shapely.prepare(edge)
+    along = unary_union([along, *(g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and edge.intersects(g))])
+    return path.difference(along), along
 
 
 WIDEN_STEP = 2.0       # metres between the points a street's pavement is measured at against the paving
@@ -3051,6 +3148,45 @@ def bore_widths(tunnels, rd, rows):
         TN.widen(t, [e or (known[0] if known else (TN.HALF, 0.0)) for e in ends])
 
 
+STEEPEST_WALK = 0.67    # the steepest a path is walked up as a slope (1 in 1.5); steeper, it is a flight of steps
+STEP_RUN = 2.0          # metres: a rise over less than this is a kerb or a bump, not a flight
+
+
+def steep_paths_as_steps(rd):
+    """A footway climbing steeper than anyone walks a slope (up a retaining wall or a bank the survey
+    sees, as many of Bath's flights are mapped as plain footways) is drawn and walked as steps there."""
+    out = []
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in ("footway", "path", "pedestrian") or len(p) < 2 or any(len(q) > 3 and q[3] for q in p):
+            out.append(r)
+            continue
+        rise = [b[2] - a[2] for a, b in zip(p, p[1:])]
+
+        def flight(i):
+            d = math.dist(p[i][:2], p[i + 1][:2])
+            if d <= STEP_RUN or abs(rise[i]) <= STEEPEST_WALK * d:
+                return False
+            # a climb that drops straight back is a spike in the heights, not a flight to build
+            return all(rise[j] * rise[i] >= 0 or abs(rise[j]) < 0.5 * abs(rise[i]) for j in (i - 1, i + 1) if 0 <= j < len(rise))
+        steep = [flight(i) for i in range(len(rise))]
+        if not any(steep):
+            out.append(r)
+            continue
+        k = 0
+        while k < len(steep):
+            e = k
+            while e + 1 < len(steep) and steep[e + 1] == steep[k]:
+                e += 1
+            piece = dict(r, p=[list(q) for q in p[k:e + 2]])
+            if steep[k]:
+                piece["c"] = "steps"
+                piece["w"] = max(r.get("w", 1.5), 1.8)
+            out.append(piece)
+            k = e + 1
+    return out
+
+
 def end_at_portals(rd, tunnels):
     """A way going into a bore along it ends at the portal, on the bore's floor: the points the record
     carried on inside rose up the hill face over the arch, and its surface stood up in the opening
@@ -3321,6 +3457,17 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                         unary_union([shapes("plot"), green if green is not None else Polygon()])).intersection(square)
     taken = unary_union([road, pave, plaza, *buildings])
     path = drawn_paths(shapes("path"), rd, taken).difference(taken)
+    def off_level(seam):
+        for x, y in shapely.get_coordinates(shapely.segmentize(seam, 2.0)):
+            k, z = nearest(x, y), ground(x, y)
+            lv = None if k is None or z is None else _level_at(heights[k], x, y, ground, square)
+            if lv is not None and abs(z - lv) > ALONG_STEP + PAVE_FALL:
+                return True
+        return False
+    path, along = paths_along_pavements(path, pave, off_level=off_level)
+    if not along.is_empty:
+        pave = pave.union(along)
+        taken = taken.union(along)
     if bores is not None:
         # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
         path = path.difference(bores)
@@ -3455,11 +3602,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # across above it: stood level with the middle of the street, its back stood a kerb and more over
     # the grass and showed as a dark step, wherever the ground falls away from a street (Sydney Road
     # over the canal's tunnel). The kerb side stays level with the carriageway.
+    # Where a footway mapped beside the street was taken into its pavement, the pavement reaches back
+    # over that footway's ground and lies on it, as the footway did: held at the street's level it
+    # stood a ledge over the ground behind, and the house there stood on air.
+    widened = along.buffer(0.05) if not along.is_empty else None
     for k in walk - kerbside:
-        g = ground(v[3 * k], v[3 * k + 1])
+        x, y = v[3 * k], v[3 * k + 1]
+        g = ground(x, y)
         if g is not None:
             z = v[3 * k + 2]
-            v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
+            if widened is not None and shapely.contains_xy(widened, x, y):
+                v[3 * k + 2] = round(g, 2)
+            else:
+                v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
     for k in PATH_FACE.values():
         if not out[k]:
             del out[k]
@@ -3468,8 +3623,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
 
 def drop_paths_along_streets(rd):
     """A path mapped down the middle of a street (a pavement drawn as its centre line, a cycle lane)
-    is the street: the stretch of it lying along a carriageway is left out. One crossing the street
-    stays. Same rule, same thresholds as the old build's `_along_streets`."""
+    is the street: the stretch of it lying along a carriageway is left out, as is a pedestrian area's
+    edge drawn along the road, which paved a sawtooth into it. One crossing the street stays. Same
+    rule, same thresholds as the old build's `_along_streets`."""
     cars = [(LineString([q[:2] for q in r["p"]]), r["w"]) for r in rd
             if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
     if not cars:
@@ -3506,14 +3662,17 @@ def drop_paths_along_streets(rd):
 
     out, cut = [], 0.0
     for r in rd:
-        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(r["p"]) < 2:
+        if r["c"] not in GAME_PATHS or len(r["p"]) < 2:
             out.append(r)
             continue
+        # (a pedestrian street is paved wall to wall, pavements and all: only a stretch of one down a
+        # carriageway, a pedestrian area's edge drawn along the road, is the street's)
+        plaza = r["c"] == "pedestrian"
         line = LineString([tuple(q[:3]) for q in r["p"]])
         drop = []
         for k in tree.query(line):
             # a flight beside a pavement climbs from it or to it, which the pavement can't stand for
-            if r["c"] == "steps" and ratios[int(k)] == ALONG_PAVEMENT:
+            if (r["c"] == "steps" or plaza) and ratios[int(k)] == ALONG_PAVEMENT:
                 continue
             inside = areas[int(k)].intersection(line)
             for part in getattr(inside, "geoms", [inside]):
@@ -3524,7 +3683,7 @@ def drop_paths_along_streets(rd):
                 if abs(road.project(Point(b[:2])) - road.project(Point(a[:2]))) > ratios[int(k)] * part.length:
                     drop.append(part.buffer(0.05, cap_style=2))
         if not drop:
-            if not any(len(q) > 3 for q in r["p"]) and (on_carriageway(line) or on_street(line)):
+            if not any(len(q) > 3 for q in r["p"]) and (on_carriageway(line) or (not plaza and on_street(line))):
                 cut += line.length
                 continue
             out.append(r)
@@ -3534,9 +3693,71 @@ def drop_paths_along_streets(rd):
         marks = {(q[0], q[1]): q[3:] for q in r["p"]}
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type == "LineString" and piece.length >= 2:
-                if on_carriageway(piece) or on_street(piece):
+                if on_carriageway(piece) or (not plaza and on_street(piece)):
                     cut += piece.length
                     continue
+                out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
+                                      for x, y, z in piece.coords]))
+    return out, cut
+
+
+INDOORS_FLOOR = 2.0     # metres of a way inside a building before it is stopped at the wall: less is a corner clipped
+
+
+def buildings_next_door(ti, tj, base, sq, reach=40.0):
+    """The footprints the squares round this one hold that reach within `reach` of it: a path by the
+    edge can run into a building the next square has. Taken from the next square's own starting
+    point beside `base`, else from the game's copy of it."""
+    near, out = box(*sq).buffer(reach), []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            if not (di or dj):
+                continue
+            name = f"{ti + di}_{tj + dj}.json"
+            path = os.path.join(os.path.dirname(os.path.abspath(base)), name)
+            if not os.path.exists(path):
+                path = os.path.join(os.path.dirname(tile_base(ti, tj)[0]), name)
+            if not os.path.exists(path):
+                continue
+            for b in json.load(open(path)).get("bl") or []:
+                rings = b.get("r") or []
+                if len(rings) and len(rings[0]) >= 3:
+                    g = Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3]).buffer(0)
+                    if g.intersects(near):
+                        out.append(g)
+    return out
+
+
+def ways_out_of_buildings(rd, houses, floor=2.0):
+    """A way the data runs on through a building (a shopping centre's corridors, an arcade, a
+    passage through a terrace, a path drawn on to a door inside, a lane into a covered yard) stops
+    at its wall: the game's buildings are solid, so indoors the way would lie under the floor and
+    lead walkers and drivers into the wall. A building by a stretch on a deck or in a tunnel is left
+    to it."""
+    inner = [g for g in (h.buffer(0).buffer(-0.3) for h in houses) if not g.is_empty]
+    if not inner:
+        return rd, 0.0
+    tree = STRtree(inner)
+    out, cut = [], 0.0
+    for r in rd:
+        if len(r["p"]) < 2:
+            out.append(r)
+            continue
+        line = LineString([tuple(q[:3]) for q in r["p"]])
+        ends = (Point(r["p"][0][:2]), Point(r["p"][-1][:2]))
+        raised = [Point(q[:2]) for q in r["p"] if len(q) > 3 and q[3]]
+        hit = [inner[int(k)] for k in tree.query(line)
+               if (inner[int(k)].intersection(line).length > INDOORS_FLOOR
+                   or any(inner[int(k)].contains(e) for e in ends))
+               and not any(inner[int(k)].distance(q) < 1.0 for q in raised)]
+        if not hit:
+            out.append(r)
+            continue
+        rest = line.difference(unary_union([h.buffer(0.8) for h in hit]))
+        cut += line.length - rest.length
+        marks = {(q[0], q[1]): q[3:] for q in r["p"]}
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type == "LineString" and piece.length >= floor:
                 out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
                                       for x, y, z in piece.coords]))
     return out, cut
@@ -3555,13 +3776,23 @@ def carry_one_way(rd, old):
         if r["c"] in GAME_PATHS or len(r["p"]) < 2:
             continue
         line = LineString([q[:2] for q in r["p"]])
+        # (a stretch the corridors joined from several old one-way records takes their way where,
+        # together, they run along most of it the same way)
+        along = collections.Counter()
         for k in tree.query(line.buffer(2.0)):
             g, ow = ways[int(k)]
-            if line.intersection(g.buffer(2.0)).length < 0.7 * line.length:
+            shared = line.intersection(g.buffer(2.0))
+            ends = [c for part in getattr(shared, "geoms", [shared]) if part.geom_type == "LineString" and not part.is_empty
+                    for c in (part.coords[0], part.coords[-1])]
+            if shared.length <= 0 or len(ends) < 2:
                 continue
-            a, b = g.project(Point(line.coords[0])), g.project(Point(line.coords[-1]))
-            r["ow"] = ow if b >= a else -ow
-            break
+            first = min(ends, key=lambda c: line.project(Point(c)))
+            last = max(ends, key=lambda c: line.project(Point(c)))
+            along[ow if g.project(Point(last)) >= g.project(Point(first)) else -ow] += shared.length
+        if along:
+            ow, got = along.most_common(1)[0]
+            if got >= 0.7 * line.length:
+                r["ow"] = ow
 
 
 def carry_pedestrian(rd, old):
@@ -3649,11 +3880,16 @@ def demote_pedestrian(rd, old):
     return cleared
 
 
+ON_TRACK = 1.5      # metres from a track's middle that a lane's end is on the line
+
+
 def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
-    """A path that crosses the railway level with it is cut either side of the track: there are no
-    level crossings in Bath, and the ground here cannot be dug for the path to pass under a bridge.
-    `tracks` are the rail file's, points [x, y, height, flag]; a flag of 2 is a track the path passes
-    over. Streets and anything on a bridge are left. Returns the records and how many paths were cut."""
+    """A path or a service lane that crosses the railway level with it is cut either side of the
+    track: there are no level crossings in Bath, and the ground here cannot be dug for the path to
+    pass under a bridge. A lane mapped on to the line (a way in for the railway's own staff) stops
+    at its fence the same way. `tracks` are the rail file's, points [x, y, height, flag]; a flag of
+    2 is a track the path passes over. Streets and anything on a bridge are left. Returns the
+    records and how many were cut."""
     lines = [LineString([q[:2] for q in t["p"]]) for t in tracks if len(t["p"]) > 1]
     tracks = [t for t in tracks if len(t["p"]) > 1]
     if not lines:
@@ -3662,7 +3898,7 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
     out, cut = [], 0
     for r in rd:
         p = r["p"]
-        if r["c"] not in GAME_PATHS or len(p) < 2:
+        if (r["c"] not in GAME_PATHS and r["c"] != "service") or len(p) < 2:
             out.append(r)
             continue
         line = LineString([q[:2] for q in p])
@@ -3679,6 +3915,13 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (pt.x, pt.y)))
                 if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2:
                     spots.append(pt)
+        for q in (p[0], p[-1]) if r["c"] == "service" else ():
+            for t in tree.query(Point(q[:2]).buffer(ON_TRACK)):
+                tp = tracks[int(t)]["p"]
+                k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], q[:2]))
+                if (len(q) < 4 and lines[int(t)].distance(Point(q[:2])) < ON_TRACK and abs(q[2] - tp[k][2]) < clear
+                        and tp[k][3] != 2):
+                    spots.append(Point(q[:2]))
         if not spots:
             out.append(r)
             continue
@@ -4430,6 +4673,9 @@ DOOR_REACH = 25.0       # metres: how far a gate looks for the door it leads to
 DOOR_RAY = 14.0         # metres: how far out from a door a boundary is looked for
 PATH_SHORTEST = 1.5     # metres: a front path shorter than this is only a doorstep
 DOOR_GATE_SHORTEST = 3.0   # metres of front garden before a door is given a gate of its own
+DOOR_STEP = 1.0         # metres out from a door that no boundary may cross
+DOOR_GAP = 1.2          # metres: the opening made in one that does
+DOOR_STUB = 1.5         # metres: a piece left shorter than this beside that opening goes with it
 
 
 def _way_in(mid, door_pts, dtree, houses, htree, road_area, walls=None, wtree=None, taken=()):
@@ -4452,12 +4698,13 @@ def _way_in(mid, door_pts, dtree, houses, htree, road_area, walls=None, wtree=No
     return None
 
 
-def gates_for_doors(part, houses, doors, road_area=None, sq=None):
+def gates_for_doors(part, houses, doors, road_area=None, sq=None, doors_near=()):
     """Gates for the doors no gate leads to. The partition puts a gate on the plot edge nearest the
     house, and for a semi or a corner house that is often a side boundary, so the way out to the street
     from the door was a wall (a third of the doors on the village square). A door with no gate to reach
     gets one where the line straight out from it first meets a boundary, as the old build gave every
-    front its gate opposite the house. Returns the new openings and the old gates they replace."""
+    front its gate opposite the house. doors_near: those just over the square's edge, whose doorsteps
+    are kept clear here too. Returns the new openings and the old gates they replace."""
     if not houses or not doors:
         return [], []
     houses = [h if h.is_valid else h.buffer(0) for h in houses]
@@ -4517,8 +4764,111 @@ def gates_for_doors(part, houses, doors, road_area=None, sq=None):
         t = min(max(line.project(pt), EDGE_STUB + 0.5), L - EDGE_STUB - 0.5)
         opens.append(dict(edge=eid, t=t, width=1.0, kind="gate"))
         given.add(k)
+    # nothing stands across a doorstep: where a boundary runs within a step of a door (a front wall
+    # along a house built up to its plot's edge) it is opened in front of the door
+    taken = {i: list(edges[i].get("drop") or ()) for i in kept}
+    for o in (part.get("openings") or []) + opens:
+        if o.get("edge") is not None and o.get("kind") in ("gate", "drive", "open", "path"):
+            taken.setdefault(o["edge"], []).append((o["t"] - o["width"] / 2, o["t"] + o["width"] / 2))
+    for d in list(doors) + list(doors_near):
+        nx, ny = math.sin(d[3]), -math.cos(d[3])
+        step = LineString([(d[0], d[1]), (d[0] + nx * DOOR_STEP, d[1] + ny * DOOR_STEP)])
+        for j in etree.query(step):
+            eid = kept[int(j)]
+            hit = lines[eid].intersection(step)
+            if hit.is_empty:
+                continue
+            line, L = lines[eid], lines[eid].length
+            t = line.project(hit.centroid)
+            if any(a - 0.1 <= t - DOOR_GAP / 2 and t + DOOR_GAP / 2 <= b + 0.1 for a, b in taken.get(eid, ())):
+                continue
+            a, b = t - DOOR_GAP / 2, t + DOOR_GAP / 2
+            # (and no stub of it is left standing on its own beside the opening)
+            ends = [0.0, L] + [v for ab in taken.get(eid, ()) for v in ab]
+            a = max([v for v in ends if a - DOOR_STUB < v <= a] + [a])
+            b = min([v for v in ends if b <= v < b + DOOR_STUB] + [b])
+            a, b = max(a, 0.0), min(b, L)
+            o = dict(edge=eid, t=(a + b) / 2, width=b - a, kind="open")
+            opens.append(o)
+            taken.setdefault(eid, []).append((a, b))
     # the gate that led only to a wall at the wrong side of that house goes: it was a hole in a side fence
     return opens, [o for o, k in blind if k in given]
+
+
+def clear_doorsteps(br, gt, doors, ground=None):
+    """`br` and `gt` with a gap wherever a run still crosses a doorstep: what the partition's own
+    openings didn't reach (a mapped wall, a run moved off the street's edge onto the house front). A
+    piece left shorter than DOOR_STUB beside a gap goes with it, so no stub stands on its own, and a
+    gate the gap reaches is part of the opening. With `ground`, a run's new end at a gap stands on
+    the ground there rather than at a height drawn between its old points."""
+    steps = [LineString([(d[0] + math.sin(d[3]) * 0.1, d[1] - math.cos(d[3]) * 0.1),
+                         (d[0] + math.sin(d[3]) * DOOR_STEP, d[1] - math.cos(d[3]) * DOOR_STEP)]) for d in doors]
+    if not steps or not br:
+        return br, gt
+    tree = STRtree(steps)
+    out, gone = [], []
+    for run in br:
+        line = LineString([q[:3] for q in run["p"]]) if len(run["p"]) > 1 else None
+        hits = [] if line is None else [line.project(line.intersection(steps[int(k)]).centroid)
+                                        for k in tree.query(line) if line.intersects(steps[int(k)])]
+        if not hits:
+            out.append(run)
+            continue
+        L = line.length
+        cuts = sorted((max(0.0, t - DOOR_GAP / 2), min(L, t + DOOR_GAP / 2)) for t in hits)
+        joined = []
+        for a, b in cuts:
+            if joined and a - joined[-1][1] < DOOR_STUB:
+                joined[-1] = (joined[-1][0], max(joined[-1][1], b))
+            else:
+                joined.append((a, b))
+        if joined[0][0] < DOOR_STUB:
+            joined[0] = (0.0, joined[0][1])
+        if L - joined[-1][1] < DOOR_STUB:
+            joined[-1] = (joined[-1][0], L)
+        keep, at = [], 0.0
+        for a, b in joined:
+            if a > at:
+                keep.append((at, a))
+            at = b
+            gone.append(substring(line, a, b))
+        if at < L:
+            keep.append((at, L))
+        for a, b in keep:
+            piece = substring(line, a, b)
+            if piece.geom_type == "LineString" and len(piece.coords) >= 2:
+                pts = [[round(c[0], 1), round(c[1], 1), round(c[2], 1)] for c in piece.coords]
+                if ground is not None:
+                    for k, cut in ((0, a > 0), (-1, b < L)):
+                        if cut:
+                            pts[k][2] = round(float(ground(pts[k][0], pts[k][1])), 1)
+                out.append(dict(run, p=pts))
+    # a gate the gaps reach is part of the opening, and a short piece they left with nothing holding
+    # either end goes (its neighbour or its gate taken by one), whether this cut it or the
+    # partition's opening at the doorstep did
+    near_steps = [st.buffer(DOOR_GAP / 2 + 1.0) for st in steps]
+    while True:
+        if gone and gt:
+            opened = STRtree(gone)
+            taken = [g for g in gt if any(gone[int(k)].distance(Point(x, y)) < 0.3 for x, y in ((g[0], g[1]), (g[2], g[3]))
+                                          for k in opened.query(Point(x, y).buffer(0.3)))]
+            gone += [LineString([(g[0], g[1]), (g[2], g[3])]) for g in taken]
+            gt = [g for g in gt if g not in taken]
+        near = STRtree(gone + near_steps)
+        lines = [LineString([q[:2] for q in r["p"]]) for r in out]
+        held = STRtree(lines + [Point(g[k], g[k + 1]) for g in gt or () for k in (0, 2)])
+        geoms = held.geometries
+
+        def free(pt, i):
+            return not any(int(k) != i and geoms[int(k)].distance(pt) < 0.3 for k in held.query(pt.buffer(0.3)))
+        loose = {i for i, ln in enumerate(lines) if ln.length < DOOR_STUB
+                 and len(near.query(ln, predicate="dwithin", distance=0.3))
+                 and free(Point(ln.coords[0]), i) and free(Point(ln.coords[-1]), i)}
+        if not loose:
+            break
+        gone += [lines[i] for i in loose]
+        out = [r for i, r in enumerate(out) if i not in loose]
+    return out, gt
 
 
 def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=(), gt=None):
@@ -5000,6 +5350,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             keep.append([r[0]] + at_ground(r[1:], q, 0.2))
             moved["fx"] += 1
     gone["fx"] = len(rows) - len(keep)
+    moved["fx"] += spread_items(keep, lambda x, y, r: clear(x, y, item_room(r)) and not in_full_road(x, y),
+                                lambda r, q: [r[0]] + at_ground(r[1:], q, 0.2))
     keep = [at_street_level(r, 1, 3) for r in keep]
     tile["fx"] = keep
     # the wires hang from their poles where they stand now; a pole that went takes its wires with it
@@ -5007,6 +5359,42 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     tile["wr"] = string_wires([r for r in keep if r[0] == "pole"], tile.get("wr") or [],
                               {pid for w in tile.get("wr") or [] if len(w) > 7 for pid in w[6:8]} - here)
     return gone
+
+
+ITEM_GAP = 0.7      # metres between two street items' middles, so neither stands in the other
+ITEM_SLIDE = (0.8, -0.8, 1.6, -1.6, 2.4, -2.4, 3.2, -3.2)
+# what the map data maps stays where it is; what the build puts up itself gives way to it
+GENERATED = {"sign", "lamp", "pole"}
+
+
+def spread_items(rows, free, moved_to):
+    """Street items that two sources, or two snaps to the same kerb, put on one spot, set side by
+    side along the pavement instead: the later one (a generated one after every mapped one) slides
+    along its street, the way it faces, to the nearest spot that is `free` and a step from every
+    other. Returns how many moved; one with nowhere to go stays where it was."""
+    items = sorted((k for k, r in enumerate(rows) if r[0] not in ("car", "wheelie")),
+                   key=lambda k: rows[k][0] in GENERATED)
+    placed, n = collections.defaultdict(list), 0
+
+    def crowded(x, y):
+        i, j = int(x // ITEM_GAP), int(y // ITEM_GAP)
+        return any(math.dist((x, y), p) < ITEM_GAP for a in (i - 1, i, i + 1) for b in (j - 1, j, j + 1)
+                   for p in placed[a, b])
+
+    for k in items:
+        r = rows[k]
+        x, y = float(r[1]), float(r[2])
+        if crowded(x, y):
+            a = float(r[4]) if len(r) > 4 and isinstance(r[4], (int, float)) else 0.0
+            for d in ITEM_SLIDE:
+                nx, ny = x + math.cos(a) * d, y + math.sin(a) * d
+                if not crowded(nx, ny) and free(nx, ny, r):
+                    rows[k] = moved_to(r, (nx, ny))
+                    x, y = nx, ny
+                    n += 1
+                    break
+        placed[int(x // ITEM_GAP), int(y // ITEM_GAP)].append((x, y))
+    return n
 
 
 # How far a boundary must keep from a street item's middle: its own half-width and a little, so a
@@ -5568,6 +5956,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     verge_out_of_town(rd, houses)
     carry_pedestrian(rd, tile.get("rd") or [])
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
+    rd, _ = ways_out_of_buildings(rd, houses + buildings_next_door(ti, tj, base, sq))
     rd, _ = drop_paths_along_streets(rd)
     whole_spans(rd, sq, road_ground, wet)
     paths_on_the_towpath(rd, canal)
@@ -5615,7 +6004,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         abutments = unary_union(deck_ends_reach(gaps))
         shapely.prepare(wall_blocked)
         shapely.prepare(abutments)
-    door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq)
+    doors_near = tile.pop("drn", None) or []
+    door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq, doors_near)
     gone = {id(o) for o in wrong_side}
     part = dict(part, openings=[o for o in part["openings"] if id(o) not in gone] + door_gates)
     # drives go beside the gates that are left, so none stands beside a gate that was taken out
@@ -5645,6 +6035,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     # (once the ground is laid: the hill over a portal is laid to the ways crossing it, not to these)
     end_at_portals(rd, tile.get("tn"))
+    rd = steep_paths_as_steps(rd)
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
@@ -5664,6 +6055,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     points = mapped_points(sq)
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
+    br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt

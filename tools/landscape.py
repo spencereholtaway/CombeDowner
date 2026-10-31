@@ -41,15 +41,71 @@ def spot(x, y):
     return zlib.crc32(f"{round(x, 1)},{round(y, 1)}".encode())
 
 
-def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=()):
+def _as_mapped(poly, b, road, rr, walls, wtree, with_bay):
+    """The door and bay window as they were placed before doors looked for a free wall: on the wall
+    nearest the street of the outline as mapped. Its draws from rr, in the same order, keep each
+    house's door colour and bay window as they were. Returns (colour, bay or None, whether a bay was
+    wanted, where the door stood)."""
+    c = poly.centroid
+    ring = list(poly.exterior.coords)[:-1]
+    best = None
+    for k in range(len(ring)):
+        a, q = ring[k], ring[(k + 1) % len(ring)]
+        if math.dist(a, q) < 2.2: continue
+        d = road.distance(Point((a[0] + q[0]) / 2, (a[1] + q[1]) / 2))
+        if best is None or d < best[0] - 0.5: best = (d, a, q)
+    if best is None: return rr.randrange(DOOR_COLOURS), None, False, None
+    _, a, q = best
+    a, q = (round(a[0], 1), round(a[1], 1)), (round(q[0], 1), round(q[1], 1))
+    L = math.dist(a, q)
+    ux, uy = (q[0] - a[0]) / L, (q[1] - a[1]) / L
+    n = bays_on(L, door=True)
+    if b["kind"] == "terrace": k = 0 if rr.random() < 0.5 else n - 1
+    else: k = n // 2 if n % 2 or rr.random() < 0.5 else n // 2 - 1
+    nx, ny = uy, -ux
+    if (a[0] + ux * L / 2 - c.x) * nx + (a[1] + uy * L / 2 - c.y) * ny < 0: nx, ny = -nx, -ny
+
+    def blocked(k):
+        px, py = a[0] + ux * L * (k + 0.5) / n, a[1] + uy * L * (k + 0.5) / n
+        step = LineString([(px + nx * 0.15, py + ny * 0.15), (px + nx * 0.75, py + ny * 0.75)])
+        return wtree is not None and any(walls[int(j)].intersects(step) for j in wtree.query(step))
+    if blocked(k): k = next((j for j in sorted(range(n), key=lambda j: abs(j - k)) if not blocked(j)), k)
+    colour = rr.randrange(DOOR_COLOURS)
+    door = (a[0] + ux * L * (k + 0.5) / n, a[1] + uy * L * (k + 0.5) / n)
+    if not (with_bay and n >= 2 and b["kind"] in ("semi", "detached") and b["zone"] in BAY_ZONES and L > 6 and rr.random() < 0.6):
+        return colour, None, False, door
+    g = (k + (1.5 if k + 1 < n else -0.5)) / n
+    bx, by = a[0] + ux * L * g + nx * 0.45, a[1] + uy * L * g + ny * 0.45
+    ang = math.atan2(uy, ux)
+    if math.sin(ang) * nx - math.cos(ang) * ny < 0: ang += math.pi
+    storeys = 2 if b["eaves"] > 4.5 and rr.random() < 0.6 else 1
+    return colour, [bx, by, ang, storeys, min(2.6, L * 0.32), ux, uy, nx, ny], True, door
+
+
+def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=(), mapped=None):
     """Doors (and, if a list is given, bay windows: 1930s suburban semis and detached houses
     usually have one beside the door, often two storeys high). keys: see buildings.classify.
-    walls (lines): a door goes in another bay of its wall rather than open on to one of them."""
+    walls (lines): a door goes in another bay of its wall rather than open on to one of them.
+
+    The door goes on the wall nearest the street that has open ground outside it: where that is a
+    terrace's party wall, or a wall with an outhouse or a neighbour built against it, the next
+    nearest free wall takes it. A house with no free wall at all keeps its door on the nearest.
+
+    mapped: the outlines as mapped, before a neighbour's was cut from them. The door, its colour and the
+    bay window come from where they stood on those (see _as_mapped): each stays there wherever its wall
+    is still open, and moves only where it would stand against a neighbour, a wall or the doorway."""
     wtree = shapely.STRtree(list(walls)) if len(walls) else None
     lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in roads
              if r["c"] not in ("footway", "steps", "path", "cycleway", "bridleway", "track") and len(r["p"]) > 1]
     tree = shapely.STRtree(lines)
+    solid = [p.buffer(-0.1) for p in polys]
+    btree = shapely.STRtree(solid)
     out = []
+
+    def indoors(x, y):
+        q = Point(x, y)
+        return any(solid[int(j)].contains(q) for j in btree.query(q))
+
     for i, (poly, b) in enumerate(zip(polys, info)):
         if b["kind"] not in ("detached", "semi", "terrace") or b["eaves"] < 3: continue
         rr = random.Random(keys[i] * 53 + 11) if keys is not None else rnd
@@ -57,44 +113,103 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=()):
         near = [int(k) for k in tree.query(c.buffer(50))]
         if not near: continue
         road = min((lines[k] for k in near), key=lambda l: l.distance(c))
+        colour, was, wanted, door_was = _as_mapped(mapped[i] if mapped is not None else poly, b, road, rr, walls, wtree, bays is not None)
+        rr = random.Random(keys[i] * 53 + 11) if keys is not None else random.Random(zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))
         ring = list(poly.exterior.coords)[:-1]
-        best = None
+        out_side = 1 if poly.exterior.is_ccw else -1     # the outside of each wall is on its right going anticlockwise
+        cands = []
         for k in range(len(ring)):
             a, q = ring[k], ring[(k + 1) % len(ring)]
             L = math.dist(a, q)
             if L < 2.2: continue
             m = ((a[0] + q[0]) / 2, (a[1] + q[1]) / 2)
-            d = road.distance(Point(m))
-            if best is None or d < best[0] - 0.5: best = (d, a, q, L)
-        if not best: continue
-        _, a, q, L = best
-        # the game draws the footprint rounded to 0.1 m: count bays on that wall
-        a, q = (round(a[0], 1), round(a[1], 1)), (round(q[0], 1), round(q[1], 1))
-        L = math.dist(a, q)
-        ux, uy = (q[0] - a[0]) / L, (q[1] - a[1]) / L
-        # terraces put the door in an end bay; others in the middle one
-        n = bays_on(L, door=True)
-        if b["kind"] == "terrace": k = 0 if rr.random() < 0.5 else n - 1
-        else: k = n // 2 if n % 2 or rr.random() < 0.5 else n // 2 - 1
-        nx, ny = uy, -ux
-        mx, my = a[0] + ux * L / 2, a[1] + uy * L / 2
-        if (mx - c.x) * nx + (my - c.y) * ny < 0: nx, ny = -nx, -ny
-        def blocked(k):
-            px, py = a[0] + ux * L * (k + 0.5) / n, a[1] + uy * L * (k + 0.5) / n
+            cands.append((road.distance(Point(m)), a, q))
+        if not cands: continue
+        # of walls about as near the street, the longest: a corner house's front is its broad side
+        dmin = min(w[0] for w in cands)
+        best = max((w for w in cands if w[0] < dmin + 0.5), key=lambda w: math.dist(w[1], w[2]))
+        order = [best] + sorted((w for w in cands if w is not best), key=lambda w: w[0])
+        # (the short walls too, for a door that finds no room on a long one)
+        order += [(None, ring[k], ring[(k + 1) % len(ring)]) for k in range(len(ring))
+                  if 1.2 <= math.dist(ring[k], ring[(k + 1) % len(ring)]) < 2.2]
+        walls_round = []
+        for _, a, q in order:
+            # the game draws the footprint rounded to 0.1 m: count bays on that wall
+            a, q = (round(a[0], 1), round(a[1], 1)), (round(q[0], 1), round(q[1], 1))
+            L = math.dist(a, q)
+            if L < 1e-6: continue
+            ux, uy = (q[0] - a[0]) / L, (q[1] - a[1]) / L
+            walls_round.append((a, L, ux, uy, uy * out_side, -ux * out_side, bays_on(L, door=True)))
+
+        def spot_at(w, f):
+            a, L, ux, uy, nx, ny, _ = w
+            return a[0] + ux * L * f, a[1] + uy * L * f, nx, ny
+
+        def walled(w, f):
+            px, py, nx, ny = spot_at(w, f)
             step = LineString([(px + nx * 0.15, py + ny * 0.15), (px + nx * 0.75, py + ny * 0.75)])
             return wtree is not None and any(walls[int(j)].intersects(step) for j in wtree.query(step))
-        if blocked(k): k = next((j for j in sorted(range(n), key=lambda j: abs(j - k)) if not blocked(j)), k)
-        f = (k + 0.5) / n
+
+        def built_on(w, f):
+            px, py, nx, ny = spot_at(w, f)
+            return indoors(px + nx * 0.8, py + ny * 0.8) or not poly.contains(Point(px - nx * 0.8, py - ny * 0.8))
+        # a door that stood on open ground stays where it was
+        stay = None
+        if door_was is not None:
+            for ww in walls_round:
+                a, L, ux, uy = ww[:4]
+                t = (door_was[0] - a[0]) * ux + (door_was[1] - a[1]) * uy
+                if 0.45 <= t <= L - 0.45 and abs((door_was[0] - a[0]) * uy - (door_was[1] - a[1]) * ux) < 0.1:
+                    if not built_on(ww, t / L) and not walled(ww, t / L): stay = (ww, t / L)
+                    break
+        w = next((w for w in walls_round if w[1] >= 2.2 and any(not built_on(w, (k + 0.5) / w[6]) for k in range(w[6]))), None)
+        if stay is not None:
+            w, f = stay
+            k = min(w[6] - 1, int(f * w[6]))
+        elif w is not None:
+            n = w[6]
+            free = [k for k in range(n) if not built_on(w, (k + 0.5) / n)]
+            # terraces put the door in an end bay; others in the middle one
+            if b["kind"] == "terrace": k = 0 if rr.random() < 0.5 else n - 1
+            else: k = n // 2 if n % 2 or rr.random() < 0.5 else n // 2 - 1
+            ok = [j for j in free if not walled(w, (j + 0.5) / n)] or free
+            if k not in ok: k = min(ok, key=lambda j: abs(j - k))
+            f = (k + 0.5) / n
+        else:
+            # no bay of any wall opens on to free ground (a house hemmed in by its neighbours and their
+            # extensions): the door goes where a stretch of wall does, the window there left out
+            spots = [(w, t / w[1]) for w in walls_round for t in np.arange(0.5, w[1] - 0.45, 0.25)]
+            w, f = next(((w, f) for w, f in spots if not built_on(w, f)), (walls_round[0], 0.5))
+            n = w[6]
+            k = min(n - 1, int(f * n))
+        a, L, ux, uy, nx, ny, n = w
         px, py = a[0] + ux * L * f, a[1] + uy * L * f
         ang = math.atan2(uy, ux)
         if math.sin(ang) * nx - math.cos(ang) * ny < 0: ang += math.pi
         px, py = px + nx * 0.03, py + ny * 0.03
-        out.append([round(px, 2), round(py, 2), round(gelev(px, py), 2), round(ang, 3), rr.randrange(DOOR_COLOURS), n])
-        if bays is not None and n >= 2 and b["kind"] in ("semi", "detached") and b["zone"] in BAY_ZONES and L > 6 and rr.random() < 0.6:
-            g = (k + (1.5 if k + 1 < n else -0.5)) / n    # over the window in the next bay
+        out.append([round(px, 2), round(py, 2), round(gelev(px, py), 2), round(ang, 3), colour, n])
+        if not wanted: continue
+
+        def open_bay(bx, by, ux, uy, nx, ny, width):
+            """A bay window standing out of a wall of this house, on open ground, clear of the doorway."""
+            sx, sy = bx - nx * 0.45, by - ny * 0.45
+            if math.dist((sx, sy), (px, py)) < width / 2 + 0.6: return False
+            for t in (-width / 2, 0, width / 2):
+                if poly.exterior.distance(Point(sx + ux * t, sy + uy * t)) > 0.15: return False
+                for out in (0, 0.4):        # (it stands 0.9 m out from the wall)
+                    ox, oy = bx + ux * t * 0.9 + nx * out, by + uy * t * 0.9 + ny * out
+                    if indoors(ox, oy) or poly.contains(Point(ox, oy)): return False
+            return True
+        bx, by, bang, storeys, width, bux, buy, bnx, bny = was
+        if not open_bay(bx, by, bux, buy, bnx, bny, width):
+            if not (n >= 2 and L > 6): continue
+            # over the window in the next bay, not where it would stand in the house next door
+            nxt = next((j for j in ((k + 1, k - 1) if k + 1 < n else (k - 1,)) if 0 <= j < n and not built_on(w, (j + 0.5) / n)), None)
+            if nxt is None: continue
+            g, width, bang = (nxt + 0.5) / n, min(2.6, L * 0.32), ang
             bx, by = a[0] + ux * L * g + nx * 0.45, a[1] + uy * L * g + ny * 0.45
-            storeys = 2 if b["eaves"] > 4.5 and rr.random() < 0.6 else 1
-            bays.append([round(bx, 2), round(by, 2), round(gelev(bx, by), 2), round(ang, 3), storeys, b["wall"][0], round(min(2.6, L * 0.32), 2)])
+            if not open_bay(bx, by, ux, uy, nx, ny, width): continue
+        bays.append([round(bx, 2), round(by, 2), round(gelev(bx, by), 2), round(bang, 3), storeys, b["wall"][0], round(width, 2)])
     return out
 
 
@@ -185,6 +300,14 @@ def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False, walls=()):
 POLE_TOP = 7.6           # metres above a pole's foot that the span to the next pole hangs from
 POLE_DROP = 7.3          # and the drop to a house
 POLE_SLIDE = (0, 1, -1, 2, -2, 3, -3, 4, -4, 6, -6)    # metres along the street a pole may stand off its spot
+WIRE_OVER_ROAD = 5.0     # the least a wire hangs over a street it crosses (lorries pass under at 4.5)
+WIRE_STREETS = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown", "trunk"}
+
+
+def wire_z(a, b, t):
+    """A wire's height a fraction t along it from a to b, sagging as the game hangs it."""
+    sag = min(0.9, math.dist(a[:2], b[:2]) * 0.018)
+    return a[2] + (b[2] - a[2]) * t - sag * 4 * t * (1 - t)
 
 
 def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False, clear=lambda x, y: True, widths=None):
@@ -198,6 +321,22 @@ def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False, clear=lambda x, y:
     numbers of the poles it hangs from [x0, y0, z0, x1, y1, z1, a, b] (b is -1 for a drop to a house),
     so whatever later moves or removes a pole moves or removes its wires with it (`string_wires`)."""
     poles, wires = [], []
+    streets = [r for r in roads if r["c"] in WIRE_STREETS and len(r["p"]) > 1]
+    slines = [LineString([q[:2] for q in r["p"]]) for r in streets]
+    stree = shapely.STRtree(slines)
+
+    def over_streets(a, b):
+        """Whether a wire from a to b hangs high enough over every street it crosses: a drop to a
+        house across another street from its pole, down a hill, would hang at head height over it."""
+        w = LineString([a[:2], b[:2]])
+        for k in stree.query(w):
+            x = slines[int(k)].intersection(w)
+            for c in getattr(x, "geoms", [x]):
+                if c.is_empty or c.geom_type != "Point": continue
+                p = streets[int(k)]["p"]
+                i = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (c.x, c.y)))
+                if wire_z(a, b, w.project(c) / (w.length or 1)) - p[i][2] < WIRE_OVER_ROAD: return False
+        return True
     door_pts = [Point(d[0], d[1]) for d in doors]
     dtree = shapely.STRtree(door_pts) if door_pts else None
     r2 = lambda v: round(float(v), 2)
@@ -252,6 +391,7 @@ def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False, clear=lambda x, y:
                 for k in near[:3]:
                     d = doors[k]
                     if rnd_.random() < 0.5: continue
+                    if not over_streets((px, py, z + POLE_DROP), (d[0], d[1], d[2] + 5.2)): continue
                     wires.append([r2(px), r2(py), r2(z + POLE_DROP), r2(d[0]), r2(d[1]), r2(d[2] + 5.2), pid, -1])
             s += 38 + rnd_.random() * 6
     return poles, wires

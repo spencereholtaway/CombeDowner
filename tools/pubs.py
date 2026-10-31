@@ -25,7 +25,8 @@ the street outside. rating is 0 to 5, or null where there isn't one (not yet ins
 or no FSA download). FSA data: Open Government Licence.
 """
 import json, math, os, re, sys
-from shapely.geometry import shape
+import shapely
+from shapely.geometry import Point, shape
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from shops import same
@@ -77,10 +78,25 @@ if __name__ == "__main__":
             for tj in range(3):
                 q = os.path.join(maps, map_id, f"{ti}_{tj}.json")
                 if os.path.exists(q): signs += json.load(open(q)).get("sh", [])
+    tiles = os.path.join(maps, map_id)
+    built = [core] + [json.load(open(os.path.join(tiles, f))) for f in sorted(os.listdir(tiles))
+                      if re.fullmatch(r"-?\d+_-?\d+\.json", f)] if os.path.isdir(tiles) else [core]
+    homes = [shapely.Polygon(b["r"][0]).buffer(0) for m in built for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
+    htree = shapely.STRtree(homes)
+
+    def out_front(x, y, a):
+        """The pavement 3 m out from the sign, or nearer where another building stands closer than that
+        across a yard, so the door the game puts there isn't indoors."""
+        for d in (3.0, 2.5, 2.0, 1.5, 1.0, 0.6):
+            q = Point(x + math.sin(a) * d, y - math.cos(a) * d)
+            if not any(homes[int(k)].buffer(-0.3).contains(q) for k in htree.query(q)): break
+        return q.x, q.y
+
     pubs = []
     for x, y, _g, a, _w, name, style in signs:
         if style != "pub" or not name or any(p["name"] == name for p in pubs): continue
-        pubs.append(dict(name=name, x=x + math.sin(a) * 3, y=y - math.cos(a) * 3, px=x, py=y, a=a, conf=2.0))
+        ox, oy = out_front(x, y, a)
+        pubs.append(dict(name=name, x=ox, y=oy, px=x, py=y, a=a, conf=2.0))
     signed = len(pubs)
 
     # Overture's pubs, most confident first so a duplicate keeps the better entry
@@ -112,7 +128,7 @@ if __name__ == "__main__":
             from_osm += 1
 
     # pubs signed in the squares out in town: out front of the sign, not wherever the listing put them
-    tiles, moved = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", map_id), 0
+    moved = 0
     signs = []
     for f in sorted(os.listdir(tiles)) if os.path.isdir(tiles) else []:
         if f.endswith(".json"):
@@ -123,7 +139,8 @@ if __name__ == "__main__":
                       if same(name, p["name"]) and math.hypot(x - p["px"], y - p["py"]) < SIGN_NEAR)
         if not near: continue
         _d, x, y, a = near[0]
-        p.update(x=x + math.sin(a) * 3, y=y - math.cos(a) * 3, a=a)
+        ox, oy = out_front(x, y, a)
+        p.update(x=ox, y=oy, a=a)
         moved += 1
 
     # hygiene ratings
