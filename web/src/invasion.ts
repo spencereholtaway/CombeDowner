@@ -57,6 +57,9 @@
 // and the day's pubs, with the Gaffer and how close each one came, go into tomorrow's paper (paper.ts). The "out" message
 // carries those extras; older pages ignore them.
 //
+// They never take a pub within 230 m of a nursery or primary school's grounds, and no ladder lad
+// comes to a lamp within 200 m of one or sets off from there (safezones.ts).
+//
 // The Flag Lads hold off while the room is busy: when every player still up is on a job, a race, a
 // trail, the bonfire or any other mission panel, the host stops the creep and spread, the ladder
 // lads, new takeover calls and the dig-in clocks of takeovers already running (they're pushed back
@@ -86,6 +89,7 @@ import * as SFX from "./audio";
 import { CHAIR, LADDER, MOUNTS, SOCIETY, look, type NaughtyBoys, type Target } from "./naughtyboys";
 import { Chase, Fugitives, escapeBy, RUNS_AT } from "./gaffer";
 import { clearSpot, streetSpot } from "./haunts";
+import { inSafeZone } from "./safezones";
 import type { GameMap } from "./map";
 import type { Kind } from "./pickups";
 import { compassWord, esc, far, hash, rng, type Fugitive } from "./quests";
@@ -723,7 +727,7 @@ export class Invasion {
   /** Host: the Flag Lads take a pub, weighted to where they're strongest, away from any other takeover. */
   private newCall(alive: Target[], vice: boolean) {
     const pubs = this.w.pubs().map((p) => ({ ...p, sq: this.squareAt(p.x, p.z), d: Math.min(...alive.map((t) => Math.hypot(t.x - p.x, t.z - p.z))) }))
-      .filter((p) => p.sq >= 0 && p.d > 120 && p.d < 1500 && !this.freed.some((f) => f.n === p.name)
+      .filter((p) => p.sq >= 0 && p.d > 120 && p.d < 1500 && !this.freed.some((f) => f.n === p.name) && !inSafeZone(this.w.map, p.x, p.z, 30)
         && !this.calls.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < 600));
     if (!pubs.length) return false;
     const weight = (p: { sq: number }) => this.level(p.sq) + 0.05;
@@ -993,15 +997,16 @@ export class Invasion {
     this.ladderT = 100 - 60 * this.meter;
     if (this.ladders.length >= 3 || !this.cleared.size) return;
     const anchor = alive[Math.floor(Math.random() * alive.length)];
-    const lamp = this.lampsNear(anchor.x, anchor.z, 180).find((o) => this.cleared.has(o.id) && !this.ladders.some((m) => m.id === o.id) && !this.isFree(o.sq) && !((this.lull.get(o.sq) ?? 0) > Date.now()));
+    const lamp = this.lampsNear(anchor.x, anchor.z, 180).find((o) => this.cleared.has(o.id) && !this.ladders.some((m) => m.id === o.id) && !this.isFree(o.sq) && !((this.lull.get(o.sq) ?? 0) > Date.now()) && !inSafeZone(this.w.map, o.x, o.z));
     if (!lamp) return;
     this.sendCrew(lamp, alive);
   }
 
   /** Host: a ladder lad sets off for a lamp, from a street not far off that nobody is near. */
   private sendCrew(lamp: Lamp, alive: Target[]): { x: number; z: number } | null {
+    if (inSafeZone(this.w.map, lamp.x, lamp.z)) return null;   // not near a nursery or primary school
     const ch = this.w.naughtyBoys;
-    const from = streetSpot(this.w.map, lamp.x, lamp.z, 40, 90, 0.6, (x, z) => !alive.some((t) => Math.hypot(t.x - x, t.z - z) < 35));
+    const from = streetSpot(this.w.map, lamp.x, lamp.z, 40, 90, 0.6, (x, z) => !alive.some((t) => Math.hypot(t.x - x, t.z - z) < 35) && !inSafeZone(this.w.map, x, z));
     if (!from) return null;
     const g = ch.bring(from.x, from.z, look(LADDER, Math.floor(Math.random() * 4)), 1, this.w.players())[0];
     if (!g) return null;

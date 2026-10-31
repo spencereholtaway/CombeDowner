@@ -63,6 +63,9 @@
 // leaves them out, and the poster just goes without. The host says when someone gives up ("give", "gv"), slips off
 // ("slip"), is handed in ("in"), is put down ("down"), gets away for now ("again"), gets out of sight
 // ("lost") or for good ("away").
+//
+// He never hangs about within 290 m of a nursery or primary school's grounds, so neither he nor his
+// lookouts start within 200 m of one, and his mates don't turn up there if he runs into one (safezones.ts).
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { FEAT_ARITY, MOUNTS, NAUGHTY, CRICKET, RUGBY, SOCIETY, featsOf, look, withFeats } from "./naughtyboys";
@@ -72,6 +75,7 @@ import { callout } from "./trailscreens";
 import { type Known, FEAT_SHORT, miniIcon, suspectTag, wantedPoster, wantedScreensDown, wantedSplash } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
+import { inSafeZone } from "./safezones";
 import { type Grade } from "./trophies";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
@@ -203,10 +207,13 @@ function details(o: Offer, w: QuestWorld) {
 /**
  * His routine: a pub 400 m to 1.3 km from the noticeboard, then a park or square near that, then a
  * bus stop by somewhere else near that (the stop itself is found when he gets there, as the stops
- * are only known round where people are). Each stop has the search circle's first middle.
+ * are only known round where people are). Each stop has the search circle's first middle. None is
+ * within 290 m of a nursery or primary school's grounds (safezones.ts), so neither he nor the crew
+ * standing about him turn up in one; every player works this out alike, from the map and city-wide
+ * names only.
  */
 function hauntsFor(o: Offer, w: QuestWorld, r: Rng): Haunt[] {
-  const ok = (x: number, z: number) => w.map.fieldEdge(x, z) > 120;
+  const ok = (x: number, z: number) => w.map.fieldEdge(x, z) > 120 && !inSafeZone(w.map, x, z, 90, false);
   const sort = <T extends { x: number; z: number; n: string }>(a: T[]) => a.sort((p, q) => p.x - q.x || p.z - q.z || p.n.localeCompare(q.n));
   const pubs = sort(w.pubs().map((p) => ({ n: p.name, x: p.x, z: p.z })).filter((p) => ok(p.x, p.z)));
   const places = sort(w.places().filter((p) => ok(p.x, p.z)));
@@ -742,8 +749,10 @@ class Wanted implements Job {
         } else if (this.has("mob") && !this.mobbed && (hurt || b.target)) {
           this.mobbed = true; this.clean = false;
           const at = clearSpot(this.w.map, b.x + 25, b.z, 10) ?? [b.x, b.z];
-          this.crew.push(...ch.bring(at[0], at[1], this.lookCrew(), 2 + this.offer.stars, players, undefined, 5));
-          this.say("His mates have turned up!");
+          if (!inSafeZone(this.w.map, at[0], at[1])) {   // not by a nursery or primary school
+            this.crew.push(...ch.bring(at[0], at[1], this.lookCrew(), 2 + this.offer.stars, players, undefined, 5));
+            this.say("His mates have turned up!");
+          }
         } else if (!this.spotted && !this.warned && this.lookouts.some((l) => ch.get(l.i, l.gen)?.target)) {
           this.warned = true; this.clean = false; this.move(true); this.say("A lookout's phoned ahead! He's on the move");
         } else if (!this.spotted && !b.target && (this.movedT += dt) > MOVE_EVERY) this.move(false);
@@ -963,7 +972,7 @@ class Wanted implements Job {
     for (const c of this.crew) ch.setOn(c.i, c.gen, by, p.x, p.z);
     if (this.has("mob")) {
       const a = Math.random() * Math.PI * 2, at = clearSpot(this.w.map, b.x + Math.cos(a) * 45, b.z + Math.sin(a) * 45, 12);
-      if (at) for (const c of ch.bring(at[0], at[1], this.lookCrew(), 1 + this.offer.stars, players, undefined, 4)) { this.crew.push(c); ch.setOn(c.i, c.gen, by, p.x, p.z); }
+      if (at && !inSafeZone(this.w.map, at[0], at[1])) for (const c of ch.bring(at[0], at[1], this.lookCrew(), 1 + this.offer.stars, players, undefined, 4)) { this.crew.push(c); ch.setOn(c.i, c.gen, by, p.x, p.z); }
     }
     this.say("His mates are coming to spring him!");
   }

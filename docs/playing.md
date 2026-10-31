@@ -851,8 +851,9 @@ menu. What you've earned is kept in this browser.
 You start with a rifle and 120 spare rounds. 1, 2 and 3 pick your fists, the rifle and the sniper
 rifle, and right click aims. The sniper rifle has 10-round magazines, a bolt and a scope that
 sways. Pints (40 health) wait outside the nearest pubs, and sniper rifles, rounds and the odd pint
-turn up outside shops and pubs near you. The middle of Firs Field fills with either a sniper rifle
-or a bottle of Co-op Bucks Fizz, which fills you right up. Run dry and it's fists.
+turn up outside shops and pubs near you. Run dry and it's fists. (The middle of Firs Field used to
+fill with a sniper rifle or a bottle of Co-op Bucks Fizz, but it's in Combe Down CofE Primary's safe
+zone, below, so it stays empty now.)
 
 It's paintball by default: the rifle is a marker with a hopper of loose balls on top that roll and
 rattle as you move and shoot. The sniper is a magazine-fed marker firing First Strike rounds, little
@@ -896,6 +897,17 @@ one, and then only the few nearest join in. The girls slap rather than punch, an
 they think of you. More of them wander in up George Street and Milsom Street to keep the numbers
 up, and at three they all drift off home. (`?nightout=1` in the address makes every night a
 night out, to try it.)
+
+### Safe zones
+
+Every nursery and primary school has a safe zone: its grounds and 200 m round them. Nothing that
+fights turns up in one. No gang of naughty boys hangs about there, no team turns out on a pitch
+there, the Flag Lads never take over a pub within reach of one or send a ladder lad, and a Wanted
+man never has a stop near one, nor do his mates turn up there if he runs into one. Nothing to pick
+up turns up there either, apart from rides and ladders: no markers, paintballs, pints or fizz, no
+drops, and a prize won on a pitch in one is a ride. A gang already chasing you will follow you in;
+they just never start there. The schools come from the map's names: nurseries, pre-schools,
+playgroups, infant, junior, primary, church and prep schools, and Three Ways School.
 
 ### Cats
 

@@ -16,6 +16,9 @@
 // turns out when someone walks on to a rugby pitch or cricket field (so a second player arriving
 // can bring another), and again every three to five minutes while anyone's still on it.
 //
+// No gang or team starts within 200 m of a nursery or primary school (safezones.ts): the haunts there
+// are left out, a pitch in one never turns a team out, and a gang sent to one doesn't come.
+//
 // And then there are the Flag Lads (invasion.ts), who only turn up at the pubs they've taken over
 // and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
@@ -43,6 +46,7 @@ import { bake, dropBaked, unbake } from "./bake";
 import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
+import { inSafeZone } from "./safezones";
 import { nightOut } from "./daylight";
 import { legIt, line } from "./posh";
 import { type Follow, follow } from "./weapon";
@@ -933,7 +937,7 @@ export class NaughtyBoys {
     const had = this.pitches.get(area);
     if (had) return had;
     const out: Ground[] = [];
-    const spots = (pts: number[][]) => pts.flatMap(([x, y]) => { const s = clearSpot(this.map, x, -y, 6); return s ? [{ x: s[0], z: s[1] }] : []; });
+    const spots = (pts: number[][]) => pts.flatMap(([x, y]) => { const s = clearSpot(this.map, x, -y, 6); return s && !inSafeZone(this.map, s[0], s[1]) ? [{ x: s[0], z: s[1] }] : []; });
     for (const p of area.d.pi ?? []) {
       if (p[0] === "r") {
         // the middle, both ends and along both touchlines
@@ -1095,6 +1099,7 @@ export class NaughtyBoys {
   }
 
   private gather(spot: { x: number; z: number }, kind: number, size: number) {
+    if (inSafeZone(this.map, spot.x, spot.z)) return;
     const gang = look(kind, Math.floor(Math.random() * KITS[kind]));
     for (let n = 0; n < size; n++) {
       const c = this.list.find((o) => o.state === GONE);

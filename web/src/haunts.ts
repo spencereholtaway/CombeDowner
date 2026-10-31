@@ -4,9 +4,12 @@
 // corners and outside the shops. A spot is only checked for room (clear of walls and trees) the
 // first time it's wanted, so a square of Bath coming in costs nothing until someone's near it.
 // Cats keep to the residential streets: among the houses, away from the shops and pubs (homeSpot).
+// No haunt is within 200 m of a nursery or primary school (safezones.ts), so neither gangs nor
+// pickups start there.
 //
 // Only the host asks: it runs the naughty boys, cats and pickups that use these.
 import { GameMap, PATHS } from "./map";
+import { inSafeZone } from "./safezones";
 
 export type HauntKind = "corner" | "alley" | "bus" | "shop" | "pub";
 export interface Haunt { x: number; z: number; kind: HauntKind; name: string; foxhill: boolean }
@@ -89,6 +92,8 @@ function check(map: GameMap, s: Spot): Haunt | null {
   if (!c) return (s.h = null);
   // not kept: past the zones' wall today may be open tomorrow
   if (map.fieldEdge(c[0], c[1]) < margin(map)) return null;
+  // nothing hangs about or turns up near a nursery or primary school (safezones.ts)
+  if (inSafeZone(map, c[0], c[1])) return (s.h = null);
   // (Fox Hill as the main map and the squares of Bath loaded round here have it)
   const foxhill = [map, ...map.tilesNear(c[0], c[1], FOXHILL_REACH)].some((area) => {
     let fox = foxOf.get(area);

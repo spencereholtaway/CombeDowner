@@ -9,6 +9,10 @@
 // streets too, a shopping trolley most often, and now and then a ladder (ladders.ts), which a ladder
 // lad always leaves behind him when he goes down.
 //
+// Nothing but rides and ladders turns up within 200 m of a nursery or primary school (safezones.ts):
+// no scattered markers, rounds or pints, no drops, and a prize won there is a ride. That keeps the
+// Firs Field spot empty, as it's just inside Combe Down CofE Primary's.
+//
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
 import * as THREE from "three";
@@ -19,11 +23,14 @@ import { watch } from "./gore";
 import { sniperModel } from "./weapon";
 import { RIDES, rideModel, type RideKind } from "./rides";
 import { ladderPickup } from "./ladders";
+import { inSafeZone } from "./safezones";
 
 export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo" | "boost" | RideKind | "ladder";
 const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo", "boost", ...RIDES, "ladder"];   // sent by index: add to the end
 /** Is it a ride (rides.ts) rather than something to drink or shoot? */
 export const isRide = (k: Kind): k is RideKind => (RIDES as string[]).includes(k);
+/** Fine to leave by a school (safezones.ts): something to ride or climb, not to shoot or drink. */
+const harmless = (k: Kind) => isRide(k) || k === "ladder";
 const RIDE_BLIP = "#ff6fd8";
 export const PINT_HEAL = 40;
 export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
@@ -150,6 +157,7 @@ export class Pickups {
 
   /** Host only: maybe leave something where a naughty boy went down. Returns true if it did. */
   drop(x: number, z: number): boolean {
+    if (inSafeZone(this.map, x, z)) return false;
     let r = Math.random();
     for (const [kind, p] of DROPS) {
       if (r < p) { const [cx, cz] = this.clear(x, z); this.add(this.nextId++, kind, cx, cz, DROP_LIFE); return true; }
@@ -159,13 +167,18 @@ export class Pickups {
   }
 
   /** Host only: one particular thing on the ground at (x, z), for life seconds (a free round at a liberated pub). */
-  place(x: number, z: number, kind: Kind, life = BONUS_LIFE) { const [cx, cz] = this.clear(x, z); this.add(this.nextId++, kind, cx, cz, life); }
+  place(x: number, z: number, kind: Kind, life = BONUS_LIFE) {
+    if (!harmless(kind) && inSafeZone(this.map, x, z)) return;
+    const [cx, cz] = this.clear(x, z);
+    this.add(this.nextId++, kind, cx, cz, life);
+  }
 
   /** Host only: a prize for a kick over the posts or a ball through the stumps, on the ground at (x, z). good: for a hard one. Returns what it is. */
   bonus(x: number, z: number, good = false): Kind {
     const table = good ? BONUS_GOOD : BONUS;
     let r = Math.random(), kind: Kind = table[0][0];
     for (const [k, p] of table) { if (r < p) { kind = k; break; } r -= p; }
+    if (!harmless(kind) && inSafeZone(this.map, x, z)) kind = RIDES[Math.floor(Math.random() * RIDES.length)];
     const [cx, cz] = this.clear(x, z);
     this.add(this.nextId++, kind, cx, cz, BONUS_LIFE);
     return kind;
@@ -195,6 +208,7 @@ export class Pickups {
       const at = s.at ?? this.randomSpot(players, s.pub);
       if (!at) { s.timer = 3; return; }
       const [x, z] = at;
+      if (!s.kinds.every(harmless) && inSafeZone(this.map, x, z)) { s.timer = s.respawn; return; }
       this.add(id, s.kinds[Math.floor(Math.random() * s.kinds.length)], x, z);
       changed = true;
     });
