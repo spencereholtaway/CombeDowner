@@ -159,14 +159,17 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
         if r["c"] not in KERBED: continue
         n = int(line.length // 32)
         for i in range(n):
-            s = 16 + i * 32
-            c = line.interpolate(s)
-            p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
-            dx, dy = p1.x - p0.x, p1.y - p0.y
-            l = math.hypot(dx, dy) or 1
             side = 1 if i % 2 else -1
             off = half(r) + 0.45
-            px, py = c.x - dy / l * off * side, c.y + dx / l * off * side
+            # (a mapped bin or post box already standing on the spot: the lamp goes a step along from it)
+            for step in (0, 1.2, -1.2):
+                s = 16 + i * 32 + step
+                c = line.interpolate(s)
+                p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
+                dx, dy = p1.x - p0.x, p1.y - p0.y
+                l = math.hypot(dx, dy) or 1
+                px, py = c.x - dy / l * off * side, c.y + dx / l * off * side
+                if not any(abs(q[1] - px) < 0.6 and abs(q[2] - py) < 0.6 for q in items): break
             if near_junction(px, py, 5): continue
             add("lamp", px, py, math.atan2(dy, dx) + (0 if side > 0 else math.pi))
 

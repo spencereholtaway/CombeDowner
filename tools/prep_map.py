@@ -2360,9 +2360,25 @@ def _to_the_shops(roads):
         start = 0
         for i in range(1, len(seg) + 1):
             if i == len(seg) or seg[i] != seg[start]:
-                out.append(dict(r, p=pts[start:i + 1], w=rw(r), pv=seg[start]))
+                out.append(dict(r, p=pts[start:i + 1], w=rw(r), pv=seg[start], _whole=(n, r.get("pv"))))
                 start = i
     return out, n
+
+
+def _whole_streets(roads):
+    """The streets as they were before their pavements were run up to the shop fronts: the
+    furniture and markings go along a whole street, and on its pieces a few metres long there was
+    no room for a sign, a lamp or a centre line."""
+    out = []
+    for r in roads:
+        w = r.get("_whole")
+        if w is not None and out and out[-1].get("_whole") == w and out[-1]["p"][-1][:2] == r["p"][0][:2]:
+            out[-1]["p"] = out[-1]["p"] + r["p"][1:]
+        elif w is not None:
+            out.append({k: v for k, v in r.items() if k != "pv"} | ({"pv": w[1]} if w[1] is not None else {}))
+        else:
+            out.append(r)
+    return out
 
 
 roads, _shops = _to_the_shops(roads)
@@ -2633,7 +2649,7 @@ else:
 # ---- street furniture, signs, lamps, markings and parked cars --------------------
 from streets import phone_boxes, street_furniture
 phones = phone_boxes(L("osm")) if os.path.exists(f"{src_dir}/osm.geojson") else []
-fx, marks = street_furniture(roads, L("infrastructure") + phones, gate_list, RW, gelev, proj, inside, rnd, keyed=True)
+fx, marks = street_furniture(_whole_streets(roads), L("infrastructure") + phones, gate_list, RW, gelev, proj, inside, rnd, keyed=True)
 
 # ---- shop signs ----------------------------------------------------------------
 from shops import shop_signs
@@ -3353,14 +3369,23 @@ print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path 
 # telegraph poles go up once the walls and buildings are down, each clear of them
 from landscape import telegraph, string_wires
 from buildings import zone_at
-tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True,
+tpoles, twires = telegraph(_whole_streets(roads), doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True,
                            clear=lambda x, y: not (near_line(shapely.Point(x, y), 0.2)
                                                    or len(indoor.query(shapely.Point(x, y), predicate="within"))),
                            widths=RW)
 fx += tpoles
+for r in roads:
+    r.pop("_whole", None)
 n_fx = len(fx)
 fx = [f for f in fx if f[0] == "car" or not (near_line(shapely.Point(f[1], f[2]), 0.2) or len(indoor.query(shapely.Point(f[1], f[2]), predicate="within")))]
 twires = string_wires([f for f in fx if f[0] == "pole"], twires)
+# (a pole is lower than any house: a span that would cross one is not hung, rather than run through it)
+def _clear_of_houses(w):
+    line = shapely.LineString([w[0:2], w[3:5]])
+    ends = shapely.multipoints([w[0:2], w[3:5]])
+    return not any(line.intersection(h).length >= 0.5 and not h.buffer(0.8).intersects(ends)
+                   for h in (indoor.geometries[int(k)] for k in indoor.query(line)))
+twires = [w for w in twires if _clear_of_houses(w)]
 print(f"fitting: {n_paths - len(paths)} front paths through a wall left out, {n_sb - len(shrub_list)} shrubs on a boundary, "
       f"{nudged} trees moved off one ({len(squeezed)} between two left out), {n_fx - len(fx)} street items on one or indoors")
 # a bench sits with its back to the nearest building (within 15 m), square to that stretch of its

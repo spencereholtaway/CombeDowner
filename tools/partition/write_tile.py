@@ -1255,6 +1255,7 @@ def decks_to_loose_ends(rd, ground, near=0.5):
 
 RAMP = {"steps": 0.5}      # the steepest a ramp off a deck falls: these, else a path's or a road's
 PATH_RAMP = 0.125
+JOIN_STEP = 2.5            # metres: the most a way meeting a deck's end is below it and still joins it
 
 
 def ramp_off_decks(rd, ground, T, near=0.05, most=20):
@@ -1263,7 +1264,9 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
     from the deck as a ramp, no steeper than a path may be or nine tenths of the steepest its kind of
     road may be, rather than dropping off it in one step; and where that record ends with the ramp
     still in the air, the ramp carries on down the records that go on from there (a flyover's slip
-    road the data splits off at the end of the bridge). `prep_map.py`'s rule, for the records the
+    road the data splits off at the end of the bridge). Where a street's bridge ends at a junction of
+    other streets, the junction is the deck's end, and each of them a little below it comes down
+    from there the same way, on the ground as it is. `prep_map.py`'s rule, for the records the
     partition cuts a street into; the ramp is an approach on its own embankment, the ground laid up
     to it (lay_ground), not more deck. Only on the tile's own grid: past it the next square decides.
     Returns the points ramped."""
@@ -1281,6 +1284,13 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
     def grade_of(r):
         return RAMP.get(r["c"], PATH_RAMP if r["c"] in GAME_PATHS else STEEPEST.get(r["c"], 0.25) * 0.9)
     ends = {key(r, q): q for r in rd for q in (r["p"][0], r["p"][-1]) if _flag(q) in (1, 2)} if rd else {}
+    deck_at = {}
+    for r in rd:
+        if r["c"] in GAME_PATHS and r["c"] != "pedestrian":
+            continue
+        for q in (r["p"][0], r["p"][-1]):
+            if _flag(q) in (1, 2) and (at(q) not in deck_at or q[2] > deck_at[at(q)][2]):
+                deck_at[at(q)] = q
     ends_at = collections.defaultdict(list)
     for r in rd:
         for e in (0, len(r["p"]) - 1):
@@ -1290,22 +1300,28 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
     streets = collections.Counter(at(q) for r in rd if r["c"] not in GAME_PATHS for q in (r["p"][0], r["p"][-1]))
     ramped = 0
 
-    def ramp(r, j, step, prev, n, e_, seen):
+    def ramp(r, j, step, prev, n, e_, seen, lay=True):
         nonlocal ramped
         p, grade, first = r["p"], grade_of(r), j
-        # (a record's far end may be a junction: the ramp goes on down every record from it)
+        # (a record's far end may be a junction: the ramp goes on down every record from it; but one
+        # left on the ground, not laid to, stops short of the next junction, whose ways stay there)
         while 0 <= j < len(p) and not _flag(p[j]) and n < most and on_grid(p[j]) and \
-                (j == e_ or (j != first and j == (len(p) - 1 if step > 0 else 0)) or meet[at(p[j])] < 3):
+                (j == e_ or (lay and j != first and j == (len(p) - 1 if step > 0 else 0)) or meet[at(p[j])] < 3):
             g = ground(p[j][0], p[j][1])
             if g is None or prev[2] - g <= 0.6:
                 return
-            p[j] = [p[j][0], p[j][1], round(max(g, prev[2] - math.dist(p[j][:2], prev[:2]) * grade), 1)]
-            r.setdefault("_lay", set()).add(tuple(p[j][:2]))
+            z = max(g, prev[2] - math.dist(p[j][:2], prev[:2]) * grade)
+            # (a way coming up to a junction's deck end: where it is already as high, it is there)
+            if not lay and j != e_ and p[j][2] >= z:
+                return
+            p[j] = [p[j][0], p[j][1], round(z, 1)]
+            if lay:
+                r.setdefault("_lay", set()).add(tuple(p[j][:2]))
             prev = p[j]
             ramped += 1
             j += step
             n += 1
-        if 0 <= j < len(p) or n >= most or not on_grid(prev):
+        if 0 <= j < len(p) or n >= most or not on_grid(prev) or not lay:
             return
         g = ground(prev[0], prev[1])
         if g is None or prev[2] - g <= 0.6:
@@ -1316,9 +1332,10 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
             if id(o) in seen or len(q) < 2 or _flag(q[e]) or _flag(q[e + nxt]):
                 continue
             q[e] = [q[e][0], q[e][1], prev[2]]
-            o.setdefault("_lay", set()).add(tuple(q[e][:2]))
+            if lay:
+                o.setdefault("_lay", set()).add(tuple(q[e][:2]))
             ramped += 1
-            ramp(o, e + nxt, nxt, q[e], n + 1, None, seen)
+            ramp(o, e + nxt, nxt, q[e], n + 1, None, seen, lay)
 
     for r in rd:
         p = r["p"]
@@ -1329,17 +1346,26 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
         for e, step in ((0, 1), (len(p) - 1, -1)):
             deck = ends.get(key(r, p[e])) if not _flag(p[e]) and r.get("n") else None
             if deck is not None and len(p) > 1:
-                starts.append((e - step, e, deck))
-        for i, j, prev in starts:
+                starts.append((e - step, e, deck, False))
+            # (another way's bridge ending here, on ground the survey has fallen away under: the
+            # junction is that deck's end, and this way leaves it from there; one well below it
+            # passes under instead, as structures.py's ways meeting do)
+            elif len(p) > 1 and not _flag(p[e]) and (r["c"] not in GAME_PATHS or r["c"] == "pedestrian") \
+                    and 0.6 < deck_at.get(at(p[e]), p[e])[2] - p[e][2] <= JOIN_STEP:
+                starts.append((e - step, e, deck_at[at(p[e])], True))
+        for i, j, prev, joined in starts:
             step = 1 if j > i else -1
-            # (the junction itself only where no other street meets it there, whose ground it is)
-            e_ = j if i in (-1, len(p)) and streets[at(p[j])] == (2 if r["c"] not in GAME_PATHS else 0) else None
+            # (the junction itself only where no other street meets it there, whose ground it is, or
+            # where it is another way's deck end)
+            e_ = j if joined or (i in (-1, len(p)) and streets[at(p[j])] == (2 if r["c"] not in GAME_PATHS else 0)) else None
             g = ground(prev[0], prev[1])
             # (a span that comes down on its bank already meets the ground: the way on from it is
             # the street's, and its hollows are what the street passes over)
             if g is None or prev[2] - g <= 0.6:
                 continue
-            ramp(r, j, step, prev, 0, e_, set())
+            # (a junction's ways come up to the deck on the ground the survey has: laid to them, it
+            # buried the paths that pass under the bridge's end)
+            ramp(r, j, step, prev, 0, e_, set(), not joined)
     return ramped
 
 
@@ -2683,6 +2709,28 @@ def pave_to_walls(pave, br, buildings, kept):
     return unary_union([pave, *fill]) if fill else pave
 
 
+SLIVER = 2.0           # metres: open ground narrower than this left between streets, paths and houses is paved
+
+
+def pave_slivers(pave, paving, buildings, kept, width=SLIVER):
+    """`pave` with the thin strips of open ground left between it and the other paving (`paving`: the
+    road, squares and paths) or the houses: where two streets meet at a slant, or a footway runs
+    beside a pavement, the partition leaves a strip nobody's face takes, and it showed as grass
+    between them. Plots and the map's green ground (`kept`) stay as they are."""
+    if pave.is_empty:
+        return pave
+    near = pave.buffer(width)
+    shapely.prepare(near)
+    solid = unary_union([pave, *(g.intersection(near) for g in paving if not g.is_empty),
+                         *(b for b in buildings if near.intersects(b))])
+    r = width / 2
+    gap = solid.buffer(r).buffer(-r).difference(solid)
+    if kept is not None and not kept.is_empty:
+        gap = gap.difference(kept)
+    fill = [g for g in getattr(gap, "geoms", [gap]) if g.geom_type == "Polygon" and g.area > 0.05 and g.distance(pave) < 0.01]
+    return unary_union([pave, *fill]) if fill else pave
+
+
 WIDEN_STEP = 2.0       # metres between the points a street's pavement is measured at against the paving
 WIDEN_RUN = FIT_SHORT          # the shortest stretch given a pavement width of its own, as a fitted record
 WIDEN_LEAST = FACE_MARGIN      # paving this near the pavement's edge is within its fit already
@@ -3268,6 +3316,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                                                             strips(dv, DRIVE_WIDTH / 2), strips(fp, FRONT_PATH_HALF)])).intersection(square)
     if filled is not None:
         filled.append((pave, pave.difference(fitted)))
+    # (after the pavements' own widths are taken from it: a strip paved between two ways is neither's)
+    pave = pave_slivers(pave, [road, plaza, shapes("path")], buildings,
+                        unary_union([shapes("plot"), green if green is not None else Polygon()])).intersection(square)
     taken = unary_union([road, pave, plaza, *buildings])
     path = drawn_paths(shapes("path"), rd, taken).difference(taken)
     if bores is not None:

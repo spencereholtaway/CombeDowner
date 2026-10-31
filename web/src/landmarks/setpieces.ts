@@ -382,10 +382,34 @@ function layStreet(d: MapData, st: NonNullable<SetPiece["street"]>, local: (x: n
     for (const p of pieces) {
       const xs = p.map((q) => local(q[0], q[1])[0]), mid = xs.reduce((a, b) => a + b, 0) / xs.length;
       const pave = paveAt(mid) ?? Math.max(st.pave[0][2], Math.min(4, ((r.w ?? 0) - st.carriage) / 2));
-      out.push({ ...r, p, c: "unclassified", w: st.carriage, pv: [pave, pave] });
+      out.push({ ...r, p, c: "unclassified", w: st.carriage, pv: [pave, pave], piece: mid >= st.x0 && mid <= st.x1 });
     }
   }
   d.rd = out;
+}
+
+const FACE_LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const;
+
+/** Take a square's street faces (unpacked, sfpack.ts) and their outlines out where inside(x, y). */
+function cutFaces(sf: NonNullable<MapData["sf"]>, inside: (x: number, y: number) => boolean) {
+  const V = sf.v, mid = (ia: number[]) => inside(ia.reduce((t, i) => t + V[3 * i], 0) / ia.length, ia.reduce((t, i) => t + V[3 * i + 1], 0) / ia.length);
+  for (const kind of FACE_LISTS) {
+    const I = sf[kind];
+    if (!I) continue;
+    const keep: number[] = [];
+    for (let k = 0; k + 2 < I.length; k += 3) if (!mid([I[k], I[k + 1], I[k + 2]])) keep.push(I[k], I[k + 1], I[k + 2]);
+    if (keep.length < I.length) sf[kind] = Int32Array.from(keep);
+  }
+  sf.e = sf.e.flatMap((e) => {
+    const out: { c: string; i: Int32Array }[] = [];
+    let run: number[] = [e.i[0]];
+    for (let k = 1; k < e.i.length; k++) {
+      if (mid([e.i[k - 1], e.i[k]])) { if (run.length > 1) out.push({ c: e.c, i: Int32Array.from(run) }); run = [e.i[k]]; }
+      else run.push(e.i[k]);
+    }
+    if (run.length > 1) out.push({ c: e.c, i: Int32Array.from(run) });
+    return out;
+  });
 }
 
 const FOOTPATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track"]);
@@ -427,7 +451,13 @@ export function maskSetPieces(d: MapData) {
     const at = (lx: number, lz: number): [number, number] => [ox + ux * lx + uy * lz, oy + uy * lx - ux * lz];
     const local = (x: number, y: number): [number, number] => [(x - ox) * ux + (y - oy) * uy, (x - ox) * uy - (y - oy) * ux];
     // the street it carries, laid as one street from end to end whatever pieces the map has it in
-    if (sp.street) layStreet(d, sp.street, local);
+    if (sp.street) {
+      layStreet(d, sp.street, local);
+      // (a square's own street faces there were cut to the map's pieces, ragged at their joins and
+      // with grass between: the street is drawn as laid instead)
+      const st = sp.street;
+      if (d.sf && !("o" in d.sf)) cutFaces(d.sf, (x, y) => { const [lx, lz] = local(x, y); return lx >= st.x0 && lx <= st.x1 && Math.abs(lz) < st.zMax; });
+    }
     const rings = [sp.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
     const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
     const mx0 = Math.min(...xs), mx1 = Math.max(...xs), my0 = Math.min(...ys), my1 = Math.max(...ys);

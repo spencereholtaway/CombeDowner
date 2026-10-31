@@ -528,7 +528,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   for (const r of D.rd) {
     if (PATHS.has(r.c)) continue;      // (paths lie on the ground as it's drawn: see the strips below)
-    if (faced && !r.bridge) continue;
+    if (faced && !r.bridge && !r.piece) continue;
     sinkUnder(r, width(r) / 2 + 0.5, 0.3, true);
     if (KERBED.has(r.c) && pv(r) > 0) sinkUnder(r, width(r) / 2 + pv(r) + 0.4, 0.08, false);
   }
@@ -1573,7 +1573,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (faced) yield* surfaceFaces(sf!, geo);
     const spans = own ? joinSpans(rd.filter(own)) : [];
     for (let k = 0; k < rd.length; k += 15) {
-      const part = rd.slice(k, k + 15).filter((r) => !faced || own?.(r)), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
+      const part = rd.slice(k, k + 15).filter((r) => !faced || own?.(r) || r.piece), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
       // follow it instead of standing out as a slab with a tall side
       for (const [su, g] of [[undefined, geo.path], ["g", geo.grass], ["d", geo.dirt], ["v", geo.gravel]] as const)
@@ -2391,7 +2391,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const surfKey = (x: number, y: number) => (Math.floor(x / 10) + 1000) * 4000 + Math.floor(y / 10) + 1000;
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
-    if (faced && !path && !r.bridge && ownRoads.has(r)) continue;            // drawn as faces
+    if (faced && !path && !r.bridge && !r.piece && ownRoads.has(r)) continue;            // drawn as faces
     const half = width(r) / 2, lift = path ? 0.04 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
     for (let k = 0; k < r.p.length - 1; k++) {
       const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed ? pvs(r) : [0, 0] };
