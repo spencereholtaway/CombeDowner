@@ -3385,7 +3385,7 @@ export class Game {
     if (rail) {
       const onTrain = !!this.carrier && rail.near.includes(this.carrier.m as never);
       const hit = rail.update(dt, p.x, p.y, p.z, this.alive && !this.ride && !onTrain);
-      this.announcer.update(dt, rail, p.x, p.z);
+      this.announcer.update(dt, rail, p.x, p.z, this.map.d.id);
       if (hit) {
         SFX.crash(1);
         const claim = { life: this.life, s: Math.round(hit.speed) };
@@ -3564,15 +3564,22 @@ export class Game {
    * given an end (a bus stop's kerb), coming in the way that pulls up there, down the middle and in.
    */
   private routeTo(x: number, z: number, end?: { x: number; z: number; a: number }): { x: number; z: number }[] | null {
-    let best: { r: number[][]; i: number } | null = null, bd = 25;
+    let best: { r: number[][]; i: number; j: number } | null = null, bd = 25;
     // Combe Down's streets, and the rest of Bath's
     const streets = [...this.map.d.rd, ...this.map.wide?.rd ?? []];
     for (const r of streets) {
       if (PATHS.has(r.c) || r.c === "service" || Math.abs(r.p[0][0] - x) > 1500 || Math.abs(r.p[0][1] + z) > 1500) continue;
-      r.p.forEach((q, i) => { const d = Math.hypot(q[0] - x, -q[1] - z); if (d < bd) { bd = d; best = { r: r.p, i }; } });
+      // (by the street's line, not its points: a long straight street, Milsom Street's, has its
+      // points far apart, and the stop halfway along it is on it)
+      for (let i = 0; i + 1 < r.p.length; i++) {
+        const a = r.p[i], b = r.p[i + 1], vx = b[0] - a[0], vy = -b[1] + a[1], l2 = vx * vx + vy * vy || 1;
+        const f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z + a[1]) * vy) / l2));
+        const d = Math.hypot(a[0] + vx * f - x, -a[1] + vy * f - z);
+        if (d < bd) { bd = d; best = { r: r.p, i, j: i + 1 }; }
+      }
     }
     if (!best) return null;
-    const { r, i } = best as { r: number[][]; i: number };
+    const { r, i, j: next } = best as { r: number[][]; i: number; j: number };
     // streets come in pieces: where one ends, which others carry on from there
     const key = (q: number[]) => `${Math.round(q[0] * 2)},${Math.round(q[1] * 2)}`;
     if (!this.roadEnds) {
@@ -3607,7 +3614,8 @@ export class Game {
       }
       return { out: out.reverse(), run };
     };
-    const a = back(i, -1), b = back(i, 1);
+    // coming along the street's points to the near end of the stretch it's on, or against them to the far end
+    const a = back(i, -1), b = back(next, 1);
     let way = a.run >= b.run ? a : b;
     if (end) {
       // the end the bus comes in from: heading the way the stop wants it to face

@@ -136,10 +136,12 @@ def main():
                 open(done, "w").close()
                 print(f"lidar: {sq} {kind}")
     if want("canopy"):
-        q = quadkey(*A.centre)
+        # every zoom-9 tile the map's box reaches into, not just the centre's (about 49 km across at 51°N)
+        W, S, E, N = A.bbox
         os.makedirs(os.path.join(raw, "canopy"), exist_ok=True)
-        path = os.path.join(raw, "canopy", f"{q}.tif")
-        if not os.path.exists(path): fetch(CANOPY.format(q=q), path); print(f"canopy: {q}")
+        for q in sorted({quadkey(lon, lat) for lon in (W, E) for lat in (S, N)}):
+            path = os.path.join(raw, "canopy", f"{q}.tif")
+            if not os.path.exists(path): fetch(CANOPY.format(q=q), path); print(f"canopy: {q}")
     if want("osm") and not os.path.exists(os.path.join(raw, "osm.geojson")):
         run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm.geojson"), "wide")
     if want("osm") and not os.path.exists(os.path.join(raw, "osm-roads.geojson")):
@@ -148,6 +150,9 @@ def main():
     if want("osm") and not os.path.exists(os.path.join(raw, "osm-detail.geojson")):
         # paths' surfaces, service roads' kinds, steps' handrails and the crash barriers (the partition)
         run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-detail.geojson"), "wide", "detail")
+    if want("osm") and not os.path.exists(os.path.join(raw, "osm-rail.geojson")):
+        # the railway's kinds (a miniature railway is left out) and its level crossings (tools/railway.py, prep_map.py)
+        run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-rail.geojson"), "wide", "rail")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):

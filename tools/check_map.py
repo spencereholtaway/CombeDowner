@@ -14,13 +14,15 @@ case by case:
     pedestrian crossing and allowed.
  3. A bridge's span stands clear of the ground under it, its deck meets the road at each end
     within a step, and it has something to cross: water, the railway, a road, or a drop. A span
-    starts and ends on the ground inside its street's record, not at the record's own end.
+    starts and ends on the ground inside its street's record, not at the record's own end (unless
+    it is a mapped pier's or pontoon's, pr, ending out over the water with no way going on from it).
  4. Nothing runs through the water: a road or path in a river or pond is on a span, and the
     water's bed is below its surface.
  5. Walls, fences and hedges don't cross roads or paths (the game cuts them at the kerb; here
     the data is checked for ones lying along a carriageway, which the game can't cut).
  6. The railway: track on the ground sits on it; a road crossing the line is a bridge or an
-    underpass, never at grade (there are no level crossings in Bath).
+    underpass, never at grade, except at a level crossing the data maps (the map's lx, which the
+    game draws).
  7. The canal: every road or path crossing it (outside its tunnels) is a bridge with headroom for
     a boat over the water, and the ground under the span is dug below the water; a path on its
     towpath is level with the coping (tools/canal.py's banks, web/src/works.ts); and nothing runs
@@ -56,6 +58,7 @@ PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "tra
 # the steepest each kind of road is laid (tools/prep_map.py STEEPEST: drives and yards up to 1 in 3)
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
             "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
+PIER_CLEAR = 6.0    # metres round a deck's end over the water with no other way in them: a jetty's end
 VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown"}
 
 
@@ -187,6 +190,14 @@ def main():
                 all_ends[(round(r["p"][e][0]), round(r["p"][e][1]))] += 1
                 if mk[e] == 1: span_ends[(round(r["p"][e][0]), round(r["p"][e][1]))].append(r)
         joints = bridge_joints(roads, marks)
+
+        def pier_end(r, q):
+            """A pier's or a pontoon's deck (pr) ending out over the water with no way going on from
+            it is the jetty's end, not a bridge stopping short of its road."""
+            pt = Point(q[:2])
+            if not r.get("pr"): return False
+            if not any(water_all[int(w)].contains(pt) for w in wtree_all.query(pt)): return False
+            return not any(roads[int(o)] is not r and lines[int(o)].distance(pt) < PIER_CLEAR for o in tree.query(pt.buffer(PIER_CLEAR)))
         pieces = set_pieces_near(m)
         # (a span in a set piece's outline is the set piece's, which builds what holds it up: held)
         held = {id(r) for r, mk in zip(roads, marks) if pieces and any(f == 1 and any(pc.contains(Point(q[:2])) for pc in pieces) for q, f in zip(r["p"], mk))}
@@ -211,7 +222,7 @@ def main():
                 for end in (k, e):
                     if mk[end] == 1 and end in (0, len(p) - 1) and (id(r), end == 0) not in joints and id(r) not in held and not (
                             min(p[end][0] - T["x0"], T["x0"] + (T["nx"] - 1) * T["dx"] - p[end][0],
-                                p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3):
+                                p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3) and not pier_end(r, p[end]):
                         note("3 span ends where its record does", 1, (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # meets the road at each end
                 for end in (a, b):
@@ -273,7 +284,7 @@ def main():
                 tp = rail_pts[t]
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (x.x, x.y)))
                 zt, flag = tp[k][2], tp[k][3]
-                if abs(zr - zt) < 2.5 and flag != 2 and not mk[i]:
+                if abs(zr - zt) < 2.5 and flag != 2 and not mk[i] and not any(math.dist(c[:2], (x.x, x.y)) < c[6] + 3 for c in m.get("lx") or []):
                     note("6 road crosses the railway at grade", 2.5 - abs(zr - zt), (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} road {zr:.1f} rail {zt:.1f} (rail flag {flag})")
         # ---- 7. the canal -----------------------------------------------------------------------
         for r, mk, ln in zip(roads, marks, lines):

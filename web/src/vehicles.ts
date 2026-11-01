@@ -1111,7 +1111,7 @@ function seeded(seed: number) {
 }
 
 /** Where Mr D's chip van parks (data metres, and the way it faces): at the top of Old Bond Street, facing south down it. */
-const MR_DS = { x: -1120.3, y: 2305.2, a: -1.312 };
+const MR_DS = { x: -1120.3, y: 2305.2, a: -1.312, map: "combe-down" };
 
 /** Where Arleen's coaches park up for the tourists: a street by each of the sights. */
 const SIGHTS = ["Royal Crescent", "The Circus", "Orange Grove", "Terrace Walk", "Charlotte Street"];
@@ -1254,7 +1254,7 @@ export class Vehicles {
    *  something's in the way it shuffles along a little. Scene x, z and angle. */
   private chipSpot(map: GameMap): { x: number; z: number; a: number } | null {
     const b = map.d.b, S = SPECS.chipvan, M = MR_DS;
-    if (!map.d.tile || !b || M.x < b[0] || M.x >= b[2] || M.y < b[1] || M.y >= b[3]) return null;
+    if (this.map.d.id !== M.map || !map.d.tile || !b || M.x < b[0] || M.x >= b[2] || M.y < b[1] || M.y >= b[3]) return null;
     const ux = Math.cos(M.a), uy = Math.sin(M.a), c = Math.cos(M.a), sn = Math.sin(M.a);
     for (const [along, across] of [[0, 0], [-1, 0], [1, 0], [0, 0.4], [-2, 0.4], [2, 0.4], [-3, 0.8]]) {
       const x = M.x + ux * along - uy * across, z = -(M.y + uy * along + ux * across);

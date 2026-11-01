@@ -10,20 +10,21 @@ Every step after "decide where" is a command that takes the map id and nothing e
 `tools/area.py` holds the area's settings and every tool reads them from there:
 
 - downloads: `tools/fetch.py` (Overture layers, canopy, OpenStreetMap, England's lidar and hygiene ratings);
-- builds: `tools/prep_tiles.py`, `tools/prep_wide.py`, `tools/ground_kinds.py`, `tools/pubs.py`;
+- builds: `tools/towers.py` (with lidar), `tools/prep_tiles.py`, `tools/prep_wide.py`, `tools/ground_kinds.py`,
+  `tools/pubs.py`, `tools/districts.py`;
 - check: `tools/check_map.py`.
 
 `tools/new_area.py` (added with this note) is the thin wrapper over that: `add "Place" --radius 1500`
 geocodes the name with Nominatim and writes the `MAPS` entry in `tools/area.py` and the menu line in
-`web/src/maps.ts`, and `build <id>` runs the steps in order. It adds no new logic, so it is cheap to keep true. It
-refuses places outside England (see below). I ran the whole thing for Frome, Somerset (radius 900 m).
+`web/src/maps.ts`, and `build <id>` runs the steps in order. It adds no new logic, so it is cheap to keep true. Outside
+England it warns which sources the place will miss and builds without them (see below). I ran the whole thing for Frome, Somerset (radius 900 m).
 
 ## What a single script still cannot do for you
 
 | Step | Why it is hard to automate |
 |---|---|
 | **Choosing the centre** | A geocoded name gives a town's official middle, often a road junction or a council office. A good map centres on something you would walk to, and `centre` can never change afterwards (landmarks and the mines' door are placed by coordinates). Needs a human eye on a map. |
-| **England only** | The Environment Agency's open 1 m lidar is what measures roofs, tree heights and walls, and the build needs it. Wales and Scotland publish their own surveys on other sites; `tools/lidar.py` assumes British National Grid and `tools/fetch.py` computes the Agency's square names, so they would be code, not a flag. `new_area.py add` refuses a place whose Nominatim region is not England. It does not check that the Agency's tiles cover the spot (they cover nearly all of England). Other countries would need the no-lidar work on the Cape Town branch (`claude/cape-town`, commit `46b1f28`), which is paused. |
+| **Outside England** | Anywhere builds (Cape Town is built from worldwide data alone), but England has the most. The Environment Agency's open 1 m lidar measures roofs, eaves, garden walls and church towers; Wales and Scotland publish their own surveys on other sites (`tools/lidar.py` assumes British National Grid and `tools/fetch.py` computes the Agency's square names, so they would be code, not a flag). `new_area.py add` reads the place's region from Nominatim, writes it into the entry (`region`), and lists what the place will miss: lidar, energy certificates, Land Registry parcels, Historic England listings, hygiene ratings. `build` then fetches only what covers it. Without lidar, heights come from Overture's and OpenStreetMap's heights and floor counts, then the zone's guesses, and roofs are guessed. |
 | **Energy certificates and OS Open UPRN** | Wall materials and bungalows, England and Wales only. Needs an account and a manual CSV download, and the licence forbids redistributing addresses (`tools/mapdata.py` strips them). Optional: leave it out. |
 | **Licences when sharing** | Overture is ODbL/CDLA, OpenStreetMap ODbL, canopy CC BY 4.0, lidar OGL. Fine to build and play locally. Committing a map to the repository means writing the sources and licences into `data/<id>/README.md`, as the other maps do. |
 | **Zones (what the houses look like)** | `default_zone` and `zones` set wall material, roof style and storeys where the data is silent. Only Bath's four zones, `london` and `suburb` exist. A plain `suburb` default looks generic but acceptable. |

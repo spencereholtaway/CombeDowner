@@ -12,9 +12,11 @@ round it. Without --lat and --lon the centre is the first match for the name, so
 place before building.
 
 build: runs the downloads and builds in order (see docs/new-area.md, and .claude/skills/new-area).
-Only England builds: the roofs are measured from the Environment Agency's lidar. The energy
-certificates are never fetched (they need an account: docs/new-area.md). --dry-run prints the
-commands and runs none.
+Anywhere builds. England has the most data (the Environment Agency's lidar measures the real roofs,
+walls and church towers); elsewhere buildings are guessed from Overture's and OpenStreetMap's
+heights and floor counts and the area's character, and add says which sources the place will miss.
+The energy certificates are never fetched (they need an account: docs/new-area.md). --dry-run prints
+the commands and runs none.
 
 It needs Python 3 with numpy, shapely, pillow, scipy, scikit-image, rasterio and overturemaps
 (build checks, and says what to install).
@@ -47,17 +49,37 @@ def get_json(url):
         return json.load(r)
 
 
-def require_england(lon, lat):
-    """Stops a place outside England: the build wants the Environment Agency's lidar (docs/own-area.md)."""
+# sources that cover only part of the world, by Nominatim's ISO 3166-2 region: what each gives the map
+ENGLISH = {
+    "lidar": "real roof shapes, eaves heights, garden walls and church towers (Environment Agency lidar)",
+    "epc": "wall materials and bungalows (energy certificates, England and Wales, manual download)",
+    "parcels": "the Land Registry's garden plots (England and Wales, manual download)",
+    "listed": "listed railings and walls (Historic England)",
+    "fsa": "pubs and cafes OpenStreetMap is missing (food hygiene ratings, UK)",
+}
+COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"epc", "parcels", "fsa"}, "GB-NIR": {"fsa"}, "GB-SCT": {"fsa"}}
+
+
+def region_of(lon, lat):
+    """The place's ISO 3166-2 region (GB-ENG, ZA-WC...), or "" if Nominatim can't be reached."""
     try:
         got = get_json("https://nominatim.openstreetmap.org/reverse?" + urllib.parse.urlencode(
             {"lon": lon, "lat": lat, "format": "json", "zoom": 5, "addressdetails": 1}))
     except OSError:
-        print("could not check which country that is: carrying on, but only England builds")
-        return
-    region = got.get("address", {}).get("ISO3166-2-lvl4", "")
-    if region != "GB-ENG":
-        raise SystemExit(f"{got.get('display_name', 'that place')} is not in England: only England has the lidar this build needs")
+        print("could not check which country that is: assuming none of England's sources")
+        return ""
+    addr = got.get("address", {})
+    return addr.get("ISO3166-2-lvl4") or addr.get("country_code", "").upper()
+
+
+def warn_missing(region):
+    have = COVERS.get(region, set())
+    missing = [why for src, why in ENGLISH.items() if src not in have]
+    if not missing: return
+    print(f"{region or 'this place'} is outside England, so the map will be built without:")
+    for why in missing: print(f"  - {why}")
+    print("Buildings are guessed from Overture's and OpenStreetMap's heights and floor counts and the "
+          "area's zones instead (docs/own-area.md).")
 
 
 def geocode(name):
@@ -95,7 +117,8 @@ def add(args):
     src = open(AREA_PY).read()
     if f'"{map_id}": dict(' in src: raise SystemExit(f"{map_id!r} is already in tools/area.py")
     centre = (float(lon), float(lat)) if lat and lon else geocode(name)
-    require_england(*centre)
+    region = region_of(*centre)
+    warn_missing(region)
     # the detailed box is the 3 x 3 squares at the middle; the force field is the whole circle, and
     # data runs a little past it so the scenery shows beyond the edge
     entry = f'''    "{map_id}": dict(
@@ -105,6 +128,7 @@ def add(args):
         half={HALF},
         zones=[],                      # local character areas, see "Zones" in docs/new-area.md
         default_zone="{zone}",
+        region="{region}",                     # ISO 3166-2: which of England's sources the build fetches (tools/new_area.py)
         z0={ground_height(*centre)},                          # metres: what every square's ground heights are measured from (the ground at the middle)
         wide=dict(
             field={radius},
@@ -136,13 +160,21 @@ def build(args):
     py = ["python3", "-I"]
     raw = f"data/raw/{map_id}/wide"
     maps = f"web/public/maps/{map_id}"
-    only = ["overture", "canopy", "osm", "lidar", "fsa"]
+    sys.path.insert(0, TOOLS)
+    from area import area
+    region = getattr(area(map_id), "region", None)
+    have = COVERS.get(region, set()) if region is not None else set(ENGLISH)   # older entries were England's
+    if region is not None: warn_missing(region)
+    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa") if s in have]
     steps = [
         [*py, "tools/fetch.py", map_id, raw, "--only", ",".join(only)],
+        # towers are measured before the squares are built, which place them as landmarks
+        *([[*py, "tools/towers.py", map_id, raw]] if "lidar" in have else []),
         [*py, "tools/prep_tiles.py", map_id, raw, maps, "--measure"],
         [*py, "tools/prep_wide.py", map_id, raw, f"{maps}-wide.json", "--measure"],
         [*py, "tools/ground_kinds.py", map_id],
         [*py, "tools/pubs.py", map_id, raw, f"{maps}-pubs.json"],
+        [*py, "tools/districts.py", map_id],
         [*py, "tools/check_map.py", map_id],
     ]
     for s in steps:

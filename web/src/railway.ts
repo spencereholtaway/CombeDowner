@@ -3,7 +3,7 @@
 // Bathampton. Ballast, sleepers and rails on a bank down to the ground, bridges on arches or girders with no pier in what passes
 // under them, stone mouths on the tunnels, and the
 // station platforms. InterCity 125s run the main line and Sprinters the valley line, stopping at
-// the stations, keeping left and sounding their horns at anyone near the line. Stand on the line
+// the stations (an InterCity only where a platform is long enough for it, as at Bath Spa), keeping left and sounding their horns at anyone near the line. Stand on the line
 // and one will run you down; get up on the roof of one and it'll take you with it.
 //
 // Every carriage with doors shows them shut as it runs. A train you can get on (one going on to
@@ -74,7 +74,7 @@ const BOARD_Y = 2.45;                // the middle of the board itself, above th
 const CANOPY_SHORT = 40;             // metres: a platform shorter than this has no board
 const LONG_PLATFORM = 180;           // metres: a platform this long gets two boards, not one
 
-interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; stops: (n: string) => boolean; engine: "hst" | "dmu" }
+interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; /** whether it calls at a station whose longest platform is this long, given its own length */ stops: (platform: number, train: number) => boolean; engine: "hst" | "dmu" }
 
 export interface Route {
   name: string; pts: { x: number; y: number; z: number; s: number }[]; len: number; stops: [number, string][]; kind: Kind; phase: number; run: number[]; tracks: number[];
@@ -221,7 +221,7 @@ export function trainModels(): THREE.BufferGeometry[] {
 
 const KINDS: Record<string, Kind> = {
   hst: {
-    name: "InterCity 125", speed: 38, acc: 0.5, dec: 0.7, stops: (n) => n === "Bath Spa", engine: "hst",
+    name: "InterCity 125", speed: 38, acc: 0.5, dec: 0.7, stops: (platform, train) => platform >= train, engine: "hst",
     cars: [{ len: 17.8, geo: 0 }, ...Array(5).fill({ len: 23, geo: 1 }), { len: 17.8, geo: 0, back: true }],
   },
   dmu: { name: "Sprinter", speed: 29, acc: 0.6, dec: 0.8, stops: () => true, engine: "dmu", cars: [{ len: 23, geo: 2 }, { len: 23, geo: 2, back: true }] },
@@ -286,12 +286,12 @@ export class Railway {
       if (pts.length < 2) return;
       // the service type comes from the build (tools/railway.py's SERVICES), not the line's name
       const kind = r.k === 1 ? KINDS.hst : KINDS.dmu;
-      const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]), to: r.to, via: r.via, on: r.on, plat: new Map(), side: new Map(), board: false, segs };
+      const cars = kind.cars, trainLen = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+      const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(this.longestPlatform(n), trainLen)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]), to: r.to, via: r.via, on: r.on, plat: new Map(), side: new Map(), board: false, segs };
       // Which platform it stands at at each stop, and exactly where along it. The stop as the
       // tools measured it is the station's middle; the train's own middle is put at the middle of
       // the platform it uses, so a long train stops within its platform instead of reaching its
       // nose to the station's middle and hanging the rest of itself out past the platform's end.
-      const cars = kind.cars, trainLen = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
       route.stops = route.stops.map(([s, n]) => {
         // which platform: the one of that station nearest where the stop was measured
         const m = this.at(route, s);
@@ -770,6 +770,14 @@ export class Railway {
       if (inRing(p.r, x, -z)) return { station: p.n, no: p.no };
     }
     return null;
+  }
+
+  /** The length of a station's longest platform, in metres: an express only calls where it fits. */
+  private longestPlatform(station: string): number {
+    let best = 0;
+    for (const p of this.plat) if (p.n === station)
+      for (const a of p.r) for (const b of p.r) best = Math.max(best, Math.hypot(a[0] - b[0], a[1] - b[1]));
+    return best;
   }
 
   /** The station nearest scene (x, z) and how far it is to the nearest of its platforms (0 on

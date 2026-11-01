@@ -24,7 +24,8 @@ from shapely.geometry import LineString, Point
 DOOR_COLOURS = 8   # renderer palette size
 
 
-BAY_ZONES = {"suburb", "foxhill"}
+# London's Victorian terraces have them too, a canted bay beside each door
+BAY_ZONES = {"suburb": ("semi", "detached"), "foxhill": ("semi", "detached"), "london": ("terrace", "semi", "detached")}
 BAY = 3.4          # metres: a house's window spacing (the renderer's bay for houses)
 
 
@@ -72,7 +73,7 @@ def _as_mapped(poly, b, road, rr, walls, wtree, with_bay):
     if blocked(k): k = next((j for j in sorted(range(n), key=lambda j: abs(j - k)) if not blocked(j)), k)
     colour = rr.randrange(DOOR_COLOURS)
     door = (a[0] + ux * L * (k + 0.5) / n, a[1] + uy * L * (k + 0.5) / n)
-    if not (with_bay and n >= 2 and b["kind"] in ("semi", "detached") and b["zone"] in BAY_ZONES and L > 6 and rr.random() < 0.6):
+    if not (with_bay and n >= 2 and b["kind"] in BAY_ZONES.get(b["zone"], ()) and L > (4.8 if b["kind"] == "terrace" else 6) and rr.random() < 0.6):
         return colour, None, False, door
     g = (k + (1.5 if k + 1 < n else -0.5)) / n
     bx, by = a[0] + ux * L * g + nx * 0.45, a[1] + uy * L * g + ny * 0.45

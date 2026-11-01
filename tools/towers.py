@@ -157,6 +157,7 @@ def measure(map_id, raw):
     rows = [dict(n=t["n"], lon=round(t["x"] / kx + lon0, 7), lat=round(t["y"] / ky + lat0, 7), a=round(t["a"], 3),
                  w=round(t["w"], 1), d=round(t["d"], 1), h=round(t["h"], 1), s=round(t["s"], 1), p=round(t["p"], 1), **({"b": t["b"]} if "b" in t else {}))
             for t in sorted(out, key=lambda t: (round(t["y"]), round(t["x"])))]
+    os.makedirs(os.path.dirname(path(map_id)), exist_ok=True)
     with open(path(map_id), "w") as f:
         f.write("[\n" + ",\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n]\n")
     print(f"towers: {len(rows)}, {sum(1 for r in rows if r['s'])} with spires, {sum(1 for r in rows if r['p'])} with pinnacles")

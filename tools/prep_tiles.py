@@ -57,7 +57,7 @@ from partition.stage import partitioned, prep_dir
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
 LAYERS = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
-SHOPS = ["osm", "fsa", "osm-roads"]      # where the shops are (tools/osm.py, tools/fsa.py), and the streets' OpenStreetMap tags (tools/osm.py roads), if they've been downloaded
+SHOPS = ["osm", "fsa", "osm-roads", "osm-rail"]      # where the shops are (tools/osm.py, tools/fsa.py), the streets' and the railway's OpenStreetMap tags (tools/osm.py roads, rail), if they've been downloaded
 PAD = {"water": 1300}       # metres round a tile that its build reads; 650 for everything else
 # Overture's huge outlines that no square's build reads: the land of Great Britain itself and its
 # island groups (a million points of coastline, re-read by every square), and the nature

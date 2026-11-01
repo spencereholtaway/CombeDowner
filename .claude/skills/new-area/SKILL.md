@@ -1,14 +1,15 @@
 ---
 name: new-area
-description: Add and build a map of your own area in England for Combe Downer, from a fresh checkout to playing it with ?map=<id>. Use when someone wants to play their own town, street or village, add a new map, or asks how to generate an area.
+description: Add and build a map of your own area (anywhere; England has the most data) for Combe Downer, from a fresh checkout to playing it with ?map=<id>. Use when someone wants to play their own town, street or village, add a new map, or asks how to generate an area.
 ---
 
 # Make a map of your own area
 
-Only **England** builds: roofs are measured from the Environment Agency's lidar, which is
-England's only (the lidar loader is also fixed to British National Grid, and `tools/fetch.py` only
-knows the Agency's tiles). Wales, Scotland and anywhere abroad do not work. Say so at once if the
-place is not in England. `docs/own-area.md` has the background and what is hard.
+Anywhere builds, but **England** has the most data: roofs, eaves, garden walls and church towers
+are measured from the Environment Agency's lidar, and walls from energy certificates. Elsewhere
+(Wales, Scotland, abroad) the build goes without them, and buildings are guessed from Overture's and
+OpenStreetMap's heights and floor counts and the area's zones. `add` lists what the place will miss:
+tell the user. `docs/own-area.md` has the background and what is hard.
 
 Run everything from the repository root, in your own branch or worktree (the build edits
 `tools/area.py` and `web/src/maps.ts`, which other people edit too). Measured on Frome (radius
@@ -42,7 +43,7 @@ python3 -I tools/new_area.py add "Frome" --id frome --radius 900
 ```
 
 Optional: `--lat N --lon N` (skip the lookup), `--zone suburb`. It prints the place it found:
-**check it is right**. It refuses places outside England, writes the entry into `MAPS` in
+**check it is right**. Outside England it lists the sources the place will miss. It writes the entry into `MAPS` in
 `tools/area.py` and the menu line into `web/src/maps.ts`, and sets `z0` (the ground height at the
 centre) from the terrain tiles. Edit the entry afterwards only if you want to:
 
@@ -61,11 +62,13 @@ It runs, in order (so you can rerun any one):
 
 | Step | Command | Measured (Frome) |
 |---|---|---|
-| Downloads | `python3 -I tools/fetch.py frome data/raw/frome/wide --only overture,canopy,osm,lidar,fsa` | about 25 min: eight Overture layers (a few seconds to 3 min each), the 290 MB canopy tile, OpenStreetMap, five 5 km lidar squares x3 |
+| Downloads | `python3 -I tools/fetch.py frome data/raw/frome/wide --only overture,canopy,osm,lidar,fsa` (lidar and fsa only where they cover) | about 25 min: eight Overture layers (a few seconds to 3 min each), the 290 MB canopy tile, OpenStreetMap, five 5 km lidar squares x3 |
+| Church towers | `python3 -I tools/towers.py frome data/raw/frome/wide` (England only, needs the lidar) | seconds |
 | Squares | `python3 -I tools/prep_tiles.py frome data/raw/frome/wide web/public/maps/frome --measure` | 13 squares, 76 s on 14 cores; also downloads terrain |
 | Whole-area file | `python3 -I tools/prep_wide.py frome data/raw/frome/wide web/public/maps/frome-wide.json --measure` | seconds |
 | Minimap ground | `python3 -I tools/ground_kinds.py frome` | seconds |
 | Pubs | `python3 -I tools/pubs.py frome data/raw/frome/wide web/public/maps/frome-pubs.json` | seconds |
+| District names | `python3 -I tools/districts.py frome` | seconds |
 | Check | `python3 -I tools/check_map.py frome` | seconds; counts rule breaks per square |
 
 Downloads skip files already there, and a download that dies leaves only a `.part` file, so

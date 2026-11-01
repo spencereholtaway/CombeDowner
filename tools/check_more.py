@@ -8,10 +8,11 @@
     on in the next square at the same height, none ends or runs inside a building, and none is too
     steep to walk.
 14. The ground and water: the ground meets its neighbour's at every square's edge; a pond or river
-    sits between its banks, not hung above them; a stream drawn as a line runs on its ground.
+    sits between its banks, not hung above them (except where it falls over a weir, wf, runs on
+    into more water as high, or stands in a tank's walls); a stream drawn as a line runs on its ground.
 15. Small things stand on the ground (not floating or sunk), not on top of one another; a parked car
     is not in a building, in the water or in another car; a bus stop, crossing or path gate is on
-    its street or path.
+    its street or path (a bus stop's street may be one closed to traffic that buses use: bu).
 16. A tunnel's mouths are on the ground.
 17. Where the game sends players: a pub's door is outside, near a street and inside the force
     field; an overhead wire doesn't run through a building or low over a road.
@@ -29,9 +30,10 @@ import functools, json, math, os, subprocess, tempfile
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
-from shapely.ops import substring
+from shapely.ops import substring, unary_union
 
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
+WEIR_REACH = 2.0    # metres either side of a weir's line that its face covers
 VEHICLE = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown",
            "trunk_link", "primary_link", "secondary_link"}
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -433,12 +435,21 @@ def land_and_water(m, waters, ground, note, at, sq, f):
             dz = np.abs(ground(xs, ys) - theirs(xs, ys))
             k = int(np.argmax(dz))
             if dz[k] > 0.3: note("14 ground steps at a square's edge", float(dz[k]), at(xs[k], ys[k]), f"{dz[k]:.1f} m, {int((dz > 0.3).sum()) * 2} m of the edge")
-    for w, src in zip(waters, [w for w in m.get("wp") or [] if len(w["r"][0]) >= 3]):
-        if src.get("c") == "canal" or w.area < 30: continue
+    # (water falling over a weir stands over the water below it there: the game draws the weir's face)
+    falls = [LineString([q[:2] for q in f["p"]]).buffer(WEIR_REACH) for f in m.get("wf") or [] if len(f["p"]) > 1]
+    falls = unary_union(falls) if falls else None
+    srcs = [w for w in m.get("wp") or [] if len(w["r"][0]) >= 3]
+    for n, (w, src) in enumerate(zip(waters, srcs)):
+        # (and a tank's walls hold its water up wherever it stands over the ground: world.ts builds them)
+        if src.get("c") == "canal" or src.get("k") == "t" or w.area < 30: continue
+        # (nor is it over a bank where it runs on into more water as high, cut from it at a weir)
+        on = [o.buffer(0.5) for k, (o, e) in enumerate(zip(waters, srcs)) if k != n and e.get("c") != "canal" and e["z"] >= src["z"] - 0.5 and o.distance(w) < 0.5]
+        on = unary_union(on) if on else None
         ring = w.exterior if w.geom_type == "Polygon" else max(w.geoms, key=lambda g: g.area).exterior
         s = np.arange(0, ring.length, 2.0)
         xy = np.array([ring.interpolate(t).coords[0] for t in s])
-        keep = np.array([sq.contains(Point(q)) and min(abs(q[0] - m["b"][0]), abs(q[0] - m["b"][2]), abs(q[1] - m["b"][1]), abs(q[1] - m["b"][3])) > 1 for q in xy])
+        keep = np.array([sq.contains(Point(q)) and min(abs(q[0] - m["b"][0]), abs(q[0] - m["b"][2]), abs(q[1] - m["b"][1]), abs(q[1] - m["b"][3])) > 1
+                         and (falls is None or not falls.contains(Point(q))) and (on is None or not on.contains(Point(q))) for q in xy])
         if keep.sum() < 5: continue
         low = src["z"] - ground(xy[keep, 0], xy[keep, 1])
         hung = low > 0.5
@@ -491,6 +502,8 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         for n in np.nonzero(hits(wtree, p))[0]: note("15 parked car in the water", 1, at(cars[n][1], cars[n][2]), "")
     # on their street or path
     vlines = [(ln, r) for ln, r in zip(rlines, roads) if r["c"] in VEHICLE]
+    blines = vlines + [(ln, r) for ln, r in zip(rlines, roads) if r.get("bu") and r["c"] not in VEHICLE]
+    btree = shapely.STRtree([l for l, _ in blines])
     vtree = shapely.STRtree([l for l, _ in vlines])
     def street_gap(x, y, tree, lines):
         p = Point(x, y)
@@ -498,7 +511,7 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         return min((lines[int(k)][0].distance(p) - (lines[int(k)][1].get("w") or RW.get(lines[int(k)][1]["c"], 4)) / 2 for k in near), default=40)
     for q in fx:
         if q[0] != "bus" or not inner.contains(Point(q[1], q[2])): continue
-        g = street_gap(q[1], q[2], vtree, vlines)
+        g = street_gap(q[1], q[2], btree, blines)
         if g > 6: note("15 bus stop away from the road", g, at(q[1], q[2]), f"{q[5] if len(q) > 5 else ''!r} {g:.0f} m from the kerb")
     for q in m.get("cx") or []:
         if not inner.contains(Point(q[0], q[1])): continue

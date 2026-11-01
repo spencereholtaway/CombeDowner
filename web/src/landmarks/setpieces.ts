@@ -478,6 +478,7 @@ export function maskSetPieces(d: MapData) {
       return false;
     });
     d.wp = d.wp.filter((w) => w.c === "canal" || !w.r[0].every((q) => hide(q[0], q[1])));
+    if (d.wf) d.wf = d.wf.filter((w) => !w.p.some((q) => hide(q[0], q[1])));
     // the small things
     d.tr = d.tr.filter((q) => !hide(q[0], q[1]));
     if (d.sb) d.sb = d.sb.filter((q) => !hide(q[0], q[1]));

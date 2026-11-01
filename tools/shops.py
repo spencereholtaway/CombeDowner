@@ -245,7 +245,7 @@ def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, sk
     for g, p in places:
         name = (p.get("names") or {}).get("primary") or ""
         style = overture_style(p)
-        if not style or (p.get("confidence") or 0) < 0.9: continue
+        if not style or (p.get("confidence") or 0) < 0.9 or p.get("operating_status") == "permanently_closed": continue
         x, y = proj(g.x, g.y)
         if not inside(x, y): continue
         for pt, premises in epcs:
@@ -263,6 +263,7 @@ def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, sk
             name = (p.get("names") or {}).get("primary") or ""
             style = fallback_style(p)
             if not style or (p.get("confidence") or 0) < FALLBACK_CONFIDENCE.get(style, FALLBACK_MIN): continue
+            if p.get("operating_status") == "permanently_closed": continue
             ok = None if style in ("pub", "cafe") else (lambda k: info[k]["kind"] not in homes)
             add(name, style, fp.at_point(Point(x, y), 15.0, ok), "overture", anywhere=False)
     return found, log

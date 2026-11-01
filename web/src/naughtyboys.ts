@@ -95,7 +95,7 @@ const DELAY = 130;                         // ms behind real time when drawing f
 // The night out: where the crowd stands (data metres), the top of Milsom Street, where it meets George
 // Street, and which way Milsom Street runs from there (south); where more of them walk in from (along
 // George Street both ways and up Milsom Street); and how many.
-const NIGHT = { x: -1168, y: 2490, ux: 0.303, uy: -0.953 };
+const NIGHT = { x: -1168, y: 2490, ux: 0.303, uy: -0.953, map: "combe-down" };
 const NIGHT_IN = [[-1215, 2476], [-1118, 2506], [-1146, 2412]];
 const CROWD = 16;
 const NIGHT_NEAR = 320;                    // the night's on while anyone's this close
@@ -1003,7 +1003,7 @@ export class NaughtyBoys {
   private nightOut(everyone: Target[]) {
     const jx = NIGHT.x, jz = -NIGHT.y, near = (r: number) => everyone.some((t) => Math.hypot(t.x - jx, t.z - jz) < r);
     const crowd = this.list.filter((c) => c.crowd && c.state === ALIVE);
-    const on = nightOut() && near(NIGHT_NEAR);
+    const on = this.map.d.id === NIGHT.map && nightOut() && near(NIGHT_NEAR);
     if (!on) {
       for (const c of crowd) {
         // nobody about: gone; the night's over: off home the way they came, and gone once they're there

@@ -12,6 +12,7 @@ import { beacon } from "./beacon";
 import type { Spot } from "./minimap";
 
 const NUMBER_ONE = [-152.2, -210.9];  // map data x, y of the UPRN; the nearest door is its front door
+const MAP = "combe-down";              // the coordinates are Bath's: another map's door there is someone else's
 export const TOUR_REACH = 2.2;
 
 export class MineTour {
@@ -27,7 +28,7 @@ export class MineTour {
 
   /** Look for the door in the map and every square of Bath loaded: true once it's found. */
   private find(): boolean {
-    if (Number.isFinite(this.x)) return false;
+    if (Number.isFinite(this.x) || this.map.d.id !== MAP) return false;
     if (this.seen === this.map.tilesVersion) return false;
     this.seen = this.map.tilesVersion;
     let best: number[] | undefined, bd = Infinity, at: GameMap = this.map;

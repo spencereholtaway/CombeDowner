@@ -38,7 +38,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. You can walk the
   whole line without falling through it: along its viaducts, up its grassy embankments, and on to
-  the platforms, which are walled down to the ground under a station on a viaduct. A road the map
+  the platforms, which are walled down to the ground under a station on a viaduct. Where the map
+  data has a level crossing (the footpath over the main line at Ferry Lane, Bathampton, or Bridge
+  Street at Greenland Mills in Bradford-on-Avon), the way crosses the line at grade on a deck between
+  the rails, with red lights on posts either side; everywhere else a path stops at the line. A
+  garden's miniature railway is left out rather than built as a full-size main line. A river steps
+  down only at its weirs and dams, where the water falls over a stone crest into the water below
+  (Twerton, Kelston, Saltford, Warleigh and Avoncliff weirs, and the dam below Prior Park's top
+  lake), and a tank, a pool or a reservoir stands in concrete walls wherever its water is above the
+  ground round it, as the filter beds do at the sewage works. A road the map
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
   face, with the ground and the lanes over it left as they are and one headwall over the
   openings where two bores come out side by side. A tunnel cars drive through is a modern
@@ -55,7 +63,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wall rather than in one slope of road.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
-  each kerb, and traffic lights at junctions; bus shelters only at the stops that have one; post
+  each kerb, and traffic lights at junctions; bus shelters only at the stops that have one, and the
+  stops on a street closed to traffic that buses still use (Milsom Street, the University's
+  Parade) at its kerb, with the bus you call driving along it; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
@@ -568,7 +578,11 @@ where it goes, the build, and landmark packs. A map with no wide area is one fil
 
 Two other maps are set up but left out of the main menu: Royal Victoria Park (in `tools/area.py`;
 build it and add it back to `web/src/maps.ts` to try it) and Hackney, a kilometre round the
-Pembury Tavern in east London, which has its own page, `pembury.html`.
+Pembury Tavern in east London, which has its own page, `pembury.html`. Hackney is built like
+Bath, in full-detail squares with the lidar's roofs, and its buildings take their floor counts and
+brick from the map data: stock-brick terraces with bay windows, red-brick council estates and
+tower blocks, and Georgian terraces with parapets and railings round Clapton Square and Sutton
+Place. Its data is kept in `data/pembury/` (rebuild it as Bath's, with `mapdata.py unpack pembury`).
 
 Cape Town has its own page too, `cape-town.html`: the first map outside the UK, built from worldwide
 data alone (no lidar or energy certificates, so buildings are guessed from OpenStreetMap's floor
@@ -576,7 +590,8 @@ counts and the area's character). It runs from the V&A Waterfront through the ci
 painted houses of the Bo-Kaap and Gardens to the top of Table Mountain, which you can see from
 anywhere on the map, and you can ride the cableway up it. Hand-made set pieces stand in for the
 Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, the Clock Tower, the Cape
-Wheel and Zeitz MOCAA. Table Bay and the harbour are sea, held at sea level (`sea` in
+Wheel and Zeitz MOCAA. Its houses stand behind high plastered walls and steel palisades, with
+masonry walls between the plots, as Cape Town's do. Table Bay and the harbour are sea, held at sea level (`sea` in
 `tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm` (or `mapdata.py unpack`),
 then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 
@@ -585,8 +600,11 @@ then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 Any place can be a map. `python3 -I tools/new_area.py add "Your Town" --radius 1500` finds it and
 puts it on the menu, and `python3 -I tools/new_area.py build your-town` downloads the open map data
 and builds it, which takes a quarter of an hour or so on a laptop. Then `cd web && npm run dev` and
-open `?map=your-town`. It works for anywhere in England, whose lidar gives the real roofs (not Wales, Scotland or abroad
-yet). [docs/own-area.md](docs/own-area.md) says what you will need installed
+open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers, and
+elsewhere they are guessed from the open map data's heights and floor counts. Wherever the data
+has them, buildings take OpenStreetMap's floor counts, roof shapes, wall materials and colours, a
+house with no energy certificate is built of what its neighbours' certificates say, and mapped
+street lamps stand where they really are. [docs/own-area.md](docs/own-area.md) says what you will need installed
 and what the script can't do for you. If you use Claude Code, ask it to make a map of your area and
 it follows the `new-area` skill.
 

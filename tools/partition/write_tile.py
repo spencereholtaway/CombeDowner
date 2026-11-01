@@ -1259,6 +1259,50 @@ def decks_to_loose_ends(rd, ground, near=0.5):
     return run
 
 
+DECK_STEP = 0.3            # metres: two paths' decks meeting further apart than this in height have a step between them
+
+
+def decks_meet(rd, near=0.5):
+    """Where a path's deck ends on another path's deck (a pontoon's walkway branching off the
+    gangway down to it), the two meet at one height: the lower end is lifted to the other deck and
+    eases back down along its own, no steeper than a path's ramp, instead of leaving a step at the
+    joint. Only deck points are lifted, never lowered, so no deck loses its clearance. Returns the
+    points lifted."""
+    cell = lambda q: (int(q[0] // 3), int(q[1] // 3))
+    decks = collections.defaultdict(list)
+    for r in rd:
+        if r["c"] in GAME_PATHS:
+            for q in r["p"]:
+                if _flag(q):
+                    decks[cell(q)].append((id(r), q))
+    lifted = 0
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in GAME_PATHS or len(p) < 2:
+            continue
+        for e, order in ((0, range(len(p))), (len(p) - 1, range(len(p) - 1, -1, -1))):
+            q = p[e]
+            if not _flag(q):
+                continue
+            c = cell(q)
+            top = max((d[2] for i in (-1, 0, 1) for j in (-1, 0, 1) for o, d in decks[(c[0] + i, c[1] + j)]
+                       if o != id(r) and math.dist(d[:2], q[:2]) < near), default=None)
+            if top is None or top - q[2] <= DECK_STEP:
+                continue
+            run, prev = 0.0, q
+            for k in order:
+                if not _flag(p[k]):
+                    break
+                run += math.dist(p[k][:2], prev[:2])
+                prev = p[k]
+                want = round(top - PATH_RAMP * run, 1)
+                if want <= p[k][2]:
+                    break
+                p[k] = [p[k][0], p[k][1], want] + list(p[k][3:])
+                lifted += 1
+    return lifted
+
+
 RAMP = {"steps": 0.5}      # the steepest a ramp off a deck falls: these, else a path's or a road's
 PATH_RAMP = 0.125
 JOIN_STEP = 2.5            # metres: the most a way meeting a deck's end is below it and still joins it
@@ -3821,6 +3865,34 @@ def carry_pedestrian(rd, old):
     return n
 
 
+CARRIED = {"bu": ("pedestrian", "service"), "pr": tuple(GAME_PATHS)}
+
+
+def carry_flags(rd, old):
+    """What the old build read from Overture that the partition's streets don't carry, taken from the
+    old records each stretch lies along (most of its length within PEDESTRIAN_NEAR of them), as
+    one-way streets take their way: `bu`, a street closed to traffic that buses may use (its bus
+    stops are on a road, and the buses called to them drive along it); `pr`, a path along a mapped
+    pier or pontoon (its end out over the water is the jetty's end). Returns how many took each."""
+    n = collections.Counter()
+    for flag, kinds in CARRIED.items():
+        ways = [LineString([q[:2] for q in r["p"]]) for r in old if r.get(flag) and len(r["p"]) > 1]
+        if not ways:
+            continue
+        tree = STRtree(ways)
+        for r in rd:
+            if r["c"] not in kinds or len(r["p"]) < 2:
+                continue
+            line = LineString([q[:2] for q in r["p"]])
+            if line.length < 1:
+                continue
+            near = unary_union([ways[int(k)].buffer(PEDESTRIAN_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))])
+            if not near.is_empty and line.intersection(near).length >= 0.7 * line.length:
+                r[flag] = 1
+                n[flag] += 1
+    return n
+
+
 def carry_missing_paths(rd, old, pavements=None, near=4.0, floor=6.0):
     """Paths main has that the partition's streets do not: field paths and tracks that Overture maps
     and OpenStreetMap does not. A stretch of an old path lying further than `near` from every street
@@ -3883,13 +3955,15 @@ def demote_pedestrian(rd, old):
 ON_TRACK = 1.5      # metres from a track's middle that a lane's end is on the line
 
 
-def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
+def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5, level_crossings=()):
     """A path or a service lane that crosses the railway level with it is cut either side of the
-    track: there are no level crossings in Bath, and the ground here cannot be dug for the path to
-    pass under a bridge. A lane mapped on to the line (a way in for the railway's own staff) stops
-    at its fence the same way. `tracks` are the rail file's, points [x, y, height, flag]; a flag of
-    2 is a track the path passes over. Streets and anything on a bridge are left. Returns the
-    records and how many were cut."""
+    track, unless the data maps a level crossing there (`level_crossings`, the tile's `lx`, which
+    the game draws): the ground here cannot be dug for the path to pass under a bridge. A lane
+    mapped on to the line (a way in for the railway's own staff) stops at its fence the same way.
+    `tracks` are the rail file's, points [x, y, height, flag]; a flag of 2 is a track the path passes
+    over. Streets and anything on a bridge are left. Returns the records and how many were cut."""
+    marked = [(Point(c[0], c[1]), c[6] + 3.0) for c in level_crossings]
+    at_crossing = lambda pt: any(pt.distance(c) < r for c, r in marked)
     lines = [LineString([q[:2] for q in t["p"]]) for t in tracks if len(t["p"]) > 1]
     tracks = [t for t in tracks if len(t["p"]) > 1]
     if not lines:
@@ -3913,14 +3987,14 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
                 i = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (pt.x, pt.y)))
                 tp = tracks[int(t)]["p"]
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (pt.x, pt.y)))
-                if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2:
+                if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2 and not at_crossing(pt):
                     spots.append(pt)
         for q in (p[0], p[-1]) if r["c"] == "service" else ():
             for t in tree.query(Point(q[:2]).buffer(ON_TRACK)):
                 tp = tracks[int(t)]["p"]
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], q[:2]))
                 if (len(q) < 4 and lines[int(t)].distance(Point(q[:2])) < ON_TRACK and abs(q[2] - tp[k][2]) < clear
-                        and tp[k][3] != 2):
+                        and tp[k][3] != 2 and not at_crossing(Point(q[:2]))):
                     spots.append(Point(q[:2]))
         if not spots:
             out.append(r)
@@ -5951,11 +6025,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
     rd, _ = drop_paths_along_streets(rd)
     drop_empty_spans(rd, road_ground, water, rails)
-    rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
+    rd, _ = drop_paths_on_the_railway(rd, rail_tracks, level_crossings=tile.get("lx") or ())
     carry_one_way(rd, tile.get("rd") or [])
     verge_out_of_town(rd, houses)
     carry_pedestrian(rd, tile.get("rd") or [])
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
+    carry_flags(rd, tile.get("rd") or [])
     rd, _ = ways_out_of_buildings(rd, houses + buildings_next_door(ti, tj, base, sq))
     rd, _ = drop_paths_along_streets(rd)
     whole_spans(rd, sq, road_ground, wet)
@@ -5973,6 +6048,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # (a span run on to the end of its record, there, carries on into the next)
     whole_spans(rd, sq, road_ground, wet, cut=True)
     decks_to_loose_ends(rd, road_ground)
+    decks_meet(rd)
     bridge_kinds(rd, osm_bridges(sq), water, rails, canal_lines, road_ground)
     # (what the base tile stood on the ground it had dug follows the filling too)
     follow_laid_ground(tile, lambda x, y, split=True: (

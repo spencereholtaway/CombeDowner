@@ -118,6 +118,18 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
     [cyl(0.09, 0.03, 12), "#d8261d", 0, 3.05, 0.125, Math.PI / 2], [cyl(0.09, 0.03, 12), "#8a6a1a", 0, 2.75, 0.125, Math.PI / 2],
     [cyl(0.09, 0.03, 12), "#2a6e3a", 0, 2.45, 0.125, Math.PI / 2], [box(0.14, 0.22, 0.12), "#d9d4c4", 0, 1.1, 0.1],
   ]),
+  // a level crossing's lights on their post, facing whoever comes up to the line (+z): two red
+  // lamps on a black board, and the white sign under them telling you to stop when they show
+  xlights: () => model([
+    [cyl(0.06, 2.3), "#4e5357", 0, 1.15, 0], [box(0.62, 0.3, 0.05), "#151515", 0, 2.05, 0.06],
+    [cyl(0.085, 0.03, 12), RED, -0.17, 2.05, 0.1, Math.PI / 2], [cyl(0.085, 0.03, 12), RED, 0.17, 2.05, 0.1, Math.PI / 2],
+    [box(0.55, 0.42, 0.03), "#f2f2ee", 0, 1.55, 0.05], [box(0.45, 0.06, 0.01), RED, 0, 1.68, 0.07],
+  ]),
+  // and on a road's, the white cross over them
+  xcross: () => model([
+    [new THREE.BoxGeometry(1.1, 0.16, 0.04).rotateZ(Math.PI / 4), "#f2f2ee", 0, 2.65, 0.06],
+    [new THREE.BoxGeometry(1.1, 0.16, 0.04).rotateZ(-Math.PI / 4), "#f2f2ee", 0, 2.65, 0.06],
+  ]),
   // across a path, all made 1 m wide and stretched to the gap they stand in (furniture.ts scales them)
   // a five-bar gate standing open off its hinge post, swung back along the way
   gate: () => model([
@@ -747,6 +759,33 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
       lights.push(["signal", x - nx * off, y - ny * off, pole, a + Math.PI / 2]);
     }
   }
+  // level crossings (lx): the deck across the line, flush with the rails' feet and sloping down to
+  // the way either side, and the lights on each side of the line beside the way
+  const deck: number[] = [], xlights: (string | number)[][] = [], xcross: (string | number)[][] = [];
+  for (const c of D.lx ?? []) {
+    const [x, y, z, a, kind, w, half] = c as [number, number, number, number, string, number, number];
+    const ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux, top = z - Z0 + DECK_TOP, s = w / 2;
+    const P = (u: number, t: number, h: number) => [x + ux * u + nx * t, h, -(y + uy * u + ny * t)];
+    const strip = (t0: number, t1: number, h0: number, h1: number) => deck.push(...P(-s, t0, h0), ...P(s, t1, h1), ...P(s, t0, h0), ...P(-s, t0, h0), ...P(-s, t1, h1), ...P(s, t1, h1));
+    strip(-half, half, top, top);
+    strip(half, half + DECK_RAMP, top, z - Z0);
+    strip(-half - DECK_RAMP, -half, z - Z0, top);
+    for (const side of [1, -1]) {
+      const f = ["xlights", x + ux * (s + 0.6) * side + nx * (half + 1.3) * side, y + uy * (s + 0.6) * side + ny * (half + 1.3) * side, z, side > 0 ? a + Math.PI : a];
+      xlights.push(f);
+      if (kind === "r") xcross.push(f);
+    }
+  }
+  if (deck.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(deck, 3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: "#4f4d49", side: THREE.DoubleSide }));
+    m.receiveShadow = true;
+    scene.add(m);
+  }
+  yield* instanced(MODELS.xlights(), xlights);
+  yield* instanced(MODELS.xcross(), xcross);
   yield* instanced(MODELS.beacon(), beacons);
   yield* instanced(MODELS.beaconGlobe(), beacons, S_BEACON);
   yield* instanced(MODELS.signal(), lights);
@@ -790,6 +829,10 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     scene.add(m);
   }
 }
+
+/** A level crossing's deck: just over the sleepers, so the rails show through it, and the ramp
+ *  either side down to the way. */
+const DECK_TOP = 0.34, DECK_RAMP = 1.0;
 
 /** A Belisha beacon's globe: amber, and bright enough to read at dusk. */
 const S_BEACON = new THREE.MeshBasicMaterial({ vertexColors: true, color: "#ffb02a" });
