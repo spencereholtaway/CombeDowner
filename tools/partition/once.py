@@ -530,9 +530,11 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None, hard=None):
             at = np.array(sorted(set(np.asarray(ts).tolist()) | set(cs)))
             sec = np.column_stack([np.interp(at, ts, sec[:, j]) for j in range(sec.shape[1])])
             ts = at
-    car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
-    pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
-    pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
+    # (the street as fitted lies sec[:, 3] to the left of its line)
+    left, right = sec[:, 0] / 2 + sec[:, 3], sec[:, 0] / 2 - sec[:, 3]
+    car = offset_poly(e["line"], ts, left, right)
+    pl = offset_poly(e["line"], ts, left + sec[:, 1], -left)
+    pr = offset_poly(e["line"], ts, -right, right + sec[:, 2])
     return dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=False,
                 line=_line_json(e["line"]), struct=e.get("struct", {}),
                 sections=[[float(t0), float(t1), [float(v) for v in vs]] for t0, t1, vs in stretches],

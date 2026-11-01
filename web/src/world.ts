@@ -1602,34 +1602,35 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       yield;
     }
     const out: THREE.Mesh[] = [];
-    const add = (g: THREE.BufferGeometry | null, m: THREE.Material, shadow = false, thin = false) => {
+    // (each named for what it is, for tools/overroad.mjs, which reads what the game draws over its streets)
+    const add = (g: THREE.BufferGeometry | null, m: THREE.Material, shadow = false, thin = false, name = "") => {
       if (!g) return;
-      const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.castShadow = shadow; out.push(mesh);
+      const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.castShadow = shadow; if (name) mesh.userData.what = name; out.push(mesh);
       if (thin) mesh.userData.thin = true;
     };
     // (thin: footpaths and pavements, with their kerbs, which a square seen from far off leaves out)
     // Surfaces with the same texture lying at the same height over the ground are one mesh, each
     // in its own colour (kindsLook): the paths of every kind, and the pavements with the drives.
-    const addKinds = (kinds: [Geo, THREE.MeshLambertMaterial][], key: string) => {
-      const built = kinds.map(([g, m]) => [g.build(), m] as const).filter((k): k is [THREE.BufferGeometry, THREE.MeshLambertMaterial] => !!k[0]);
-      if (built.length < 2) { for (const [g, m] of built) add(g, m, false, true); return; }
+    const addKinds = (kinds: [Geo, THREE.MeshLambertMaterial, string][], key: string) => {
+      const built = kinds.map(([g, m, n]) => [g.build(), m, n] as const).filter((k): k is [THREE.BufferGeometry, THREE.MeshLambertMaterial, string] => !!k[0]);
+      if (built.length < 2) { for (const [g, m, n] of built) add(g, m, false, true, n); return; }
       for (const [g, k] of built.map(([g], k) => [g, k] as const)) g.setAttribute("kind", new THREE.BufferAttribute(new Uint8Array(g.attributes.position.count).fill(k), 1));
       const merged = mergeGeometries(built.map(([g]) => g));
-      if (!merged) { for (const [g, m] of built) { g.deleteAttribute("kind"); add(g, m, false, true); } return; }
+      if (!merged) { for (const [g, m, n] of built) { g.deleteAttribute("kind"); add(g, m, false, true, n); } return; }
       merged.computeBoundingSphere();
-      add(freeOnUpload(merged), kindsLook(key, built.map(([, m]) => m)), false, true);
+      add(freeOnUpload(merged), kindsLook(key, built.map(([, m]) => m)), false, true, built.map(([, , n]) => n).join(","));
     };
-    addKinds([[geo.path, roadMats.path as THREE.MeshLambertMaterial], [geo.grass, roadMats.grass as THREE.MeshLambertMaterial], [geo.dirt, roadMats.dirt as THREE.MeshLambertMaterial], [geo.gravel, roadMats.gravel as THREE.MeshLambertMaterial]], "paths");
+    addKinds([[geo.path, roadMats.path as THREE.MeshLambertMaterial, "path"], [geo.grass, roadMats.grass as THREE.MeshLambertMaterial, "grass"], [geo.dirt, roadMats.dirt as THREE.MeshLambertMaterial, "dirt"], [geo.gravel, roadMats.gravel as THREE.MeshLambertMaterial, "gravel"]], "paths");
     yield;
-    add(geo.service.build(), roadMats.service);
-    add(geo.road.build(), roadMats.road);
+    add(geo.service.build(), roadMats.service, false, false, "service");
+    add(geo.road.build(), roadMats.road, false, false, "road");
     yield;
-    addKinds([[geo.pave, roadMats.pave as THREE.MeshLambertMaterial], [geo.drive, S.driveMat]], "paved");
+    addKinds([[geo.pave, roadMats.pave as THREE.MeshLambertMaterial, "pave"], [geo.drive, S.driveMat, "drive"]], "paved");
     yield;
-    add(geo.bridge.build(), bridgeMat, true);
-    add(geo.steel.build(), steelMat, true);
-    add(geo.front.build(), S.pathMat!, false, true);
-    if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
+    add(geo.bridge.build(), bridgeMat, true, false, "stone");
+    add(geo.steel.build(), steelMat, true, false, "steel");
+    add(geo.front.build(), S.pathMat!, false, true, "front");
+    if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream, false, false, "stream");
     return out;
   }
   const roadMeshes = (rd: Road[], wl: Line[], own?: (r: any) => boolean) => run(roadMeshesGen(rd, wl, own));

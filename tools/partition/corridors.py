@@ -166,7 +166,7 @@ def fit_cross_section(edge, ts, L, R, hold_out=False, hard=None):
                 return tags[key]
         return None
 
-    want_w, want_pl, want_pr, tagged = [], [], [], []
+    want_w, want_pl, want_pr, tagged, both = [], [], [], [], []
     for t in ts:
         w, measured = ideal, False
         lanes = obs_at(t, "lanes"); width = None if hold_out else obs_at(t, "width")
@@ -197,6 +197,7 @@ def fit_cross_section(edge, ts, L, R, hold_out=False, hard=None):
         if cls in ("service", "track"):
             pl = pr = 0
         want_w.append(w); want_pl.append(pl); want_pr.append(pr); tagged.append(measured)
+        both.append(sw == "both" or (swl == "yes" and swr == "yes"))
     fit = []
     for i, t in enumerate(ts):
         w, pl, pr = want_w[i], want_pl[i], want_pr[i]
@@ -207,30 +208,45 @@ def fit_cross_section(edge, ts, L, R, hold_out=False, hard=None):
             gl, gr = hard[0][i], hard[1][i]
             hl = gl - 0.4 if gl is not None else None
             hr = gr - 0.4 if gr is not None else None
-        for _ in range(6):
-            tl, tr = w / 2 + pl, w / 2 + pr
-            over_l = hl is not None and tl > hl; over_r = hr is not None and tr > hr
-            if not over_l and not over_r:
+        def settle(w, pl, pr, slides):
+            sh = 0.0                               # how far the street lies left of its line
+            for _ in range(8):
+                tl, tr = w / 2 + sh + pl, w / 2 - sh + pr
+                over_l = hl is not None and tl > hl; over_r = hr is not None and tr > hr
+                if not over_l and not over_r:
+                    break
+                if w > ideal:
+                    w = ideal; continue               # 1. a tagged extra width goes first
+                # 2. a centre line drawn off the middle of the street: it slides over to where there's
+                # room, up to a quarter of its width, rather than lose a pavement the map says it has
+                if slides and over_l != over_r:
+                    room = (hr if over_l else hl)
+                    room = (REACH - 0.4 if room is None else room) - (tr if over_l else tl)
+                    slide = min(tl - hl if over_l else tr - hr, room, w / 4 - abs(sh))
+                    if slide > 0.05:
+                        sh += -slide if over_l else slide; continue
+                if over_l and pl > PAVE[1]:
+                    pl = max(PAVE[1], hl - w / 2 - sh); continue
+                if over_r and pr > PAVE[1]:
+                    pr = max(PAVE[1], hr - w / 2 + sh); continue
+                if over_l and pl > 0:
+                    pl = 0; continue                  # 3. the pavement on the tighter side goes
+                if over_r and pr > 0:
+                    pr = 0; continue
+                if w > minimum:                            # 4. the carriageway narrows to its minimum
+                    w = max(minimum, min(2 * (h - k * sh) for h, k in ((hl, 1), (hr, -1)) if h is not None)); continue
                 break
-            if w > ideal:
-                w = ideal; continue               # 1. a tagged extra width goes first
-            if over_l and pl > PAVE[1]:
-                pl = max(PAVE[1], hl - w / 2); continue
-            if over_r and pr > PAVE[1]:
-                pr = max(PAVE[1], hr - w / 2); continue
-            if over_l and pl > 0:
-                pl = 0; continue                  # 3. the pavement on the tighter side goes
-            if over_r and pr > 0:
-                pr = 0; continue
-            if w > minimum:                            # 4. the carriageway narrows to its minimum
-                w = max(minimum, 2 * min(x for x in (hl, hr) if x is not None)); continue
-            break
-        fit.append([w, pl, pr])
+            return [w, pl, pr, sh]
+        got = settle(w, pl, pr, both[i])
+        if got[3] and ((pl and not got[1]) or (pr and not got[2])):
+            got = settle(w, pl, pr, False)      # (a slide that saves no pavement isn't made)
+        w, pl, pr, sh = got
+        fit.append([w, pl, pr, sh])
     fit = np.array(fit)
     out = []; i = 0; n = len(ts)
     while i < n:
         j = i
-        while j + 1 < n and np.all(np.abs(fit[j + 1] - fit[i]) < CHANGE):
+        while j + 1 < n and np.all(np.abs(fit[j + 1] - fit[i]) < CHANGE * np.array([1, 1, 1, 2])):
             j += 1
         out.append([ts[i], ts[j], fit[i:j + 1]]); i = j + 1
     merged = []
@@ -240,7 +256,7 @@ def fit_cross_section(edge, ts, L, R, hold_out=False, hard=None):
         else:
             merged.append(s)
     stretches = [(t0, t1, np.median(v, axis=0).tolist()) for t0, t1, v in merged]
-    sec = np.zeros((n, 3))
+    sec = np.zeros((n, fit.shape[1]))
     for k, (t0, t1, v) in enumerate(stretches):
         for i, t in enumerate(ts):
             if t0 <= t <= t1:

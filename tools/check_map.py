@@ -32,8 +32,9 @@ case by case:
  9. Things on the ground fit together: every gate has a wall or fence at both sides; no two walls,
     fences or hedges run on top of each other; a front path goes through a garden boundary only at
     a gate; no tree, shrub or street item stands on a wall or inside a building; no building
-    stands on a pavement; and a mapped footpath doesn't run along a drawn pavement (it is that
-    pavement).
+    stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
+    pavement); and where the road and the paving meet, neither pokes a point or a sliver into the
+    other (check_more.slivers).
 11. Roofs are whole, as the game draws them (web/src/world.ts, roofFaces and addBuilding): no
     open edge left between a lidar roof's faces or between a face and its wall top once the game
     has closed the seams (map.ts roofSeams, mirrored here), no part of a footprint left bare, no
@@ -41,7 +42,7 @@ case by case:
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
     other, no two buildings standing in each other, and no footprint too small to draw.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
-    tunnel mouths, pubs and wires, boats, and the railway's holes.
+    tunnel mouths, pubs and wires, boats, the railway's holes, and what is drawn over the streets.
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
@@ -364,6 +365,9 @@ def main():
         return found
 
     check_more.watertight(root, map_id)      # (once, here, so every worker shares it)
+    if "--tiles" in args:
+        check_more.OVERROAD_ONLY[0] = tuple(os.path.basename(f)[:-5] for f in files if "_" in os.path.basename(f))
+    check_more.overroad(root, map_id, check_more.OVERROAD_ONLY[0])
     # the files are checked a few at once (each on its own), and their failures gathered in order
     global _check
     _check = check

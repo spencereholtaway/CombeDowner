@@ -267,6 +267,10 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
     nrm = [normal(xy[max(0, k - 1)], xy[min(n - 1, k + 1)]) for k in range(n)]
 
     def measure(p, nx, ny, w, pv):
+        # (from where the corridor put the carriageway's middle: it slides off a line drawn off the
+        # middle of its street, and measured from the line, the far side was cut short at the cap)
+        sl = pv[2] if len(pv) > 2 else 0.0
+        p = (p[0] + nx * sl, p[1] + ny * sl)
         cap = w / 2 + 0.3
         dl = _reach(car_area, p, nx, ny, 1, cap)
         dr = _reach(car_area, p, nx, ny, -1, cap)
@@ -274,7 +278,7 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
             return None
         pl = _reach(walk_area, p, nx, ny, 1, dl + pv[0] + 0.5) - dl if pv[0] > 0 else 0.0
         pr = _reach(walk_area, p, nx, ny, -1, dr + pv[1] + 0.5) - dr if pv[1] > 0 else 0.0
-        return (dl, dr, max(0.0, pl), max(0.0, pr))
+        return (dl + sl, dr - sl, max(0.0, pl), max(0.0, pr))
 
     raw = [measure(xy[k], nrm[k][0], nrm[k][1], ws[k], pvs[k]) for k in range(n)]
     # halfway between two points as well, so a pinch between them is seen
@@ -282,7 +286,8 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
                    ws[k], pvs[k]) for k in range(n - 1)]
     shift = []
     for k in range(n):
-        if raw[k] is None or k in (0, n - 1) or raw[k][0] + raw[k][1] < MIN_CARRIAGEWAY:
+        # (a lane a house's corner has narrowed below the least a record is given is still centred on what's drawn)
+        if raw[k] is None or k in (0, n - 1) or raw[k][0] + raw[k][1] < NARROW_LANE:
             shift.append(0.0)
         else:
             shift.append(max(-ws[k] / 4, min(ws[k] / 4, (raw[k][0] - raw[k][1]) / 2)))
@@ -300,7 +305,10 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
         pave.append((min(pv[0], min(m[2] for m in near)) if pv[0] > 0 else 0.0,
                      min(pv[1], min(m[3] for m in near)) if pv[1] > 0 else 0.0))
     if houses is not None and not houses.is_empty:
-        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses, tall, tall is not None)
+        # (the carriageway as drawn either side of the line, where its edge was seen short of the cap)
+        drawn = [None if raw[k] is None else tuple(d if d < ws[k] / 2 + 0.29 + abs(pvs[k][2] if len(pvs[k]) > 2 else 0) else None
+                                                   for d in raw[k][:2]) for k in range(n)]
+        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses, tall, tall is not None, drawn)
     moved = [(xy[k][0] + nrm[k][0] * shift[k], xy[k][1] + nrm[k][1] * shift[k]) for k in range(n)]
     runs, i = [], 0
     while i < n - 1:
@@ -334,14 +342,16 @@ MEASURED_GIVE = 1.0             # metres a street with a width tag may narrow wh
 NARROW_LANE = 1.8               # metres: a car's width, the least a lane squeezed between two buildings is drawn
 
 
-def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=False):
+def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=False, drawn=None):
     """(shift, width, pave) at each inner point: moved the least it must be for the carriageway to clear the
     houses each side, where there is room between them. Where there is not, the line is centred in the
     gap and the carriageway narrowed to it, down to `NARROW_LANE`, since the buildings are measured and
     the street's width is a guess, and each pavement stops at the wall beyond it. A street with a
     measured width (`measured`) narrows only there, and by at most `MEASURED_GIVE`: the tag is a
     measurement too. The ends stay put.
-    Halfway between two points is measured too and asked of both."""
+    Halfway between two points is measured too and asked of both. With `drawn` (each point's carriageway
+    edges as drawn, left and right of the line, None where not seen), the line is not moved off the
+    drawn carriageway on to its pavement: a lane a house narrows is narrowed there instead."""
     n = len(xy)
     reach = max(width) / 2 + HOUSE_SHIFT + 0.5
 
@@ -365,6 +375,10 @@ def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=Fal
         if not spans:
             continue
         lo, hi = max(s[0] for s in spans), min(s[1] for s in spans)
+        if drawn is not None and drawn[k] is not None:
+            dl, dr = drawn[k]
+            if dl is not None: hi = min(hi, dl - HOUSE_MARGIN - half)
+            if dr is not None: lo = max(lo, -dr + HOUSE_MARGIN + half)
         s = (lo + hi) / 2 if lo > hi else min(hi, max(lo, out[k]))
         if abs(s) <= HOUSE_SHIFT:
             out[k] = s
@@ -493,12 +507,12 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                     q = _at_edge(*((last[0], p) if last[1] else (p, last[0])), has_ground)
                     near = p if inside else last[0]
                     if q is not None and math.hypot(q[0] - near.x, q[1] - near.y) > 0.05:
-                        chain.append((q[0], q[1], float(sec[0]), (float(sec[1]), float(sec[2])), True))
+                        chain.append((q[0], q[1], float(sec[0]), (float(sec[1]), float(sec[2]), *sec[3:4]), True))
                 last = (p, inside)
                 if not inside:
                     flush()
                     continue
-                pt = (p.x, p.y, float(sec[0]), (float(sec[1]), float(sec[2])))
+                pt = (p.x, p.y, float(sec[0]), (float(sec[1]), float(sec[2]), *sec[3:4]))
                 if fit and chain and k == 0 and math.hypot(chain[-1][0] - p.x, chain[-1][1] - p.y) < 0.05:
                     chain[-1] = pt          # the shared point takes the later stretch's figures
                     continue
@@ -536,7 +550,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             elif r.get("path"):
                 pieces = [(xy, path_width(r["cls"], r.get("obs")), list(ch[0][3]))]
             else:
-                pieces = [(xy, ch[0][2], list(ch[0][3]))]
+                pieces = [(xy, ch[0][2], list(ch[0][3])[:2])]
             for pp, ww, vv in pieces:
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
                     marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None,
@@ -2803,6 +2817,68 @@ def pave_slivers(pave, paving, buildings, kept, width=SLIVER):
     return unary_union([pave, *fill]) if fill else pave
 
 
+CRACK = 1.0           # metres: a gap narrower than this between pieces of one carriageway is part of it
+
+
+def road_cracks(road, others, width=CRACK, most=3.0):
+    """`road` with the cracks the partition leaves between two carriageway faces that do not quite meet
+    filled in: a gap narrower than `width`, smaller than `most` m2, with road along most of its edge.
+    Left open, the ground showed through the road in a slit, or the pavement's gaps were paved through
+    it, a stripe of paving with a kerb along each side running across the road."""
+    if road.is_empty:
+        return road
+    r = width / 2
+    gap = road.buffer(r, join_style="mitre").buffer(-r, join_style="mitre").difference(road).difference(others)
+    edge = road.buffer(0.05)
+    fill = [g for g in getattr(gap, "geoms", [gap]) if g.geom_type == "Polygon" and 1e-4 < g.area < most
+            and g.exterior.intersection(edge).length > 0.7 * g.exterior.length]
+    return unary_union([road, *fill]) if fill else road
+
+
+KERB_POINT = 0.5      # metres: a point of paving or road narrower than twice this is the other's
+KERB_POINT_AREA = 8.0  # m2: a larger piece is a strip of its own (an island between two carriageways)
+
+
+def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
+    """`road` and the paving round it (`others`: the pavements, a square's paving, the paths) with the
+    points and slivers where they meet given to the other side: the tip of a pavement's corner at a
+    slanting junction, a wedge of paving fanning into the road where two streets' strips cross, a
+    finger of a pedestrian street's paving along a road's kerb, a tongue of road into a pavement.
+    Each is a piece narrower than 2r that runs along the other side on most of its edge, so a narrow
+    pavement along its kerb stays, and the corner each leaves is rounded, as a kerb is laid."""
+    others = list(others)
+
+    def pieces(A):
+        thin = A.difference(A.buffer(-r).buffer(r + 0.01))
+        return [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area < most]
+
+    for _ in range(2):
+        moved = False
+        if road.is_empty:
+            break
+        edge = road.buffer(0.05)
+        for i, A in enumerate(others):
+            if A.is_empty:
+                continue
+            give = [g for g in pieces(A) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
+            if give:
+                g = unary_union(give)
+                others[i], road, moved = A.difference(g), road.union(g), True
+        edges = [A.buffer(0.05) for A in others]
+        given = [[] for _ in others]
+        for g in pieces(road):
+            shared = [g.exterior.intersection(e).length for e in edges]
+            if shared and sum(shared) > 0.6 * g.exterior.length:
+                given[shared.index(max(shared))].append(g)
+        for i, gs in enumerate(given):
+            if gs:
+                g = unary_union(gs)
+                road, others[i], moved = road.difference(g), others[i].union(g), True
+        if not moved:
+            break
+    return road, others
+
+
 ALONG_REACH = 2.5      # metres out from a pavement that a footway mapped beside it reaches
 ALONG_LEAST = 4.0      # metres of a path's strip along a pavement before it is taken for that pavement
 ALONG_STEP = 0.4       # metres a footway beside a pavement may lie off its street's level and still be paved as it
@@ -3327,8 +3403,11 @@ def _tube_floor(t, rd):
         line = LineString([q[:2] for q in r["p"]])
         if not line.intersects(tube):
             continue
+        # (a way that goes into no tunnel itself, such as a street across a building's passage at its own
+        # level, keeps its faces too)
         if any(tube.contains(Point(q[:2])) and q[2] > tl.interpolate(flat.project(Point(q[:2]))).z + TN.CROWN * 0.5
-               for q in r["p"]) or not any(tube.contains(Point(q[:2])) for q in r["p"]):
+               for q in r["p"]) or not any(tube.contains(Point(q[:2])) for q in r["p"]) \
+                or not any(len(q) > 3 and q[3] == 2 for q in r["p"]):
             over.append(line.buffer(r.get("w", 4) / 2 + max(r.get("pv") or (0, 0)) + 0.5, cap_style="flat"))
     return _minus(tube, unary_union(over)) if over else tube
 
@@ -3435,6 +3514,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             return min(levels)[1]
         return min(levels, key=lambda hk: abs(hk[0] - z))[1]
 
+    def carriageway_of(x, y):
+        """The street whose carriageway a piece of carriageway at (x, y) is: the nearest street that has
+        one, not a pedestrian street (whose paving was taken out of the carriageway already) whose line
+        runs nearer. Across a junction the triangles of a carriageway fan out from the corner where a
+        pedestrian street meets it, and each one that was nearer that street's line was paved, in a
+        point or a bow tie of paving across the road."""
+        k = nearest(x, y)
+        if k is None or streets[k]["c"] != "pedestrian":
+            return k
+        p = Point(x, y)
+        near = sorted((lines[int(j)].distance(p), int(j)) for j in tree.query(p.buffer(40)) if streets[int(j)]["c"] != "pedestrian")
+        return near[0][1] if near and near[0][0] <= reach_of[near[0][1]] else k
+
     def shapes(cls):
         polys = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]
         g = unary_union(polys).intersection(square) if polys else Polygon()
@@ -3496,6 +3588,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                                                             strips(dv, DRIVE_WIDTH / 2), strips(fp, FRONT_PATH_HALF)])).intersection(square)
     if filled is not None:
         filled.append((pave, pave.difference(fitted)))
+    road = road_cracks(road, unary_union([pave, plaza, shapes("path"), *buildings]))
     # (after the pavements' own widths are taken from it: a strip paved between two ways is neither's)
     pave = pave_slivers(pave, [road, plaza, shapes("path")], buildings,
                         unary_union([shapes("plot"), green if green is not None else Polygon()])).intersection(square)
@@ -3550,6 +3643,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         bare = _minus(bare, unary_union(kept or [Polygon()]))
         # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
         pave, plaza = _minus(pave, bare), _minus(plaza, bare)
+    road, (pave, plaza, path) = neat_kerbs(road, (pave, plaza, path))
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
@@ -3629,7 +3723,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 elif flat:
                     kind = cls
                 else:
-                    k = nearest(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
+                    k = carriageway_of(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
                     c = streets[k]["c"] if k is not None else ""
                     kind = "road" if c in KERBED else "pave" if c == "pedestrian" else "service"
                 ids = [point(x, y, flat) for x, y in pts]
