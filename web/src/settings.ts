@@ -12,13 +12,14 @@
 // shadows yourself turns automatic off. Controls: mouse sensitivity, and
 // once a controller's been seen, its own look speeds, dead zone, turn boost and rumble (gamepad.ts keeps those).
 // Sound: music, sound effects, background (traffic, birds, wind) and voice chat volumes (audio.ts). Play: passive mode, where nothing in the
-// game comes for anyone (cats, naughty boys and the teams, the Flag Lads, Bendy, seagull muck). It's for
-// the whole game and the host's setting is the one that counts: game.ts sends it round. ?view=, ?fx=0 and ?res=full in the
+// game comes for anyone (cats, naughty boys and the teams, the Flag Lads, Bendy, seagull muck), and
+// progression, the zones, strange objects and challenges together (features.ts). Both are for
+// the whole game and the host's setting is the one that counts: game.ts sends them round. ?view=, ?fx=0 and ?res=full in the
 // address still try something for one visit without changing what's kept.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import type { DebugPanel } from "./debug";
-import { mine } from "./features";
+import { mine, progressionDefault, setProgression } from "./features";
 import { resetPadSettings } from "./gamepad";
 import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
 import { quality } from "./quality";
@@ -116,7 +117,11 @@ export function settingsPage(h: Hooks) {
   calm.checked = menuCalm.checked = passive;
   const roam = $<HTMLInputElement>("menu-freeroam");
   // with the zones switched off there's nothing but free play, so no choice to make
-  if (roam && !mine.zones) { const l = roam.closest("label"); if (l) l.style.display = "none"; }
+  const showRoam = () => { const l = roam?.closest("label"); if (l) l.style.display = mine.zones ? "" : "none"; };
+  showRoam();
+  const prog = $<HTMLInputElement>("set-progression");
+  prog.checked = mine.zones;
+  prog.onchange = () => { setProgression(prog.checked); showRoam(); };
   if (roam) { roam.checked = freeRoam; roam.onchange = () => { freeRoam = roam.checked; keep("cd-freeroam", roam.checked); }; }
   const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
 
@@ -144,6 +149,7 @@ export function settingsPage(h: Hooks) {
     h.post.setRetroLook(true);
     h.debug.toggle(false);
     setPassive(false);
+    setProgression(null); prog.checked = progressionDefault; showRoam();
     setSens(SENS);
     resetPadSettings();
     SFX.setMusicVolume(MUSIC); keep("cd-music", MUSIC);
