@@ -1,7 +1,8 @@
 // The watch on your wrist, bottom left of the screen: a black square digital watch in the style of
 // a G-Shock, its grey-green LCD showing the game's time of day (daylight.ts: the same for everyone,
 // a whole day every 24 minutes), the day of the week and the date. The colon blinks every real
-// second, and after dark the backlight glows blue-green so you can still read it.
+// second, and after dark the backlight glows blue-green so you can still read it. On a touch screen
+// the watch makes way and the time shows as figures in the health strip.
 //
 // Who decides what: nobody. The time comes from the shared clock, so everyone's watch agrees.
 // The face is drawn on a canvas in code, segment by segment, and only redrawn when what it shows
@@ -56,6 +57,7 @@ function figure(c: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 export class Watch {
   private c: CanvasRenderingContext2D | null;
   private shown = "";
+  private told = "";
 
   constructor(private canvas: HTMLCanvasElement) {
     this.c = canvas.getContext("2d");
@@ -68,6 +70,9 @@ export class Watch {
     const mins = Math.floor(timeOfDay() * 24 * 60), date = gameDate();
     const colon = Date.now() % 1000 < 500, light = nightNow() > 0.5;
     const dpr = Math.min(3, window.devicePixelRatio || 1);
+    // a touch screen has no room for the watch, so the health strip shows the time in figures instead
+    const told = `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+    if (told !== this.told) { this.told = told; const t = document.getElementById("hptime"); if (t) t.textContent = told; }
     const key = `${mins} ${date.getUTCDate()} ${colon} ${light} ${dpr}`;
     if (key === this.shown && this.canvas.width === Math.round(W * dpr)) return;
     this.shown = key;

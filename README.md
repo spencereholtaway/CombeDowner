@@ -441,6 +441,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   in Settings. Phones draw simpler shadows, and ones with a graphics chip the game doesn't know
   start with shadows off. On a touch screen the paper you get on joining never blocks the controls:
   your first touch puts it away.
+- **Tidy on a phone or tablet**: every part of the screen has its own place, so the buttons never
+  cover the map, your job or a boss's health, and the plates are low strips along the bottom.
 
 ## Run it
 

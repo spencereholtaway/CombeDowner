@@ -165,7 +165,9 @@ export function missionProgress(o: MissionProgress) {
   if (!panel || !panel.isConnected) {
     panel = document.createElement("div");
     panel.id = "mprog"; panel.className = "panel"; panel.hidden = true;
-    layer().appendChild(panel);
+    // in the HUD's left column, under the street name, so on a touch screen they stack instead of overlapping
+    const stack = document.getElementById("lstack");
+    if (stack) stack.insertBefore(panel, document.getElementById("bunting")); else layer().appendChild(panel);
   }
   panelId = o.id;
   const frac = typeof o.progress === "number" ? o.progress : o.bar;

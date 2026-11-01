@@ -232,6 +232,23 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
   g.font = `700 ${11 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
   g.lineJoin = "round";
   const edge = FOV / 2 - 0.12;
+  // the distance under each pin (and what it's on, if it's on something), kept on the strip at its
+  // ends. On a touch screen the strip is short, so the nearest marker's label goes first and one that
+  // would run into it says only how far, or nothing: its pin still shows the way.
+  const touch = document.getElementById("touch")?.hidden === false, later: (() => void)[] = [], placed: [number, number][] = [];
+  const label = (m: Marker, d: number, px: number) => {
+    let text = m.kind && m.what ? `${m.what} · ${far(d)}` : far(d), half = 0, lx = 0;
+    const fits = () => {
+      half = g.measureText(text).width / 2 + 2 * dpr; lx = Math.min(W - half, Math.max(half, px));
+      return !touch || placed.every(([a, b]) => lx + half + 4 * dpr < a || lx - half - 4 * dpr > b);
+    };
+    if (!fits() && (text = far(d), !fits())) return;
+    placed.push([lx - half, lx + half]);
+    g.strokeStyle = "rgba(14,16,18,0.9)"; g.lineWidth = 3 * dpr;
+    g.strokeText(text, lx, band + 7 * dpr);
+    g.fillStyle = m.colour;
+    g.fillText(text, lx, band + 7 * dpr);
+  };
   for (const { m, d, off } of seen) {
     const behind = Math.abs(off) > edge, side = Math.sign(off) || 1;
     const px = mid + (behind ? side * edge : off) * pxPerRad;
@@ -242,11 +259,7 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
       g.fillStyle = m.colour;
       g.beginPath(); g.moveTo(ax + side * 4 * dpr, ay); g.lineTo(ax - side * 2 * dpr, ay - 5 * dpr); g.lineTo(ax - side * 2 * dpr, ay + 5 * dpr); g.closePath(); g.fill();
     }
-    // the distance under it (and what it's on, if it's on something), kept on the strip at its ends
-    const label = m.kind && m.what ? `${m.what} · ${far(d)}` : far(d), half = g.measureText(label).width / 2 + 2 * dpr, lx = Math.min(W - half, Math.max(half, px));
-    g.strokeStyle = "rgba(14,16,18,0.9)"; g.lineWidth = 3 * dpr;
-    g.strokeText(label, lx, band + 7 * dpr);
-    g.fillStyle = m.colour;
-    g.fillText(label, lx, band + 7 * dpr);
+    if (touch) later.unshift(() => label(m, d, px)); else label(m, d, px);
   }
+  for (const f of later) f();
 }

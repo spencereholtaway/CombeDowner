@@ -170,6 +170,14 @@ keyboard works alongside (an iPad's Magic Keyboard, say): W A S D move, the arro
 (slowly at first, for a fine aim, then faster), Enter shoots (hold it for a burst) and / aims,
 again to stop. The other keys do what they do on a computer.
 
+On a touch screen everything has its own place, so nothing covers anything else. Pause is top
+left, with the street you're on under it and then your job, the Flag Lads and the bus stacked
+below that. A challenge's banner sits under the compass. Bottom left is a low strip with your health
+and the time (the watch makes way for it), and bottom right your rounds or your speed. A boss's
+health bar runs along the bottom between them. The buttons sit over the rounds: Fire, Jump and Aim
+at the bottom, Crouch, Reload and Weapon beside them, Get in, Ride and the rest above them when you
+can use them, and a top row of small ones for the binoculars, the torch, the radio and the view.
+
 A trackpad or mouse on an iPad (the Magic Keyboard's, say) aims much as a Mac's does. Safari on an
 iPad can't hand the pointer over to a game, so the pointer stays on the screen: move it over the game
 to look round, and hold it near the edge of the screen to keep turning that way. A two-finger swipe

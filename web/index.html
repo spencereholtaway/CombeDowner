@@ -32,16 +32,14 @@
     <div id="hitmarker"></div>
     <div id="vignette"></div>
     <div id="letterbox"><span id="caption"></span><small>Any key to skip</small></div>
-    <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap it for the full map"></canvas>
     <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
     <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div><p id="bigmapmine"></p><div id="pubcard" hidden><b id="pubcardname"></b><span id="pubcardinfo"></span><span id="pubcardwhy" hidden></span><div><button id="pubcardgo" type="button" class="primary">Go there</button><button id="pubcardmark" type="button">Mark it</button><button id="pubcardx" type="button">Back</button></div></div></div><div class="bigmapbar"><p id="bigmaphint"></p><button id="bigmapme" type="button">Find me</button><button id="bigmapclose" type="button">Close map</button></div></div>
-    <div id="feed"></div>
     <div id="notices" aria-live="polite"></div>
     <div id="watch" aria-hidden="true"><b class="gs-brand">G-SHOCK</b><div class="gs-face"><span class="gs-l">LIGHT</span><span class="gs-r">SHOCK RESIST</span><canvas id="watchlcd"></canvas></div><b class="gs-prot">PROTECTION</b></div>
     <div id="health" class="panel">
       <div class="label"><span class="cross" aria-hidden="true"></span>Health</div>
-      <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div></div>
+      <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div><span id="hptime"></span></div>
     </div>
     <div id="ammo" class="panel">
       <div id="ridechip" hidden></div>
@@ -50,7 +48,6 @@
       <div class="bar"><div id="magfill"></div></div>
       <em id="reloadmsg"></em>
     </div>
-    <div id="where" class="stonesign"></div>
     <div id="boss" class="panel" hidden>
       <div class="bossname">Bendy</div>
       <div class="bar"><div id="bossfill"></div></div>
@@ -63,8 +60,13 @@
     </div>
     <div id="shootcard" class="panel" hidden></div>
     <div id="shoothint" hidden></div>
-    <div id="buscard" class="panel" hidden></div>
-    <div id="bunting" class="panel" hidden></div>
+    <div id="lstack">
+      <div id="where" class="stonesign"></div>
+      <div id="bunting" class="panel" hidden></div>
+      <div id="buscard" class="panel" hidden></div>
+      <div id="talkers"></div>
+      <div id="feed"></div>
+    </div>
     <div id="banner" class="panel" hidden></div>
     <div id="jobposter" hidden></div>
     <div id="boost" hidden></div>
@@ -132,6 +134,7 @@
         <button id="t-ride" class="tbtn small" hidden>Ride</button>
         <button id="t-trick" class="tbtn small" hidden>Trick</button>
       </div>
+      <div id="textra"></div>
     </div>
   </div>
 
