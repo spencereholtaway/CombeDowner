@@ -1060,7 +1060,7 @@ class Trail implements Job {
   /** On a touch screen, a button to hold for the spade. */
   private digButton(want: boolean) {
     if (want && !this.digBtn) {
-      const host = document.getElementById("touch");
+      const host = document.getElementById("textra") ?? document.getElementById("touch");
       if (!host) return;
       const b = (this.digBtn = document.createElement("button"));
       b.className = "tbtn small"; b.textContent = "Dig";
@@ -1115,7 +1115,7 @@ class Trail implements Job {
   /** On a touch screen, a Clue button: tap for the clue again, or hold for the sketch if it's yours. */
   private touchButton() {
     if (this.sketchBtn) return;
-    const host = document.getElementById("touch");
+    const host = document.getElementById("textra") ?? document.getElementById("touch");
     if (!host) return;
     const b = (this.sketchBtn = document.createElement("button"));
     b.className = "tbtn small"; b.textContent = "Clue";

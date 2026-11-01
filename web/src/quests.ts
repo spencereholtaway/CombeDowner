@@ -879,12 +879,11 @@ export class Quests {
 
   /** On a touch screen, the Poster button, while the running job has one to bring back. */
   private recallButton() {
-    const touch = document.getElementById("touch");
+    const touch = document.getElementById("textra") ?? document.getElementById("touch");
     if (!touch) return;
     if (!this.posterBtn) {
       const b = (this.posterBtn = document.createElement("button"));
       b.className = "tbtn small"; b.textContent = ctl("job", "touch"); b.hidden = true;
-      b.style.cssText = "position:absolute;right:16px;top:150px;pointer-events:auto";
       b.addEventListener("pointerdown", (e) => { e.preventDefault(); this.recall(); });
       touch.appendChild(b);
     }
@@ -894,12 +893,11 @@ export class Quests {
 
   /** On a touch screen, the Again button, when there's a race to run again. */
   private againButton() {
-    const touch = document.getElementById("touch");
+    const touch = document.getElementById("textra") ?? document.getElementById("touch");
     if (!touch) return;
     if (!this.again) {
       const b = (this.again = document.createElement("button"));
       b.className = "tbtn small"; b.textContent = "Again"; b.hidden = true;
-      b.style.cssText = "position:absolute;right:16px;top:150px;pointer-events:auto";
       b.addEventListener("pointerdown", (e) => { e.preventDefault(); this.restart(); });
       touch.appendChild(b);
     }
