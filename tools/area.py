@@ -8,6 +8,8 @@ Every tool takes a map id (a key of MAPS) and reads its settings with area(map_i
 - zones: local character areas as circles (zone, x east, y north, radius) in metres from the
   centre, first match wins, and default_zone for everywhere else (see buildings.py);
 - view (x, y): what the menu backdrop circles around;
+- region (optional): ISO 3166-2 code, which decides which regional sources tools/new_area.py fetches
+  (England's if not given);
 - village (optional): what the middle 3 x 3 squares are called, where the map is named for more;
 - landmarks (optional): the name of its landmark pack in tools/landmarks/ (the map id if not given);
 - wide (optional): a much bigger circle round the detailed map. When a map has one, the force field
@@ -101,10 +103,23 @@ MAPS = {
         # a test of a map outside Bath: 1 km round the Pembury Tavern on Amhurst Road, Hackney
         name="Hackney",
         centre=(-0.05929, 51.54946),   # lon, lat: the Pembury Tavern, on the corner of Amhurst Road and Dalston Lane
-        field=1000,                    # force field radius in metres: 2 km across
-        half=1100,
-        zones=[],
+        field=600,                     # the detailed box's own force field: the wide circle below is the play area
+        half=1565,                     # the standard square grid
+        # the Georgian squares and terraces; everywhere else the floor counts, wall materials and
+        # sizes in the map data tell terraces from estates. Positions come from named places in the data
+        zones=[
+            ("squares", 385, 190, 95),     # Clapton Square
+            ("squares", 535, -85, 70),     # Sutton Place
+        ],
         default_zone="london",         # Victorian London stock-brick terraces and council estates
+        region="GB-ENG",
+        spawn="Hackney Downs",
+        z0=13,                         # metres: what every square's ground heights are measured from
+        wide=dict(
+            field=1000,                # force field radius in metres: 2 km across
+            field_centre=(0, 0),
+            half=1600,
+        ),
     ),
     "cape-town": dict(
         # a map outside the UK: the detailed middle is the city centre, the Bo-Kaap and Gardens round
@@ -122,6 +137,7 @@ MAPS = {
         ],
         spawn="Company's Garden",
         default_zone="cape",                 # Gardens, Oranjezicht, Tamboerskloof, Vredehoek and Green Point
+        region="ZA-WC",                      # ISO 3166-2: none of England's sources (tools/new_area.py)
         z0=0,                                # sea level
         sea=0.0,                             # Table Bay's level: the ground below it is under the sea
         wide=dict(

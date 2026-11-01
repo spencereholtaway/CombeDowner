@@ -106,6 +106,7 @@ if __name__ == "__main__":
         cat = (p.get("taxonomy") or {}).get("primary") or (p.get("categories") or {}).get("primary")
         raw = (p.get("names") or {}).get("primary")
         if cat not in PUB_CATS or not raw or (p.get("confidence") or 0) < MIN_CONFIDENCE: continue
+        if p.get("operating_status") == "permanently_closed": continue
         if raw.lower() in NOT_PUBS or raw.lower().startswith("save "): continue
         x, y = proj(*f["geometry"]["coordinates"][:2])
         if inside(x, y): found.append(dict(name=tidy(raw), x=x, y=y, px=x, py=y, a=None, conf=p["confidence"]))

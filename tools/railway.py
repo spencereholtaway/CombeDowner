@@ -97,6 +97,38 @@ SHORT_TUNNEL = 50    # metres: a tunnel shorter than this is something going ove
 ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
              "living_street": 2.5, "service": 1.8, "unknown": 2}     # half a road's width (the rest are paths: 1.5)
 r1 = lambda v: round(float(v), 1)
+TOY = {"miniature"}  # OpenStreetMap's railway values for a garden or park's ride-on railway, not a real line
+TOY_SPUR = 30        # metres: ordinary rail this short joining only toy track is part of the model
+TOUCH = 0.5          # metres: track ends this near are joined
+TOY_MATCH = 1.5      # metres: an Overture segment this near toy track along most of it is that track
+
+
+def toy_track(src, proj):
+    """Where a miniature railway runs (OpenStreetMap's railway=miniature, in osm-rail.geojson):
+    Overture has it as rail of no known gauge, like a real line, so it would be built full size.
+    With it go the short pieces of ordinary rail that join nothing but toy track, or stand on a
+    turntable that does (a model's engine shed road): a piece that is part of a named or
+    main/branch line, or that runs on to any other track, stays. Returns the area to leave out
+    (or None) and the OpenStreetMap ways it takes."""
+    path = os.path.join(src, "osm-rail.geojson")
+    if not os.path.exists(path): return None, []
+    ways = [(proj(shape(f["geometry"])), f["properties"]) for f in json.load(open(path))["features"]
+            if f["geometry"]["type"] == "LineString"]
+    toy = [(g, p) for g, p in ways if p.get("railway") in TOY]
+    if not toy: return None, []
+    toy_all = shapely.unary_union([g for g, _ in toy])
+    tables = [g for g, p in ways if p.get("railway") == "turntable"]
+    rails = [(g, p) for g, p in ways if p.get("railway") == "rail"]
+    spur = lambda g, p: g.length < TOY_SPUR and not p.get("name") and p.get("usage") not in ("main", "branch")
+    real = shapely.unary_union([g for g, p in rails if not spur(g, p)] or [Point(0, 0).buffer(0)])
+    toy_tables = [t for t in tables if t.distance(toy_all) < TOUCH and t.distance(real) >= TOUCH]
+    taken = list(toy)
+    for g, p in rails:
+        if not spur(g, p) or g.distance(real) < TOUCH: continue
+        joins = [t for t in tables if t.distance(g) < TOUCH]
+        if any(t.distance(toy_all) >= TOUCH and t not in toy_tables for t in joins): continue
+        if g.distance(toy_all) < TOUCH or any(t in toy_tables for t in joins): taken.append((g, p))
+    return shapely.unary_union([g for g, _ in taken] + toy_tables).buffer(TOY_MATCH), [p.get("osm") for _, p in taken]
 
 
 def main():
@@ -110,6 +142,8 @@ def main():
 
     # ---- the working lines ---------------------------------------------------------------------
     tracks = []
+    toy, toy_ways = toy_track(src, proj)
+    if toy_ways: print(f"railways: leaving out the miniature railway's track ({', '.join(toy_ways)})")
     for f in json.load(open(os.path.join(src, "segment.geojson")))["features"]:
         p = f["properties"]
         if p.get("subtype") != "rail" or p.get("class") not in ("standard_gauge", "unknown"): continue
@@ -117,6 +151,7 @@ def main():
         if any(v in ("is_abandoned", "is_disused") for rf in flags for v in rf["values"]): continue
         whole = proj(shape(f["geometry"]))
         if whole.geom_type != "LineString" or not whole.intersects(circle): continue
+        if toy is not None and whole.intersection(toy).length >= 0.8 * whole.length: continue
         L = whole.length
         ranges = lambda what: [(rf.get("between") or [0, 1]) for rf in flags if what in rf["values"]]
         bridges, tunnels = [(a * L, b * L) for a, b in ranges("is_bridge")], [(a * L, b * L) for a, b in ranges("is_tunnel")]

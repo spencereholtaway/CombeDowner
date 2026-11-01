@@ -370,6 +370,15 @@ Without the FSA download the pubs are listed without ratings. Without the file a
 lists just the pubs signed in the detailed map. Names Overture has wrong, or places it calls pubs
 that aren't, are fixed in `tools/pubs.py`.
 
+### District names and church towers
+
+The game names the part of the map you're in after OpenStreetMap's districts:
+`python3 -I tools/districts.py $MAP` writes `web/public/maps/$MAP-districts.json` (without it the
+game falls back on park and square names). In England, `python3 -I tools/towers.py $MAP
+data/raw/$MAP/wide` measures each church's tower and spire from the lidar into
+`data/$MAP/measured/towers.json`; run it before the squares are built, which place them.
+`tools/new_area.py build` runs both.
+
 ## 4. Landmarks (optional)
 
 The build can't draw what the data doesn't show, such as a church spire, a portico or an

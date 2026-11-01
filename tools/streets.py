@@ -87,7 +87,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
         if not inside(x, y): continue
         c = p.get("class")
         kind = {"bus_stop": "bus", "bench": "bench", "waste_basket": "bin", "post_box": "postbox",
-                "bollard": "bollard", "information": "info", "telephone_box": "phone"}.get(c)
+                "bollard": "bollard", "information": "info", "telephone_box": "phone", "street_lamp": "lamp"}.get(c)
         if not kind: continue
         near = nearest_street(x, y)
         if kind == "bus" and near and near[0] < 25:
@@ -114,7 +114,11 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
             if near and near[0] < 30:
                 dx, dy = _dir(lines[near[1]], x, y)
                 ang = math.atan2(dy, dx)
-                if kind == "bench":
+                if kind == "lamp":
+                    # its head hangs over the street, as the lamps placed below do
+                    c = lines[near[1]].interpolate(lines[near[1]].project(Point(x, y)))
+                    if (x - c.x) * -dy + (y - c.y) * dx < 0: ang += math.pi
+                elif kind == "bench":
                     # a bench looks out at the street, not away from it (tools/prep_map.py then
                     # turns one near a wall to sit with its back to that)
                     c = lines[near[1]].interpolate(lines[near[1]].project(Point(x, y)))
@@ -154,7 +158,9 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
         # the street it names and from the junction as you turn in
         add("sign", px, py, ang, r["n"])
 
-    # ---- lamp posts --------------------------------------------------------------
+    # ---- lamp posts: every 32 m along a kerbed street, where none is mapped near ---------
+    mapped_lamps = [(q[1], q[2]) for q in items if q[0] == "lamp"]
+    lamp_tree = shapely.STRtree([Point(q) for q in mapped_lamps]) if mapped_lamps else None
     for line, r in zip(lines, vehicle):
         if r["c"] not in KERBED: continue
         n = int(line.length // 32)
@@ -171,6 +177,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
                 px, py = c.x - dy / l * off * side, c.y + dx / l * off * side
                 if not any(abs(q[1] - px) < 0.6 and abs(q[2] - py) < 0.6 for q in items): break
             if near_junction(px, py, 5): continue
+            if lamp_tree is not None and len(lamp_tree.query(Point(px, py).buffer(15))): continue
             add("lamp", px, py, math.atan2(dy, dx) + (0 if side > 0 else math.pi))
 
     # ---- markings: centre dashes and give-way lines ------------------------------

@@ -34,7 +34,18 @@ STYLE = {
     "foxhill": ([("hedge_low", 0.5), ("brick_wall_low", 0.3), ("railing", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
     "mulberry": ([("railing", 0.4), ("hedge_low", 0.4), ("brick_wall_low", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
     "london": ([("brick_wall_low", 0.5), ("railing", 0.3), ("hedge_low", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
+    "squares": ([("railing", 0.85), ("brick_wall_low", 0.15)], [("fence", 0.92), ("hedge", 0.08)]),
+    # Cape Town: a high plastered wall to the street or a steel palisade, and masonry walls between
+    # and behind the plots rather than wooden fences; the Bo-Kaap's stoeps have low railings
+    "cape": ([("security_wall", 0.55), ("palisade", 0.3), ("railing", 0.15)], [("boundary_wall", 0.9), ("hedge", 0.1)]),
+    "bokaap": ([("railing", 0.5), ("security_wall", 0.3), ("palisade", 0.2)], [("boundary_wall", 1.0)]),
+    "cbd": ([("palisade", 0.5), ("security_wall", 0.5)], [("boundary_wall", 1.0)]),
 }
+# an area with no style of its own: nothing that belongs to one town
+NEUTRAL = ([("hedge_low", 0.4), ("brick_wall_low", 0.35), ("railing", 0.25)], [("fence", 0.85), ("hedge", 0.15)])
+# what is guessed between and behind gardens: the later tidying (tools/prep_map.py) straightens,
+# joins and trims these, and leaves fronts and measured walls as they are
+BETWEEN = ("fence", "hedge", "boundary_wall")
 
 
 def pick(options, r):
@@ -117,8 +128,8 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         # one another round a block, so a shared back yard is one style; the house's own roll is
         # kept for things like its drive
         lead, yard = row_of[i], yard_of[i]
-        style_front = pick(STYLE.get(info[lead]["zone"], STYLE["suburb"])[0], rng_for(lead).random())
-        style_side = pick(STYLE.get(info[yard]["zone"], STYLE["suburb"])[1], rng_for(yard).random())
+        style_front = pick(STYLE.get(info[lead]["zone"], NEUTRAL)[0], rng_for(lead).random())
+        style_side = pick(STYLE.get(info[yard]["zone"], NEUTRAL)[1], rng_for(yard).random())
         edge = plot.exterior.difference(polys[i].buffer(0.4, join_style=2))
         street_side = street_of[i]
         f = edge.intersection(street_side)

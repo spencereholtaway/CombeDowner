@@ -3,7 +3,8 @@
 // the fourteen twenty Great Western Railway service to Westbury", calling at its stations, and
 // "The train now approaching platform two is..." as it comes in, with the odd "See it. Say it.
 // Sorted." between trains. No chime first: GWR don't use one. A train you can't get on is only
-// said to be approaching, not in service.
+// said to be approaching, not in service. On a map whose trains aren't Great Western's (OPERATORS)
+// it's just "the fourteen twenty service", without the British Transport Police.
 //
 // Each announcement is said in short phrases, one after another, the way the real ones are stitched
 // together from recorded pieces, which gives them that stop-start rhythm. The browser's speech
@@ -24,6 +25,9 @@ const NEXT = 80;           // seconds before a train pulls in that it's announce
 const APPROACH = 18;       // and that it's said to be approaching
 const LATE = 8;            // an announcement more than this late is dropped rather than said
 const FILLER = [150, 260]; // seconds between the announcements that aren't about a train
+
+/** Who runs the trains on each map, for the announcements; elsewhere it's just "the service". */
+const OPERATORS: Record<string, string> = { "combe-down": "Great Western Railway", "bradford-on-avon": "Great Western Railway" };
 
 const FILLERS = [
   ["If you see something that doesn't look right,", "speak to staff,", "or text the British Transport Police", "on six one, oh one six.", "We'll sort it.", "See it.", "Say it.", "Sorted."],
@@ -77,7 +81,7 @@ export class Announcer {
   private t = 0;
 
   /** Each frame: if you're near a station, announce what's due there. */
-  update(dt: number, rail: Railway | null | undefined, x: number, z: number, now = Date.now() / 1000) {
+  update(dt: number, rail: Railway | null | undefined, x: number, z: number, mapId = "", now = Date.now() / 1000) {
     this.t -= dt;
     if (this.t > 0 || !rail || !synth) return;
     this.t = 0.5;
@@ -85,6 +89,7 @@ export class Announcer {
     if (!near) { this.fillerAt = 0; return; }
     const loud = Math.min(1, 1.15 - near.far / RANGE) * SFX.effectsVolume();
     if (!this.fillerAt) this.fillerAt = now + 20 + Math.random() * 40;
+    const op = OPERATORS[mapId] ? `${OPERATORS[mapId]} ` : "";
     for (const d of rail.departures(near.station, 6)) {
       if (!d.service) {
         this.at(d, "app", d.arrive - APPROACH, now, loud, () => [
@@ -95,20 +100,21 @@ export class Announcer {
       }
       this.at(d, "next", d.arrive - NEXT, now, loud, () => [
         d.plat ? `Platform ${platform(d.plat)},` : "",
-        `for ${spoken(d.at)}`, "Great Western Railway service", `to ${d.to}.`,
+        `for ${spoken(d.at)}`, `${op}service`, `to ${d.to}.`,
         ...callingAt(d.calls),
         `This train is formed of ${words(d.coaches)} coaches.`,
       ]);
       this.at(d, "app", d.arrive - APPROACH, now, loud, () => [
         d.plat ? `The train now approaching platform ${platform(d.plat)}` : "The train now approaching",
-        `is ${spoken(d.at)}`, "Great Western Railway service", `to ${d.to}.`,
+        `is ${spoken(d.at)}`, `${op}service`, `to ${d.to}.`,
         "Please stand behind the yellow line.",
       ]);
     }
     if (now >= this.fillerAt) {
       this.fillerAt = now + FILLER[0] + Math.random() * (FILLER[1] - FILLER[0]);
       // never over a train's announcement
-      if (!synth.speaking && !synth.pending) this.say(FILLERS[Math.floor(Math.random() * FILLERS.length)], loud);
+      const fillers = op ? FILLERS : FILLERS.slice(1);
+      if (!synth.speaking && !synth.pending) this.say(fillers[Math.floor(Math.random() * fillers.length)], loud);
     }
     if (this.said.size > 200) this.said.clear();
   }

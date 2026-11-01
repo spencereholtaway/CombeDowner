@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -419,6 +419,15 @@ function makeShell(scene: THREE.Scene) {
  * the sky, the force field and the vehicles, or just the scenery of one full-detail square (lent:
  * the main world's shared materials), into a group of its own.
  */
+// a weir (world.ts draws the map's wf): its crest stands this far over the water above and is twice
+// this wide; the water pours off it this far out for each metre it falls (within these), in streaks
+// this wide, and its white water reaches this far on past where it lands. The colours are Pulteney
+// Weir's (landmarks/pulteney.ts), as vertex colours.
+const WEIR_CREST_UP = 0.12, WEIR_CREST_HALF = 0.35, WEIR_RUN = 1.1, WEIR_RUN_LEAST = 0.35, WEIR_RUN_MOST = 3.0;
+const WEIR_STREAK = 0.7, WEIR_FROTH = 0.8;
+const WEIR_STONE = [0.48, 0.38, 0.22], WEIR_FOAM = [0.9, 0.93, 0.93];
+const WEIR_STREAKS = [[0.09, 0.21, 0.28], [0.16, 0.3, 0.37], [0.11, 0.25, 0.32], [0.2, 0.34, 0.4]];
+
 function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Generator<void, World | TileWorld> {
   const core = !lent, S: Shared = lent ?? {};
   if (core) S.railTracks = map.railData?.tracks.map((t) => t.p) ?? [];
@@ -1779,6 +1788,94 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     scene.add(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat));
     if (ponds.length > 1) for (const g of ponds) g.dispose();
   }
+  // a tank's, a pool's or a reservoir's concrete walls, wherever its water stands above the ground
+  // round it, and each weir's stone crest with the white water falling from it into the water below:
+  // one mesh for the square
+  {
+    const pos: number[] = [], col: number[] = [];
+    const g = (x: number, y: number) => map.ground(x, -y);
+    const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      for (let q = 0; q < 6; q++) col.push(...cc);
+    };
+    const quad4 = (a: number[], b: number[], c: number[], d: number[], ca: number[], cb: number[], cc: number[], cd: number[]) => {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      col.push(...ca, ...cb, ...cc, ...ca, ...cc, ...cd);
+    };
+    const P = (x: number, y: number, h: number) => [x, h, -y];
+    const CONCRETE = [0.62, 0.61, 0.58];
+    for (const w of D.wp) {
+      if (w.k !== "t" || !w.r[0]?.length) continue;
+      const top = w.z - Z0 + RIM_UP, ring = w.r[0];
+      for (let i = 0; i < ring.length; i++) {
+        const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % ring.length];
+        const ga = g(ax, ay), gb = g(bx, by);
+        if (top - Math.min(ga, gb) < 0.1) continue;
+        const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l * RIM_HALF, ny = (bx - ax) / l * RIM_HALF;
+        for (const s of [1, -1]) quad(P(ax + nx * s, ay + ny * s, ga - 0.3), P(bx + nx * s, by + ny * s, gb - 0.3), P(bx + nx * s, by + ny * s, top), P(ax + nx * s, ay + ny * s, top), CONCRETE);
+        quad(P(ax + nx, ay + ny, top), P(bx + nx, by + ny, top), P(bx - nx, by - ny, top), P(ax - nx, ay - ny, top), CONCRETE);
+      }
+    }
+    // A weir as Pulteney's is drawn (landmarks/pulteney.ts): a low stone crest just proud of the
+    // water above, the water pouring off it in glassy streaks that break white as they fall to the
+    // water below, and a narrow band of white water at its foot. Where the two sides lie hardly
+    // apart it's the crest and the foam.
+    const mix = (v: number[], t: number) => [0, 1, 2].map((c) => v[c] + (WEIR_FOAM[c] - v[c]) * t);
+    for (const f of D.wf ?? []) {
+      const foot = f.b - Z0, p = f.p, m = p.length;
+      // each point's way across the line, mitred where the line bends so the crest doesn't open there
+      const side = p.map((_, i) => {
+        let sx = 0, sy = 0;
+        for (const [u, v] of [[i - 1, i], [i, i + 1]]) {
+          if (u < 0 || v >= m) continue;
+          const l = Math.hypot(p[v][0] - p[u][0], p[v][1] - p[u][1]) || 1;
+          sx += (p[v][1] - p[u][1]) / l; sy += -(p[v][0] - p[u][0]) / l;
+        }
+        const l = Math.hypot(sx, sy) || 1, ux = sx / l, uy = sy / l;
+        const u = i > 0 ? i - 1 : 0, ls = Math.hypot(p[u + 1][0] - p[u][0], p[u + 1][1] - p[u][1]) || 1;
+        const cos = Math.max(0.5, (ux * (p[u + 1][1] - p[u][1]) - uy * (p[u + 1][0] - p[u][0])) / ls);
+        return [ux / cos, uy / cos];
+      });
+      let k = 0;
+      for (let i = 0; i + 1 < m; i++) {
+        const [ax, ay, az] = p[i], [bx, by, bz] = p[i + 1], l = Math.hypot(bx - ax, by - ay) || 1;
+        const n = Math.max(1, Math.round(l / WEIR_STREAK));
+        for (let j = 0; j < n; j++, k++) {
+          const s0 = j / n, s1 = (j + 1) / n;
+          const x0 = ax + (bx - ax) * s0, y0 = ay + (by - ay) * s0, x1 = ax + (bx - ax) * s1, y1 = ay + (by - ay) * s1;
+          const r0 = [side[i][0] + (side[i + 1][0] - side[i][0]) * s0, side[i][1] + (side[i + 1][1] - side[i][1]) * s0];
+          const r1 = [side[i][0] + (side[i + 1][0] - side[i][0]) * s1, side[i][1] + (side[i + 1][1] - side[i][1]) * s1];
+          const top0 = az + (bz - az) * s0 - Z0, top1 = az + (bz - az) * s1 - Z0;
+          // (the crest's ends run up on to the banks; nothing pours where the ground is dry below it)
+          if (g((x0 + x1) / 2, (y0 + y1) / 2) > Math.max(top0, top1) + WEIR_CREST_UP) continue;
+          const A = (o: number, h: number) => P(x0 + r0[0] * o, y0 + r0[1] * o, h), B = (o: number, h: number) => P(x1 + r1[0] * o, y1 + r1[1] * o, h);
+          const c0 = top0 + WEIR_CREST_UP, c1 = top1 + WEIR_CREST_UP, H = WEIR_CREST_HALF;
+          quad(A(-H, c0), B(-H, c1), B(H, c1), A(H, c0), WEIR_STONE);
+          quad(A(-H, top0 - 0.3), B(-H, top1 - 0.3), B(-H, c1), A(-H, c0), WEIR_STONE);
+          const wet = g((x0 + x1) / 2 + (r0[0] + r1[0]), (y0 + y1) / 2 + (r0[1] + r1[1])) < foot + 0.3;
+          if (!wet) continue;
+          const drop = Math.max(top0, top1) - foot, run = Math.min(WEIR_RUN_MOST, Math.max(WEIR_RUN_LEAST, drop * WEIR_RUN));
+          const glass = WEIR_STREAKS[k % WEIR_STREAKS.length], broken = mix(glass, 0.3), end = H + run, bend = H + run * 0.4;
+          const z0m = c0 - (c0 - foot) * 0.6, z1m = c1 - (c1 - foot) * 0.6;
+          // the water going over, steepest just past the crest, then breaking white as it lands
+          quad4(A(H, c0), B(H, c1), B(bend, z1m), A(bend, z0m), glass, glass, broken, broken);
+          quad4(A(bend, z0m), B(bend, z1m), B(end, foot - 0.05), A(end, foot - 0.05), broken, broken, WEIR_FOAM, WEIR_FOAM);
+          quad4(A(end - 0.3, foot + 0.1), B(end - 0.3, foot + 0.1), B(end + WEIR_FROTH, foot + 0.1), A(end + WEIR_FROTH, foot + 0.1),
+            WEIR_FOAM, WEIR_FOAM, mix(glass, 0.6), mix(glass, 0.6));
+        }
+      }
+    }
+    if (pos.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+      geo.computeVertexNormals();
+      S.weirMat ??= new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(geo, S.weirMat);
+      m.receiveShadow = true;
+      scene.add(m);
+    }
+  }
   yield;
 
   mark("roads");
@@ -1813,6 +1910,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     g: [[0.42, 0.43, 0.46], [0.36, 0.37, 0.4]],                       // modern grey tiles
   };
   const pick = <T,>(a: T[], r: number) => a[Math.floor(r * a.length) % a.length];
+  // a building whose wall or roof the data doesn't give takes the commonest in its own square
+  const commonest = (vals: (string | undefined)[], known: Record<string, unknown>, none: string) => {
+    const n = new Map<string, number>();
+    for (const v of vals) if (v && v in known) n.set(v, (n.get(v) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? none;
+  };
+  // a colour the data gives is met halfway by the material's own tint, so a mapper's pure "#FF0000"
+  // brick still reads as brick and the retro grade doesn't make it glare
+  const tinted = (base: number[], hex?: string) => {
+    const m = hex && /^#?([0-9a-f]{6})$/i.exec(hex);
+    if (!m) return base;
+    const v = parseInt(m[1], 16), rgb = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => c / 255);
+    return base.map((c, k) => c * 0.5 + rgb[k] * 0.5);
+  };
+  const WALL_USUAL = commonest(D.bl.map((b) => b.m), WALL_TINTS, "r") as Surf, ROOF_USUAL = commonest(D.bl.map((b) => b.rc), ROOF_TINTS, "s");
   const POT = [0.62, 0.34, 0.24];
   /** Box from (x, y) footprint centre, half-sizes along u and across, from y0 to y1. */
   const boxAt = (g: Geo, x: number, y: number, u: number[], hu: number, hv: number, y0: number, y1: number, col: number[]) => {
@@ -1902,15 +2014,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     let cx = 0, cy = 0;
     for (const [x, y] of outerRing) { cx += x; cy += y; }
     cx /= outerRing.length; cy /= outerRing.length;
-    const surf = ((b.m as Surf) in WALL_TINTS ? b.m : "s") as Surf;
+    const surf = ((b.m as Surf) in WALL_TINTS ? b.m : WALL_USUAL) as Surf;
     const walls = geoFor(cx, cy, surf + (b.w ? "w" : "p"));
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eaveAll = ground + b.h, base = ground - 0.6;
-    const wallCol = pick(WALL_TINTS[surf], hash(bi * 3 + 1));
+    const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc);
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
-    const roofCol = pick(ROOF_TINTS[b.rc ?? "s"] ?? ROOF_TINTS.s, hash(bi * 5 + 2));
+    const roofCol = tinted(pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2)), b.rk);
     // windows sit at the same height on every storey, the top row just under the eaves. On a
     // slope the walls start from the lowest ground, but storeys are counted from the ground
     // halfway up (b.dz is the fall across the footprint): the downhill side shows a lower
@@ -2147,7 +2259,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       if (spec.mat !== "iron") {
         // stone and brick walls get a slightly darker coping along the top
-        const top = spec.mat === "stone" || spec.mat === "brick" ? col.map((c) => c * 0.85) : col;
+        const top = spec.mat === "stone" || spec.mat === "brick" || spec.mat === "render" ? col.map((c) => c * 0.85) : col;
         facing(g, P(0, true), P(1, true), P(2, true), P(3, true), [0, 1, 0], [u0, 0], [u1, 0], [u1, t], [u0, t], top);
       }
       // the ends of the run are closed, so a wall doesn't show as a hollow shell where it stops
@@ -2171,13 +2283,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // moved a little by a rebuild keeps its look
     const f = g.leaf, cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2, gl = Math.hypot(f.x1 - f.x0, f.y1 - f.y0);
     const [x0, y0, x1, y1] = gt as number[];
-    const iron = g.look.mat === "iron" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
+    const iron = g.look.mat === "iron" || g.look.mat === "render" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
     boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, f.gu, gl / 2, f.half, f.foot, f.top,
       iron ? [0.16, 0.17, 0.18] : [0.5, 0.38, 0.26]);
   }
   const barMats: Record<BarMat, THREE.Material> = S.barMats ??= {
     stone: new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }),
     brick: new THREE.MeshLambertMaterial({ map: TX.wall("brick", false), vertexColors: true }),
+    render: new THREE.MeshLambertMaterial({ map: TX.wall("render", false), vertexColors: true }),
     leaf: new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true }),
     wood: new THREE.MeshLambertMaterial({ map: TX.boards(), vertexColors: true, side: THREE.DoubleSide }),
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),

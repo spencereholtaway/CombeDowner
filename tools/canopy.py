@@ -11,6 +11,7 @@ Where the Environment Agency lidar covers the map, refine() swaps in its heights
 surveyed surface less the bare ground, at 1 m, so each crown has its real height and spread.
 """
 import glob, math, os
+from types import SimpleNamespace
 import numpy as np
 
 R = 6378137.0
@@ -25,10 +26,20 @@ class Canopy:
         W, S, E, N = bbox_lonlat
         mx = lambda lon: math.radians(lon) * R
         my = lambda lat: math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * R
+        files.sort()
         with rasterio.open(files[0]) as src:
             win = from_bounds(mx(W), my(S), mx(E), my(N), src.transform).round_offsets().round_lengths()
-            self.h = src.read(1, window=win).astype(np.float32)
-            t = src.window_transform(win)
+            ref = src.transform
+            if len(files) == 1:
+                self.h = src.read(1, window=win).astype(np.float32)
+                t = src.window_transform(win)
+        if len(files) > 1:
+            # a map across the edge of a canopy tile: the tiles share one pixel grid, so they are
+            # laid side by side, and pixels are still counted from the first tile's corner
+            from rasterio.merge import merge
+            h, t = merge(files, bounds=(mx(W), my(S), mx(E), my(N)), res=(ref.a, -ref.e), nodata=0)
+            self.h = h[0].astype(np.float32)
+            win = SimpleNamespace(row_off=round((t.f - ref.f) / ref.e), col_off=round((t.c - ref.c) / ref.a))
         self._place(t.c, t.a, t.f, t.e, int(win.row_off), int(win.col_off), to_model)
 
     def _place(self, x0, dx, y0, dy, row0, col0, to_model):
