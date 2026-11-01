@@ -5,8 +5,9 @@
 //
 // Which copy of the game this is goes by the page's address, the same way the play counts tell
 // them apart (telemetry.ts): on for danturn.github.io and for a copy run on this computer, off
-// anywhere else, Spencer's site included. ?progression=1|0 switches all three on or off for one
-// visit: they hang together, as the challenges bring the objects and the objects open the zones.
+// anywhere else, Spencer's site included. The Progression tickbox in Settings (settings.ts) switches
+// all three on or off and is kept in this browser; ?progression=1|0 does the same for one visit. They
+// hang together, as the challenges bring the objects and the objects open the zones.
 //
 // Who decides what: the host. Each page reads its own switches once, at the start; the host sends
 // its own with its state ("st", game.ts), and everyone else in the room plays by those, so a player
@@ -25,15 +26,28 @@ function local(): boolean {
   return h === "localhost" || h === "[::1]" || h.endsWith(".local") || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
 }
 
+/** Whether this copy of the game has them on unless you choose otherwise. */
+export const progressionDefault = location.hostname === "danturn.github.io" || local();
+
+function chosen(): boolean | null {
+  try { const s = localStorage.getItem("cd-progression"); return s === "1" ? true : s === "0" ? false : null; } catch { return null; }
+}
+
 function read(): Features {
-  const on = location.hostname === "danturn.github.io" || local();
   const v = new URLSearchParams(location.search).get("progression");
-  const all = v === "1" ? true : v === "0" ? false : on;
+  const all = v === "1" ? true : v === "0" ? false : chosen() ?? progressionDefault;
   return { zones: all, strange: all, challenges: all };
 }
 
-/** This page's own switches. */
+/** This page's own switches: what the room plays by while you're host. */
 export const mine: Readonly<Features> = read();
+
+/** Your Progression setting, kept in this browser (null goes back to this site's default). */
+export function setProgression(on: boolean | null) {
+  try { if (on === null) localStorage.removeItem("cd-progression"); else localStorage.setItem("cd-progression", on ? "1" : "0"); } catch { /* private window: just this visit */ }
+  const all = on ?? progressionDefault;
+  Object.assign(mine, { zones: all, strange: all, challenges: all });
+}
 let room: Features = { ...mine };
 
 /** Whether a feature is on in this game (the host's say once it's been heard). */

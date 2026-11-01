@@ -190,9 +190,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   A job's start card shows your best at it. All kept on your device.
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched
   off on this site for now, so here the whole map is open, every way to get about runs from the start,
-  and none of the three shows anywhere. Add `?progression=1` to the address to try them; in a game
-  with others, the host's say counts for the room. They're on at danturn.github.io/CombeDowner and on
-  a copy run locally, where `?progression=0` switches them off.
+  and none of the three shows anywhere. Tick Progression in Settings (Play) to try them, and it's kept
+  for next time; in a game with others, the host's say counts for the room. They're on to start with at
+  danturn.github.io/CombeDowner and on a copy run locally. `?progression=1` or `0` in the address
+  switches them for one visit.
 - **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
   and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for

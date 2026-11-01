@@ -608,6 +608,8 @@ export class Game {
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
+    // your Progression setting may have changed on the menu since the page opened
+    setFeatures(myFeatures);
     // the zones first, so the wall's in place before anything is put anywhere
     this.zones = new Zones(map, this.mapId);
     this.zones.show(world.scene, world.fieldLook);
