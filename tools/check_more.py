@@ -22,6 +22,14 @@
     what you stand on well below what's drawn ("falls through the floor"), and no ray from standing
     height on, under or beside the line passes into its body (under its ballast, deck or platform,
     above the ground and an arch's opening) without meeting a face ("sky through the ground").
+20. Nothing is drawn over a street, as the game draws it (tools/overroad.mjs looks down on every
+    kerbed street of the built game, a metre apart along and across it, in a muted headless Chrome):
+    the first face seen over a carriageway is the road, not paving, grass, earth, the ground over a
+    buried road, a slab, a wall or a building; the first over a pavement is paving (road running on
+    from the kerb is a carriageway drawn wider than its record, a row of its own); and no pavement
+    stands on a lip more than 0.3 m over the open ground behind it. Each place's score is its area in
+    m2. Only when web/dist has been built (each run reads the maps as they are now); CD_OVERROAD=0
+    leaves it out.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
@@ -39,6 +47,7 @@ VEHICLE = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassi
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 6, "footway": 1.6, "steps": 1.8, "cycleway": 2,
       "path": 1.4, "track": 2.8, "bridleway": 2}
+OVERROAD_ONLY = [None]    # the squares being checked, when not all of them (check_map.py --tiles)
 EDGE = 15.0   # metres: something nearer a square's edge than this may belong with what is in the next square
 
 
@@ -111,6 +120,21 @@ def watertight(root, map_id):
         with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
             f.write(js); f.flush()
             return json.loads(subprocess.run(["node", f.name, os.path.abspath(root), map_id], capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return []
+
+
+@functools.lru_cache(maxsize=2)
+def overroad(root, map_id, only=None):
+    """Rule 20's places over the squares given (all if None), from tools/overroad.mjs looking at the
+    built game; none if there is no built game or no browser. Called once before the squares are checked."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if os.environ.get("CD_OVERROAD") == "0" or not os.path.exists(os.path.join(os.path.dirname(here), "web", "dist", "index.html")):
+        return []
+    args = ["node", os.path.join(here, "overroad.mjs"), "--map", map_id, "--maps", os.path.abspath(root)]
+    if only: args += ["--only", " ".join(only)]
+    try:
+        return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
         return []
 
@@ -284,6 +308,8 @@ def square(m, tag, note, f):
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
     for w in watertight(root, map_id):
+        if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
+    for w in overroad(root, map_id, OVERROAD_ONLY[0]):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
@@ -585,6 +611,7 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
             if g.geom_type == "Polygon" and g.area > 0.5:
                 c = g.representative_point()
                 note("9 pavement over the road", g.area, at(c.x, c.y), f"{g.area:.1f} m2")
+    slivers(F, roads, rlines, note, at, inner)
     if "path" in F and "pave" in F:
         edge = F["pave"].boundary
         # (a footway up a bank beside the street, a step off the pavement's level, is a path of its own)
@@ -601,6 +628,53 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
             if along > 6:
                 c = g.representative_point()
                 note("9 path strip along a pavement", along, at(c.x, c.y), f"{along:.0f} m")
+
+
+SLIVER = 0.25    # metres: half the width a piece of road or paving must have, or it is a sliver
+SPIKE = 50       # degrees: a sharper corner where road and paving meet is a point of one into the other
+
+
+def slivers(F, roads, rlines, note, at, inner):
+    """Where the carriageway and the paving meet, each piece of either is as wide as a kerb line makes
+    it: no spike or sliver narrower than a metre poking into the other (a point of paving into the road
+    at a junction, a bow tie's tip, a thin wedge of road between two pavements). A narrow pavement
+    along its kerb is no sliver: one that runs along the other kind on most of its edge is."""
+    cars = shapely.union_all([F[k] for k in ("road", "service") if k in F] or [Polygon()])
+    walk = shapely.union_all([F[k] for k in ("pave", "drive", "front", "path") if k in F] or [Polygon()])
+    if cars.is_empty or walk.is_empty: return
+    rt = shapely.STRtree(rlines) if rlines else None
+    for A, B, kind in ((cars, walk, "road"), (walk, cars, "paving")):
+        near = A.intersection(B.buffer(1.0)).intersection(inner)
+        if near.is_empty: continue
+        thin = near.difference(A.buffer(-SLIVER).buffer(SLIVER + 0.01))
+        edge = B.buffer(0.05)
+        for g in getattr(thin, "geoms", [thin]):
+            if g.geom_type != "Polygon" or g.area < 0.25 or not g.length: continue
+            if g.exterior.intersection(edge).length < 0.6 * g.exterior.length: continue
+            c = g.representative_point()
+            name = ""
+            if rt is not None:
+                k = rt.nearest(c)
+                name = roads[int(k)].get("n") or roads[int(k)]["c"]
+            note("9 sliver or spike where road and paving meet", g.area, at(c.x, c.y), f"{kind} {name!r} {g.area:.1f} m2")
+        # a point: a corner of one kind sharper than SPIKE whose two sides are both kerbs with the other
+        # (a block's corner at a junction is square or rounded, and a pavement's end is cut square)
+        for g in getattr(A, "geoms", [A]):
+            if g.geom_type != "Polygon": continue
+            for ring in [g.exterior, *g.interiors]:
+                q = np.asarray(ring.simplify(0.1).coords)[:-1]
+                if len(q) < 3: continue
+                a, b = np.roll(q, 1, axis=0) - q, np.roll(q, -1, axis=0) - q
+                la, lb = np.hypot(*a.T), np.hypot(*b.T)
+                ang = np.degrees(np.arccos(np.clip((a * b).sum(1) / np.maximum(la * lb, 1e-9), -1, 1)))
+                inside = (a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]) * (1 if ring.is_ccw else -1) < 0
+                for i in np.nonzero((ang < SPIKE) & inside & (la > 0.5) & (lb > 0.5))[0]:
+                    p = Point(q[i])
+                    if not inner.contains(p): continue
+                    sides = [LineString([q[i], q[i] + v / n * min(n, 1.0)]) for v, n in ((a[i], la[i]), (b[i], lb[i]))]
+                    if not all(edge.contains(sd) for sd in sides): continue
+                    name = roads[int(rt.nearest(p))].get("n") or "" if rt is not None else ""
+                    note("9 sliver or spike where road and paving meet", 1, at(p.x, p.y), f"{kind} point {ang[i]:.0f} degrees {name!r}")
 
 
 def gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits):

@@ -292,7 +292,11 @@ items there are taken out, and walls are cut where they cross any of them).
 
 `python3 -I tools/check_map.py <map>` checks every built square (and the detailed map) against
 these rules and lists the worst places each is broken, as data coordinates to go and look at in
-the game. Run it after a rebuild: a rule that fails somewhere is fixed in the tools, not by hand. River banks slope down to the water over ten
+the game. Run it after a rebuild: a rule that fails somewhere is fixed in the tools, not by hand.
+Once the game is built (`cd web && npm run build`), rule 20 also looks down on every street as the
+game draws it (`node tools/overroad.mjs`, which runs on its own too, `--only "ti,tj ..."` for some
+squares) and counts, in square metres, what is drawn over a carriageway or a pavement that
+shouldn't be, and pavements standing on a lip; `CD_OVERROAD=0` leaves it out. River banks slope down to the water over ten
 metres (`bk` in the file says so, and the game does the same at load time for a map built
 without it); the canal's bed and banks follow its own levels, and the ground is flattened under
 the railway. The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and
