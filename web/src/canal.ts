@@ -44,6 +44,7 @@ const LOCK_HALF = 2.15;                // half a lock's width (the K&A's are 14 
 const COPE = 1.2;                      // how wide the stone coping is along a lock's sides
 const APRON = 4.5;                     // and the paving beyond it, level with the coping (the map's ground is laid just under it)
 const TAIL = 2.2;                      // how far the lock walls run past each pair of gates
+const SHORT = 0.4;                     // the chamber's own water stops this short of each end; the pound's runs on to meet it
 const PAVING = "#968d7a";              // the flagstones beside a lock
 const MITRE = 0.32;                    // how far the closed gates point upstream, radians
 const STRIDE = 11;                     // numbers per boat in an update
@@ -268,6 +269,51 @@ export function lockAt(d: CanalData | null | undefined, x: number, y: number): n
     if (v < LOCK_HALF + COPE && u > -wingLength(lk) && u < L + TAIL) return u < -TAIL ? wingTop(lk, u) : lk.zh + 0.45;
   }
   return null;
+}
+
+/** Between a lock's walls the pound's water is no wider than the lock (tools/canal.py gives it a
+ *  little more), and beside them the canal's banks give way to its coping and paving. */
+export const LOCK_WALLS = LOCK_HALF, LOCK_PAVED = LOCK_HALF + COPE + APRON;
+
+/** Polygon P (convex; each point data x, y, then anything else, carried along in proportion) less
+ *  what lies along each lock, from the end of its wing walls to the end of its top walls, between
+ *  vIn and vOut of its middle on either side (vIn 0: across its middle too), each end and vOut
+ *  brought in by tuck (so what's left runs on a little under the stonework, with no crack between).
+ *  In convex pieces; P itself, alone, where no lock reaches it. */
+export function outsideLocks(d: CanalData | null | undefined, P: number[][], vIn: number, vOut: number, tuck = 0): number[][][] {
+  let pieces = [P];
+  for (const lk of d?.locks ?? []) {
+    const [lx, ly] = lk.lo, [hx, hy] = lk.hi, L = Math.hypot(hx - lx, hy - ly) || 1;
+    const ux = (hx - lx) / L, uy = (hy - ly) / L, u0 = tuck - wingLength(lk), u1 = L + TAIL - tuck, vo = vOut - tuck;
+    const u = (p: number[]) => (p[0] - lx) * ux + (p[1] - ly) * uy, v = (p: number[]) => -(p[0] - lx) * uy + (p[1] - ly) * ux;
+    for (const [v0, v1] of vIn > 0 ? [[vIn, vo], [-vo, -vIn]] : [[-vo, vo]]) {
+      const sides = [(p: number[]) => u(p) - u0, (p: number[]) => u1 - u(p), (p: number[]) => v(p) - v0, (p: number[]) => v1 - v(p)];
+      const next: number[][][] = [];
+      for (const piece of pieces) {
+        if (sides.some((f) => piece.every((p) => f(p) <= 1e-6))) { next.push(piece); continue; }
+        let rest = piece;
+        for (const f of sides) {
+          const out = clipHalf(rest, (p) => -f(p));
+          if (out.length >= 3) next.push(out);
+          rest = clipHalf(rest, f);
+          if (rest.length < 3) break;
+        }
+      }
+      pieces = next;
+    }
+  }
+  return pieces;
+}
+
+/** The part of convex polygon P where f >= 0. */
+function clipHalf(P: number[][], f: (p: number[]) => number): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length], fa = f(a), fb = f(b);
+    if (fa >= 0) out.push(a);
+    if ((fa >= 0) !== (fb >= 0)) { const t = fa / (fa - fb); out.push(a.map((x, k) => x + (b[k] - x) * t)); }
+  }
+  return out;
 }
 
 /** The ground under the aqueduct's arches, brought down to a good way under each arch, so the
@@ -628,13 +674,32 @@ export class Canal {
       const y = r.lv - z0;
       this.runWater[ri] = [];
       for (let k0 = 0; k0 < r.p.length - 1; k0 += 144) {
-        const pos: number[] = [], idx: number[] = [];
+        const pos: number[] = [], idx: number[] = [], cut: number[][][] = [];
         const k1 = Math.min(r.p.length - 1, k0 + 144);
         for (let k = k0; k <= k1; k++) {
           const q = r.p[k], a = r.p[Math.max(0, k - 1)], b = r.p[Math.min(r.p.length - 1, k + 1)];
           const tx = b[0] - a[0], ty = b[1] - a[1], tl = Math.hypot(tx, ty) || 1, nx = -ty / tl, ny = tx / tl, h = q[2];
           pos.push(q[0] + nx * h, y, -(q[1] + ny * h), q[0] - nx * h, y, -(q[1] - ny * h));
-          if (k > k0) { const j = (k - k0) * 2; idx.push(j - 2, j - 1, j, j - 1, j + 1, j); }
+          if (k === k0) continue;
+          const j = (k - k0) * 2, at = (i: number) => [pos[i * 3], -pos[i * 3 + 2]];
+          const P = [at(j - 2), at(j - 1), at(j + 1), at(j)], pieces = outsideLocks(d, P, LOCK_WALLS, 50);
+          if (pieces[0] === P) idx.push(j - 2, j - 1, j, j - 1, j + 1, j);
+          else cut.push(...pieces);
+        }
+        // and on from the gates to the chamber's own water, at this pound's level
+        for (const k of [0, r.p.length - 1]) {
+          if (k < k0 || k > k1) continue;
+          for (const lk of this.locks) {
+            const lo = Math.hypot(lk.d.lo[0] - r.p[k][0], lk.d.lo[1] - r.p[k][1]) < 0.5, hi = Math.hypot(lk.d.hi[0] - r.p[k][0], lk.d.hi[1] - r.p[k][1]) < 0.5;
+            if (!lo && !hi) continue;
+            const [ua, ub] = lo ? [0, SHORT + 0.1] : [lk.L - SHORT - 0.1, lk.L];     // (overlapping the chamber's a little, so no crack shows between)
+            cut.push([[ua, LOCK_HALF], [ub, LOCK_HALF], [ub, -LOCK_HALF], [ua, -LOCK_HALF]].map(([u, v]) => { const s = lk.at(u, v, 0); return [s[0], -s[2]]; }));
+          }
+        }
+        for (const piece of cut) {
+          const base = pos.length / 3;
+          for (const [x, yy] of piece) pos.push(x, y, -yy);
+          for (let i = 1; i < piece.length - 1; i++) idx.push(base, base + i, base + i + 1);
         }
         const g = new THREE.BufferGeometry();
         g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -717,7 +782,7 @@ export class Canal {
           grp.add(leaf);
           lk.leaves.push(leaf);
         }
-      lk.water = new THREE.Mesh(new THREE.PlaneGeometry(lk.L - 0.8, LOCK_HALF * 2).rotateX(-Math.PI / 2), waterMat);
+      lk.water = new THREE.Mesh(new THREE.PlaneGeometry(lk.L - SHORT * 2, LOCK_HALF * 2).rotateX(-Math.PI / 2), waterMat);
       lk.water.position.set(lk.L / 2, lk.level - z0, 0);
       grp.add(lk.water);
       lk.foam = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.2).rotateX(-Math.PI / 2), foamMat.clone());
