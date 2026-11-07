@@ -187,7 +187,13 @@ kbd {
 .music { display: flex; gap: 10px; align-items: center; }
 /* the wardrobe, over the pause menu (wardrobe.ts) */
 #wardrobe { z-index: 11; }
-#cheats { z-index: 11; }
+#cheats, #games { z-index: 11; }
+.gamescard { width: min(620px, 100%); }
+.gameslist { display: grid; gap: 2px; padding: 12px 16px 0; max-height: min(62vh, 520px); overflow: auto; }
+.gameslist h3 { margin: 8px 0 4px; }
+.card.tt .gameslist button:disabled { color: #088; cursor: default; }
+.card.tt .gameslist button small { margin-left: 0.6ch; font-size: 17px; text-transform: none; }
+@media (max-height: 500px) { .gameslist { max-height: none; } }
 .cheatlist { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 0; padding: 14px 18px 4px; }
 .cheatlist dt { color: #ff0; letter-spacing: 0.08em; }
 .cheatlist dd { margin: 0; }
@@ -323,7 +329,7 @@ kbd {
 .card.tt .pubbar { display: flex; gap: 12px; align-items: center; padding: 10px 18px 16px; }
 .card.tt .pubbar .hint { flex: 1; min-width: 0; }
 .card.tt .wardview { background: linear-gradient(#0000a8, #000); }
-.card.tt .wardlist h3, .card.tt .trbody h3 { color: #ff0; font-size: 23px; font-weight: 400; }
+.card.tt .wardlist h3, .card.tt .trbody h3, .card.tt .gameslist h3 { color: #ff0; font-size: 23px; font-weight: 400; }
 .card.tt .wardtile { font-size: 19px; text-transform: none; padding: 6px 10px 5px; border: 2px solid #00f; background: #000; color: #fff; }
 .card.tt .wardtile small { font-size: 16px; color: #0ff; }
 .card.tt .wardtile.on { background: #ff0; color: #000; border-color: #fff; }

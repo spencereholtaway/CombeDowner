@@ -16,7 +16,7 @@
 export const SERVICE = "BathText '91";
 
 /** Page numbers, as the service's index has them. */
-export const PAGE = { menu: 100, pause: 101, settings: 200, link: 300, wardrobe: 400, trophies: 500, pub: 600, cheats: 777, debug: 888 };
+export const PAGE = { menu: 100, pause: 101, settings: 200, link: 300, wardrobe: 400, trophies: 500, pub: 600, games: 700, cheats: 777, debug: 888 };
 
 /** The header row along the top of a page: its number, the service, and the date and time (filled in by the clock). */
 export function ttBar(page: number): string {

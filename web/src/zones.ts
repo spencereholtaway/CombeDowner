@@ -21,7 +21,8 @@
 //
 // Who decides what: nobody. How many zones are open follows from how many sockets are full, which
 // the host of oddments.ts decides and sends round; so the wall stands in the same place on every
-// screen. Free play (no zones) is the host's say, sent with the sockets.
+// screen. Free play (no zones) is the host's say, sent with the sockets. A game from the games list
+// (gameslist.ts) takes the wall down on each screen while it's on.
 import * as THREE from "three";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
@@ -525,7 +526,20 @@ export class Zones {
     const n = this.openFor(f);
     if (n === this.openN && all === this.all) return;
     this.openN = n; this.all = all;
-    this.map.zoneFence = all || n >= this.list.length ? null : this.fence;
+    this.fenceUp();
+  }
+
+  private lifted = false;
+  /** Take the wall down on this screen for a while, and put it back (a game from the games list,
+   *  gameslist.ts, can be in a zone that isn't open yet). */
+  lift(on: boolean) {
+    if (on === this.lifted) return;
+    this.lifted = on;
+    this.fenceUp();
+  }
+
+  private fenceUp() {
+    this.map.zoneFence = this.all || this.lifted || this.openN >= this.list.length ? null : this.fence;
     this.version++;
     this.build();
   }

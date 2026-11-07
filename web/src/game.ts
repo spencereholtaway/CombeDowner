@@ -77,7 +77,8 @@
 //   filling a socket are asks ("odq"). A milestone's fly-over (reveal.ts) plays on every screen.
 // - The zones (zones.ts): how many are open follows from the sockets full, so the wall stands in the
 //   same place on every screen with nothing more sent; the host's word on the sockets also says
-//   whether the room is in free play.
+//   whether the room is in free play. A game picked from the games list (gameslist.ts) takes the wall
+//   down on every screen till it's over, and the pub takeover from there goes round as "gl".
 // - Which of the zones, the strange objects and the team challenges are on (features.ts) is the
 //   host's say, sent with its state ("st"); everyone else plays by the host's switches.
 import * as THREE from "three";
@@ -123,6 +124,7 @@ import { carryIcon } from "./carryicons";
 import { IDKFA } from "./cheats";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
+import { gamesFollow, gamesHeard } from "./gameslist";
 import { NightOut } from "./nightout";
 import { missionActive, missionProgress, missionClear, missionResultUp, missionReward } from "./missionscreens";
 import { guide, news, noticeHold, noticeUp, people, reward, named } from "./notice";
@@ -938,7 +940,8 @@ export class Game {
     this.listen("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
     this.listen("ow", here((d, from) => { if (this.isHost) this.applyCrash(from, d); }));
     this.listen("mk", here((d, from) => this.onMarker(d, from)));
-    this.listen("qe", here((d, from) => this.quests.onMessage(d, from)));
+    this.listen("qe", here((d, from) => { this.quests.onMessage(d, from); if (d?.k === "start") gamesFollow(this, d); }));
+    this.listen("gl", here((d) => gamesHeard(this, d)));
     this.listen("rb", here((d, from) => { if (this.onRide()) this.rideBumps.heard(this.player, this.otherRiders().find((o) => o.id === from), d); }));
     this.listen("bv", here((d, from) => this.invasion.onMessage(d, from)));
     this.listen("no", here((d, from) => this.night.onMessage(d, from)));
@@ -1430,6 +1433,8 @@ export class Game {
   mapPicture() { return this.minimap.picture(); }
 
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
+  /** The zones' wall down on this screen, or back up (gameslist.ts). */
+  liftZones(on: boolean) { this.zones.lift(on); }
 
   /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
   get knownIds(): string[] { return [...this.known]; }

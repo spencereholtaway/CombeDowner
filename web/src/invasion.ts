@@ -87,7 +87,8 @@
 // host). Older pages find none of the squares they expect in it and ignore it. The Gaffers who got
 // away go round on their own as "fg". Cuffing him is asked of the host ("gcf"). Whoever shoots a flag
 // down tells everyone at once ("down", with the cluster and the flag), so it drops on every screen;
-// the host counts it, and clears the street when its last flag is down.
+// the host counts it, and clears the street when its last flag is down. The games list (gameslist.ts)
+// can have the host call a takeover at a pub of its choosing, there and then.
 // The night out (nightout.ts) listens in: it is told, on every screen, when a pub is won or lost and
 // when the Gaffer is caught or gets away, and it can ask the host which street the lads are eyeing
 // next (which is then where their next cluster goes) and to send a ladder crew somewhere. Nothing of
@@ -825,6 +826,11 @@ export class Invasion {
     const weight = (p: { x: number; z: number }) => this.flagsAround(p.x, p.z, 600) / 20 + 0.05;
     let r = Math.random() * pubs.reduce((s, p) => s + weight(p), 0);
     const p = pubs.find((o) => (r -= weight(o)) <= 0) ?? pubs[0];
+    this.addCall(p, vice);
+    return true;
+  }
+
+  private addCall(p: { name: string; x: number; z: number; d: number }, vice: boolean) {
     this.calls.push({
       id: ++this.callN + Math.floor(Math.random() * 1e6) * 100, name: p.name, x: p.x, z: p.z,
       until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 30, left: -1, boss: 0,
@@ -832,7 +838,26 @@ export class Invasion {
     });
     this.dirty = true;
     this.sendT = 0;
-    return true;
+  }
+
+  /** Whether the Flag Lads could take this pub now (the games list, gameslist.ts): not one won back
+   *  this season, nor by a school, nor while the town's been made safe from them. */
+  canTake(name: string) {
+    const p = this.w.pubs().find((q) => q.name === name);
+    return !!p && this.on && !this.saved && !this.freed.some((f) => f.n === name) && !inSafeZone(this.w.map, p.x, p.z, 30);
+  }
+
+  /** Host: the Flag Lads take this pub straight away (the games list). */
+  takeNow(name: string) {
+    const p = this.w.pubs().find((q) => q.name === name);
+    if (!p || !this.w.isHost || !this.canTake(name) || this.takenOver(name)) return;
+    this.addCall({ ...p, d: 0 }, this.calls.length > 0);
+  }
+
+  /** The pavement outside a pub, where its takeover's fought. */
+  pubFront(name: string) {
+    const p = this.w.pubs().find((q) => q.name === name);
+    return p ? this.frontOf({ name, x: p.x, z: p.z }) : null;
   }
 
   private hostCall(c: Call, dt: number, alive: Target[], room: number) {
@@ -884,7 +909,7 @@ export class Invasion {
   private ladderLads(room: number) { return Math.min(3, 1 + Math.floor((room - 1) / 2)); }
 
   /** Where the front of a pub is: the spot on the pavement outside, and the way out from the door. */
-  private frontOf(c: Call) {
+  private frontOf(c: Pick<Call, "name" | "x" | "z">) {
     const pub: { yaw?: number } = this.w.pubs().find((p) => p.name === c.name) ?? {};
     let ux = 0, uz = 1, d = 4;
     if (pub.yaw !== undefined) { ux = Math.sin(pub.yaw); uz = Math.cos(pub.yaw); }

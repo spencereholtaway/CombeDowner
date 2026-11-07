@@ -40,6 +40,7 @@ import { easelUp, onEaselRelock } from "./easel";
 import { closeButton, closeModals, modalUp, onModal, onModalRelock } from "./modal";
 import { Unlit } from "./unlit";
 import { Trackpad } from "./trackpad";
+import { gamesUnlocked, openGames, useGames, whenGames } from "./gameslist";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -760,6 +761,19 @@ function pauseButton(id: string, text: string, onclick: () => void) {
   $("trophybtn").after(b);
 }
 pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
+// the games list (gameslist.ts), on the main menu and the pause menu once it's unlocked on this device;
+// from the main menu it starts a game on your own first
+{
+  const fromMenu = document.createElement("button");
+  fromMenu.type = "button"; fromMenu.id = "gamesbtn"; fromMenu.className = "settingsbtn"; fromMenu.textContent = "Games";
+  fromMenu.dataset.page = "700";
+  fromMenu.onclick = () => { if (!game) start("SOLO", true); openGames(); };
+  $("linkbtn").after(fromMenu);
+  pauseButton("gamesbtn2", "Games", () => openGames());
+  $("gamesbtn2").dataset.page = "700";
+  whenGames(() => { fromMenu.hidden = $("gamesbtn2").hidden = !gamesUnlocked(); });
+  useGames({ game: () => game, play: () => { $("pause").hidden = true; lock(); } });
+}
 const paperHud = document.createElement("button");
 paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
 paperHud.onclick = () => readPaper();

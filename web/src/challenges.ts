@@ -7,6 +7,7 @@
 // so it goes round the room, joins and restores the way jobs do, and starts the way every
 // minigame does (lineup.ts: the entries, then everyone who entered put at its spots, a title card
 // and a countdown); at GO the job's own things take over in the same place. A challenge won leaves one of the strange objects where it finished.
+// The games list (gameslist.ts) can start any one placed on the map, open or not.
 // docs/challenges.md is the guide to writing one.
 //
 // Who decides what: nobody. Where each challenge goes comes from the map alone, and which are open
@@ -114,6 +115,14 @@ export function challengesOn(map: GameMap) {
 /** The challenges open with n sockets full. */
 export const openWith = (map: GameMap, n: number) => challengesOn(map).filter((p) => n >= p.at);
 
+/** Every challenge there is, placed on this map or not. */
+export const allChallenges = (): readonly Challenge[] => list;
+
+const takers = new Map<string, (seed: number) => Offer | null>();
+/** A challenge's poster for any seed, wherever its zone is and whatever's been done today (the games
+ *  list, gameslist.ts); null if it isn't on this map. */
+export const challengeOffer = (id: string, seed: number) => takers.get(id)?.(seed) ?? null;
+
 /** Is challenge id kind of job (quests.ts)? */
 export const isChallenge = (kind: string) => list.some((c) => c.id === kind);
 
@@ -122,6 +131,7 @@ export function useChallenges(map: GameMap, zones: Zones, sockets: () => number)
   filled = sockets;
   zonesOn = zones;
   placedOn = null;
+  takers.clear();
   const here = challengesOn(map);
   for (const c of list) {
     const p = here.find((q) => q.c.id === c.id);
@@ -130,16 +140,20 @@ export function useChallenges(map: GameMap, zones: Zones, sockets: () => number)
       kind: c.id, seed, stars: c.stars ?? 3, title: c.name, blurb: c.blurb,
       reward: feature("strange") ? "Something strange, left where you finish" : "Bragging rights", x, z, where,
     });
+    const posterFor = (seed: number) => {
+      if (!p) return null;
+      const at = c.where?.(seed, p.spots, map) ?? p.spots[0];
+      return offer(seed, at.x, at.z, at.name);
+    };
+    takers.set(c.id, posterFor);
     registerJob({
       id: c.id, glyph: c.glyph, colour: c.colour, label: "Challenge",
       challenge: true, open, goal: c.goal,
       offer: () => null,
       // one board a day, where it's happening, so you take it on the spot
       daily: () => {
-        if (!open() || !p) return null;
-        const seed = hash("challenge", c.id, dayNumber());
-        const at = c.where?.(seed, p.spots, map) ?? p.spots[0];
-        return [offer(seed, at.x, at.z, at.name)];
+        const o = open() ? posterFor(hash("challenge", c.id, dayNumber())) : null;
+        return o && [o];
       },
       start: (o, w, started, by, _local, cast) => c.start({ offer: o, spots: p?.spots ?? [{ x: o.x, z: o.z, name: o.where }], w, started, by, cast }),
       lineup: c.lineup && { ...c.lineup, spots: c.lineup.spots && p ? (o, w, n) => c.lineup!.spots!({ offer: o, spots: p.spots, w }, n) : undefined },

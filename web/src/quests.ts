@@ -37,6 +37,10 @@
 // structure (oddments.ts) opens them up. They have no board: the thing itself stands waiting at its
 // place (a broken-down bus, two balloons on the grass), and you walk up to it to start it.
 //
+// The games list (gameslist.ts), a hidden page for trying them out, starts any job or challenge here
+// and now for the whole room with everyone entered, whatever's on and whatever's been done today; it
+// goes round as a "start" as from a noticeboard.
+//
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
 import * as THREE from "three";
@@ -62,6 +66,7 @@ import { Lineup, type LineupConfig } from "./lineup";
 import { named } from "./notice";
 
 const RECALL_SECS = 14;     // seconds the brief stays up when J brings it back
+const LIST_ENTRY = 2;       // seconds for a games-list start to reach everyone, all of them entered already
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -940,6 +945,44 @@ export class Quests {
     }
     if (this.lining && d.s === this.lu!.offer.seed) { this.lu!.event(d, from); return; }
     if (this.job && d.s === this.job.offer.seed) this.job.event?.(d, from);
+  }
+
+  // ---- the games list (gameslist.ts) ---------------------------------------------------------------
+
+  /** The minigame on, started or still lining up. */
+  get taken(): Offer | null { return this.current; }
+  /** What the jobs are lent, for the games list to put people in place with. */
+  get world(): QuestWorld { return this.w; }
+  /** The pubs are in, so a job can find its place. */
+  get isReady() { return this.ready(); }
+
+  /** A poster for a job of this kind at the nearest spot to you that it can be set at, up today or
+   *  not; a fresh salt makes a fresh one. */
+  offerFor(id: string, salt: number): Offer | null {
+    const kind = kinds.get(id);
+    if (!kind || kind.challenge) return null;
+    const me = this.w.me(), ok = (x: number, z: number) => this.w.map.fieldEdge(x, z) > 90;
+    const spots: PostSpot[] = [
+      ...this.w.pubs().filter((p) => ok(p.x, p.z)).map((p) => ({ x: p.x, z: p.z, name: p.name, pub: true })),
+      ...this.w.places().filter((p) => ok(p.x, p.z)).map((p) => ({ x: p.x, z: p.z, name: p.n, pub: false })),
+    ].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z));
+    for (let k = 0; k < Math.min(40, spots.length); k++) {
+      const o = kind.offer(rng(hash("games", id, salt, k)), spots[k], this.w);
+      if (o) return o;
+    }
+    return null;
+  }
+
+  /** Start a job now for everyone in the room, all of them entered already, calling off whatever's on
+   *  and never mind whether it's been done today. mark goes round with it. */
+  startFor(o: Offer, mark: object) {
+    const was = this.current;
+    if (was && !this.local) this.w.send("qe", { k: "stop", s: was.seed });
+    const ids = this.w.players().map((p) => p.id);
+    this.begin(o, Date.now(), this.w.selfId, undefined, false, ids.length > 1 ? LIST_ENTRY : 0);
+    if (!this.lu) return;
+    for (const id of ids) this.lu.enter(id);
+    this.w.send("qe", { k: "start", o, t: this.started, by: this.by, lu: this.lu.entrySecs, l: this.lu.state(), ...mark });
   }
 
   /** Someone joined: the host tells them what job's on. */
