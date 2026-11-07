@@ -868,6 +868,21 @@ While there's wood to fetch, a pair of prefects in suits turns up behind anyone 
 court and follows them about, telling them to hurry up, do more, and stop dawdling. They don't carry
 any wood themselves.
 
+### The Climb
+
+A team challenge up a crag of its own, high over the cloud, which only counts when the whole team
+stands on top together. Walk into the face (or E) to grab a hold; the keys or the stick reach for
+the next, Space lunges and C lets go. Your grip drains as you hang and comes back on a ledge or a
+big white jug. The orange holds are out of reach from their ledge: a mate crouches and you stand
+on their shoulders. On a ledge, E by the lip hauls up a mate just below.
+
+Ropes: the first one onto a ledge can drop its rope (E by the coil). With a team the rope only
+holds while someone on the ledge holds it: E at its top takes the strain, and you stay put while
+you do. A strain meter under the crosshair shows how many are hanging on it, and your grip drains
+faster the more there are, so send them up one at a time. E (or C) lets go, and the rope goes slack:
+anyone on it slides down to the ledge below and the rope lies in a heap there until someone up top
+holds it again. Alone the rope is tied off and holds on its own.
+
 ### The wardrobe
 
 Daft things to wear, earned round Bath and seen by everyone: a seagull on your head, a splattered

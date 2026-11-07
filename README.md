@@ -398,7 +398,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   you hang and climb (more on a long reach) and comes back on a ledge, or hanging off one of the
   big white jugs partway up the long stretches. The big orange holds are out of reach from their
   ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches down to haul up a
-  mate below, and the first one up drops a rope for the rest. A short fall hurts your grip till
+  mate below, and the first one up drops a rope for the rest. With a team a rope only holds while
+  someone up on its ledge holds it (E at its top): holding it you can't climb, your grip drains for
+  every mate hanging on it (a strain meter shows how many), and if you let go it goes slack and
+  whoever's on it slides down to the ledge below, so someone always stays behind each rope. Alone
+  a rope is tied off. A short fall hurts your grip till
   you've rested; a big one knocks you out where you land, and a mate has to come down, pick you up
   (E) and carry you back up to the team's ledge in time, or you're out, a ghost, till someone drops
   a rope from the next ledge. The team shares its lives, hearts on the card (three, and one more

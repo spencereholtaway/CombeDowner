@@ -572,13 +572,20 @@ export function buildCrag(room: Room) {
   const ropeMesh = new THREE.InstancedMesh(ropeGeo, ropeMat, 8), coilMesh = new THREE.InstancedMesh(coilGeo, ropeMat, 8);
   ropeMesh.count = coilMesh.count = 0;
   group.add(ropeMesh, coilMesh);
-  function setRopes(route: Route, down: Set<number>) {
+  /** held: the dropped ropes someone up there is holding; the rest have gone slack, an end over the
+   *  lip and the rest in a heap at the bottom. Leave it out and every dropped rope hangs. */
+  function setRopes(route: Route, down: Set<number>, held = down) {
     let n = 0, c = 0;
     const m4 = new THREE.Matrix4(), v3 = new THREE.Vector3(), sc = new THREE.Vector3(), flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), none = new THREE.Quaternion();
     route.ledges.forEach((l, k) => {
       if (k === 0) return;
       const ly = l.y - room.y0;
-      if (down.has(k)) {
+      if (down.has(k) && !held.has(k)) {
+        const under = route.ledges.find((x, j) => j > 0 && x.y === l.foot);
+        const out = under ? Math.min(ropeOut(l), under.o + under.d - 0.4) : ropeOut(l) + 0.4;
+        ropeMesh.setMatrixAt(n++, m4.compose(v3.set(l.rope, ly - 0.5, ropeOut(l)), none, sc.set(1, 1.2, 1)));
+        coilMesh.setMatrixAt(c++, m4.compose(v3.set(l.rope, l.foot - room.y0 + 0.09, out), flat, sc.set(1.3, 1.3, 1)));
+      } else if (down.has(k)) {
         const len = l.y - l.foot + 0.2;
         ropeMesh.setMatrixAt(n++, m4.compose(v3.set(l.rope, ly - len / 2 + 0.1, ropeOut(l)), none, sc.set(1, len, 1)));
       } else coilMesh.setMatrixAt(c++, m4.compose(v3.set(l.rope, ly + 0.09, coilOut(l)), flat, sc.set(1, 1, 1)));
