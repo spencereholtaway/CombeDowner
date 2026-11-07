@@ -873,8 +873,12 @@ any wood themselves.
 A team challenge up a crag of its own, high over the cloud, which only counts when the whole team
 stands on top together. Walk into the face (or E) to grab a hold; the keys or the stick reach for
 the next, Space lunges and C lets go. Your grip drains as you hang and comes back on a ledge or a
-big white jug. The orange holds are out of reach from their ledge: a mate crouches and you stand
-on their shoulders. On a ledge, E by the lip hauls up a mate just below.
+big white jug. With a team a few stretches start blank, their first hold (big and orange) out
+of reach from the ledge under it: a mate crouches (C) and you stand on their shoulders and jump for
+it. There's one such stretch with two or three of you, two with four or five and three with six or
+more, and with four or more one of them (a bigger red hold) needs two stacked: one crouches, the
+next stands on their shoulders and crouches too, and the third climbs up on top. Alone there are
+none. On a ledge, E by the lip hauls up a mate just below.
 
 Ropes: the first one onto a ledge can drop its rope (E by the coil). With a team the rope only
 holds while someone on the ledge holds it: E at its top takes the strain, and you stay put while

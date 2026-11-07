@@ -27,7 +27,8 @@
 //   for everyone. Run out, or all be down at once, and a fail card goes up and it's back to the
 //   bottom with the lives filled again.
 // - Alone it can be done (there are more holds, and none needs a boost); with more of you there
-//   are fewer holds and more of them need a boost.
+//   are fewer holds, and a few stretches start blank: one with two or three, up to three with six
+//   or more, and with four or more one needs two stacked (a mate crouched on a crouching mate).
 // Where it waits comes from the map; the crag is the same on every map, and its holds come from
 // the job's seed and how many entered, so everyone climbs the same face. The crag's ledges,
 // the grass at its foot and its top are things to stand on (map.floors), and its rock is solid
@@ -45,7 +46,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { challengesOn, registerChallenge } from "./challenges";
-import { BACK, BOOST_HOLD, buildCrag, FRONT, H, HALF, rockMost, rockOut, ropeOut, roomOver, routeFor, STILE, STILE_OUT, type Room, type Route } from "./crag";
+import { BACK, buildCrag, FRONT, H, HALF, rockMost, rockOut, ropeOut, roomOver, routeFor, STACK_HOLD, STILE, STILE_OUT, type Room, type Route } from "./crag";
 import { strip } from "./controls";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
@@ -1278,8 +1279,11 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
     if (mode !== M.Free || !pl.onGround) return "";
     const me = w.me(), k = ledgeAt(me.x, me.y, me.z, true);
     if (k < 0 || k >= S()) return "";
-    const [s] = local(me.x, me.z), next = route.holds.find((h) => h.boost && h.y > route.ledges[k].y && h.y < route.ledges[k].y + BOOST_HOLD + 0.1);
-    if (next && Math.abs(next.s - s) < 2.5 && !ropes.has(k + 1)) return "Out of reach: a mate crouches ({crouch}) and you stand on their shoulders";
+    const [s] = local(me.x, me.z), next = route.holds.find((h) => h.boost && h.y > route.ledges[k].y && h.y < route.ledges[k].y + STACK_HOLD + 0.1);
+    if (next && Math.abs(next.s - s) < 2.5 && !ropes.has(k + 1)) {
+      return next.two ? "Out of reach even off one mate: one crouches ({crouch}), the next stands on their shoulders and crouches too, and you climb up on top"
+        : "Out of reach: a mate crouches ({crouch}) and you stand on their shoulders";
+    }
     return "";
   }
 

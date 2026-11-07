@@ -396,8 +396,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the next hold that way, Space lunges for one further off and C lets go. The holds are laid out
   as routes, a reach apart, with a hard bit of longer reaches on each stretch. Your grip drains as
   you hang and climb (more on a long reach) and comes back on a ledge, or hanging off one of the
-  big white jugs partway up the long stretches. The big orange holds are out of reach from their
-  ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches down to haul up a
+  big white jugs partway up the long stretches. The big orange holds start a blank stretch, out of
+  reach from their ledge: a mate crouches and you stand on their shoulders. There's one with two or
+  three of you, up to three with six or more, and with four or more one of them, a bigger red
+  hold, needs two stacked: one crouches, the next stands on their shoulders and crouches too, and
+  you climb up on top. On a ledge, E reaches down to haul up a
   mate below, and the first one up drops a rope for the rest. With a team a rope only holds while
   someone up on its ledge holds it (E at its top): holding it you can't climb, your grip drains for
   every mate hanging on it (a strain meter shows how many), and if you let go it goes slack and
