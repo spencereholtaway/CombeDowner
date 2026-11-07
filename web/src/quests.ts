@@ -24,6 +24,7 @@
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
+// A job or challenge won is done for the day on that screen; one lost can be taken again straight away.
 // A job lost (bar Seagull Attack) leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
 // so stopping or swapping jobs costs nothing.
 // A Gaffer who got away from a pub takeover (invasion.ts, gaffer.ts) is the next game day's Wanted
@@ -879,7 +880,8 @@ export class Quests {
     if (this.local) { this.clear(); return; }   // a go of your own: it just ends
     this.onEnd(job.offer, d);
     this.finishT = 6;
-    if (!kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
+    // only a win puts a job by for the day: one lost can be had another go at
+    if (d.won && !kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
     try { localStorage.setItem(DONE_KEY, JSON.stringify({ day: this.day, seeds: [...this.doneSeeds] })); } catch { /* ignore */ }
     this.onDone(d.won);
     if (!d.won) this.scar();
