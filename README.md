@@ -178,7 +178,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
   and flashing while a gull's after it, and the ring is on the maps. The tourists point out gulls coming
   in, wave their arms at one after their lunch, duck, cheer a good shot and storm off in a huff,
-  saying so. Each kind of gull has its own look, every wave comes in from one side under a banner
+  saying so. A hoverer hanging over a bench has a ring of segments round it that fills like a clock while
+  your crosshair's on it; a gull making off with a bite has it in its beak and flashing red brackets
+  round it; a gull you've beaten bursts into feathers, squawks, tumbles and goes a see-through grey as it
+  shoots off over the roofs, three times as fast as a thief. Each kind of gull has its own look, every
+  wave comes in from one side under a banner
   saying what's in it and from where, and one of the three crates between waves is always a box of
   rounds: the team picks ammo or an upgrade.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub

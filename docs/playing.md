@@ -699,9 +699,15 @@ tourist shows through walls and hedges, green to red as their sandwich goes, fla
 after it; the ring is on the minimap. The tourists point out gulls on the way, wave their arms and
 shoo, duck, shout for help if you're far off, cheer a good shot and storm off when their sandwich is
 gone. Each wave comes in from one side, with a banner naming what's in it, and every kind looks
-different: white herring gulls, slate-winged hoverers in an amber ring (it goes green as you stare),
-a small dark gang coming in low and tight, brown walkers on foot, fat yellowish poopers trailing
-drips. Between waves three crates go out and the team takes one. One is always a box of rounds,
+different: white herring gulls, slate-winged hoverers, a small dark gang coming in low and tight,
+brown walkers on foot, fat yellowish poopers trailing drips. A hoverer hanging over a bench has a
+ring of dark segments round it, and they light up one by one while your crosshair's on it: fill the
+ring and it gives up (the ring is only there while staring works). A gull flying off with a bite
+carries it in its beak, slowly, with flashing red brackets round it that show through roofs: shoot
+it before it gets away and the bite's saved. A gull that's beaten (shot, stared out or shouted off)
+bursts into feathers, squawks, tumbles and turns a see-through grey as it beats off over the roofs,
+three times as fast as any thief; it can't be shot again, and nothing's left round it. Between
+waves three crates go out and the team takes one. One is always a box of rounds,
 enough for everyone for the next two waves (more for a harder poster), so you choose ammo or an
 upgrade (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings): aim well and you
 can skip the rounds. Stars for how much sandwich is left, a daily twist (bank holiday, Chip
