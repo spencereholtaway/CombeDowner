@@ -9,7 +9,7 @@
 // when you let go, the hold once it's been held a moment. It's only another way of pressing the same
 // keys and buttons: the pad is read each frame, and each page (main.ts, mines/main.ts) says what its
 // buttons do as a table of actions (padActions), mostly pressing the keyboard key that does it, so
-// nothing in the game knows a pad is there. Which button each control is on, and what the prompts
+// nothing in the game knows a pad is there, but for a minigame with buttons of its own (the bells' lanes), which takes them over while it's on (padTake). Which button each control is on, and what the prompts
 // call it, comes from the one table of controls (controls.ts). Any action can be moved to another
 // button in Settings, kept in this browser. Once the pad is the last thing you touched, the prompts
 // name its buttons rather than the keys (ctl in controls.ts), and a key or the mouse puts the keys' names back. Off the game (the menus, the pause screen) the d-pad or left stick moves between the
@@ -228,7 +228,13 @@ let pending: { b: number; at: number; tap: PadAction; hold: PadAction } | null =
 
 /** A button pressed or let go while playing: whatever it's set to do. At the wheel the triggers are
  *  the pedals and do nothing else. Let-gos go to everything on the button, so nothing's left held. */
+let taker: ((b: number, down: boolean) => boolean) | null = null;
+/** A minigame with buttons of its own while it's on (the bells' lanes) has first go at every press
+ *  and let-go: it returns true for one it took. null hands the buttons back. */
+export function padTake(fn: typeof taker) { taker = fn; }
+
 export function padPress(b: number, down: boolean) {
+  if (taker?.(b, down)) return;
   if (!down) {
     if (pending?.b === b) { const t = pending.tap; pending = null; t.run(true); }
     for (const a of actions) if (bound[a.id] === b) a.run(false);

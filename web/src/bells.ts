@@ -1,42 +1,46 @@
 // Bell Ringing, a team challenge (challenges.ts): English change ringing up a church tower. The
 // challenge stands at the biggest church in reach of where everyone starts, found from the map's
 // own buildings, so every map with a church has one. Outside it a sandwich board says to try bell
-// ringing today, with the vicar stood by it beckoning you over. Everyone who enters (lineup.ts) is
-// gathered round the vicar and taken up the tower at GO, into the ringing chamber, a room of our own built high over the street, each player holding
-// one bell's rope. The touch starts in rounds (1-2-3-4...), then the method moves the bells about,
-// pairs swapping places every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one,
-// and the more of you there are, the more bells and the longer the touch. Rows come at a steady
-// beat, handstroke and backstroke, with the open gap before each handstroke, and each player pulls
-// (jump, or Pull on a touch screen: the bells' table in controls.ts) at their own bell's moment in
-// every row. A bell sounds a moment after its rope is pulled, as a real one does, so you have to
-// pull ahead of the beat: the blue line on the right shows where your bell comes in each row, and
-// the sally gauge under it when to pull. Pull early or late and the bell clashes with its
-// neighbour; late enough and the rope hauls you up off the floor. Two bad rows in a row and the
-// whole lot collapses into a jangle, and too many bad rows over the touch and the conductor calls
-// Stand: lost either way. Ring it through clean enough and the strange object turns up at the
-// church door. With fewer than three players, steady old ringers who never miss make up three
-// bells; anyone else can climb up too (use, by the vicar), and once the ringing has started stands
-// by the wall and watches.
+// ringing today, with the vicar stood by it beckoning you over. Everyone who enters (lineup.ts) goes
+// straight up at GO, with no count in, into the ringing chamber, a room of our own built high over
+// the street. The touch starts in rounds (1-2-3-4...), then the method moves the bells about, pairs
+// swapping places every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one.
+//
+// Each ringer plays their part on a note highway in the middle of the screen (bellhighway.ts), the
+// way Guitar Hero does: a lane for each of their bells, a key for each lane (the bells' table in
+// controls.ts; a pad's shoulder buttons, or a pad to tap on a touch screen), and a note coming down
+// a lane for each time that bell sounds, in its place in the row, so the lanes trace the method. With
+// only one bell your two lanes are its handstroke and its backstroke. The more of you there are, the
+// more bells (up to eight), shared out in turn so up to four of you each have two or more, and the
+// longer the touch; a harder day adds a bell. A note struck on the line is Perfect or Good, and
+// builds your streak and multiplier; early or late and the bell clashes with its neighbour (late
+// enough and the rope hauls you off the floor); left alone it's missed. Every bell missed or clashed
+// costs the whole band's striking and a clean row gives a little back: let it run out and the lot
+// collapses into a jangle. Ring it through and the strange object turns up at the church door.
+// A bell sounds a moment (LEAD) after its rope is pulled, as a real one does. Anyone else can climb
+// up too (use, by the vicar), and once the ringing has started stands by the wall and watches.
 //
 // Who decides what: the host keeps the time and runs the band. Each screen syncs its clock to the
 // host's ("tq"/"ta" inside "qe"), so the rows are laid out on one shared clock from the moment the
-// host says go. A pull is timed on the puller's own synced clock, and what goes round is when that
-// pull makes the bell sound; since that's a little after the pull, it reaches everyone before the
-// bell is due, and every screen plays it at the same shared moment, however far away the puller
-// is. The host starts the ringing once everyone who entered is up, or someone up there calls
-// "Look to!". The host judges each row from those times (the puller decided their own pull, as a shooter
-// decides their own hits) and says which rows were bad, and when it's won or collapsed. The
-// steady ringers strike on the beat on every screen alike, and take over a rope if its ringer
-// leaves the game.
+// host says go. "go" carries the bells, the day's level and whose each bell is, so every screen
+// draws the same chart from it. A pull is timed on the puller's own synced clock, and what goes
+// round is when that pull makes the bell sound; since that's a little after the pull, it usually
+// reaches everyone before the bell is due, and every screen plays it at the same shared moment,
+// however far away the puller is. The host judges each row from those times (the puller decided
+// their own pull, as a shooter decides their own hits), says which bells were out and what's left of
+// the striking, and when it's won or collapsed. Your score and streak are your own screen's. Steady
+// old ringers, striking on the beat on every screen alike, take over a ringer's ropes if they leave.
 //
-// For testing, ?ringer=good rings your own bell for you on the beat, and ?ringer=bad rings it
+// For testing, ?ringer=good rings your own bells for you on the beat, and ?ringer=bad rings them
 // all over the place.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { dayNumber } from "./daylight";
-import { ctl } from "./controls";
+import { control, isKey } from "./controls";
+import { padTake } from "./gamepad";
+import { AHEAD, Highway, type Gem } from "./bellhighway";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
 import { speak } from "./posh";
@@ -46,7 +50,7 @@ import { ring } from "./lineup";
 import { named } from "./notice";
 
 const COLOUR = "#d9a441";
-const LEAD = 700;            // ms from pulling the rope to the bell sounding
+const LEAD = 200;            // ms from pulling the rope to the bell sounding
 const HALF = 5;              // the ringing chamber's half-width, metres
 const ROOM_H = 3.7;
 const CLIMB = 6;             // how close to the vicar's board (or under the chamber) to climb the tower
@@ -541,14 +545,34 @@ function watchAt(k: number): [number, number] {
 interface Go { T: number; n: number; L: number; band: string[] }
 type Phase = "gather" | "ring" | "stand" | "down";
 
+/** The five lane controls, each always in its own colour. */
+const LANE_CTL = ["bells.lane1", "bells.lane2", "bells.lane3", "bells.lane4", "bells.lane5"];
+const LANE_COLOUR = ["#3fd24a", "#e8423a", "#f2d43a", "#3a8af2", "#f2913a"];
+/** Which of them a highway of so many lanes uses, from the middle out. */
+const LANE_SET = [[2], [1, 3], [1, 2, 3], [0, 1, 3, 4], [0, 1, 2, 3, 4]];
+
+/** The bells for this many ringers on a day of level L, and whose each is (blank for a steady old
+ *  ringer): the more of you, the more bells, shared out in turn, so up to four of you all have two
+ *  or more each, and a harder day has one more while there's room. */
+function bandFor(ids: string[], L: number): string[] {
+  const k = Math.min(MAX_BELLS, ids.length);
+  const n = Math.min(MAX_BELLS, [4, 4, 5, 6, 8][Math.min(4, k)] + (L >= 1 && k <= 3 ? 1 : 0));
+  return Array.from({ length: n }, (_, b) => (k ? ids[b % k] : ""));
+}
+
+const STRIKING = 0.6;        // the band's striking at the start, 0..1
+const FAULT = 0.07;          // what each bell missed or clashed in a row costs it
+const MEND = 0.03;           // and what a clean row gives back
+
 registerChallenge({
   id: "bells", name: "Bell Ringing", glyph: "R", colour: COLOUR, tier: 2, stars: 3,
-  blurb: "Up the tower, a rope each: ring the method through with the bells in their places",
-  goal: () => "Climb the tower and ring the touch without the bells clashing",
+  blurb: "Up the tower, a rope or two each: ring your part of the method down the note highway, and keep the band striking",
+  goal: () => "Ring the touch through without the bells collapsing into a jangle",
   place,
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0]),
-  // round the vicar at the foot of the tower; at GO up the tower
-  lineup: { start: "timed", spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4) },
+  // round the vicar for a moment, then straight up into the ringing chamber: the conductor's own
+  // "Look to!" is the only count in
+  lineup: { start: "calm", hold: 0.5, spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4) },
   start({ offer, spots, w, cast }) {
     const board = spots[0], mid = spots[1] ?? spots[0];
     const church = board.name;
@@ -558,6 +582,7 @@ registerChallenge({
     let tallest = ground0(w.map);
     for (const b of w.map.wide?.buildingsNear(C.x, -C.z, 30) ?? []) tallest = Math.max(tallest, b.g + b.h + (b.rp ?? 0));
     const top = Math.round(Math.max(ground0(w.map) + 50, tallest + 14));
+    const level = hash("bells", dayNumber()) % 3;
 
     // the shared clock: the host's, as near as each screen can tell
     let off: number | null = w.isHost ? 0 : null;
@@ -569,45 +594,66 @@ registerChallenge({
     let list: string[] = [];
     let go: Go | null = null;
     let rows: number[][] = [], placeOf: number[][] = [], changesFrom = 4, changesTo = 4, methodName = "";
-    let B = 400, clashT = 160, goodT = 80, period = 1000, allow = 2, R = 0;
+    let B = 400, okT = 130, perfT = 50, period = 1000, R = 0;
+    let mine: number[] = [];
     const steady = new Set<number>();
     const pulls = new Map<number, Map<number, number>>();
     const struck = new Set<number>();
-    let judged = -1, bad = 0, lastBad = -10;
+    let judged = -1, bad = 0, lastBad = -10, striking = STRIKING;
     let ending: { won: boolean; why: string; collapse: boolean; t: number } | null = null;
     let aboard = false, perchY: number | null = null, faced = false, yankAt = -1e9;
     const posed = new Set<string>();
-    let flash: { text: string; colour: string; t: number } | null = null;
     let stage: Card["stage"] = undefined;
     const said = new Set<string>();
     let lookAsked = false;
     let jangleT = 0;
     let gatherSince = 0;
     let upAtGo = cast.includes(w.selfId);
+    let feedAt = 0;
+    let shout: { text: string; t: number } | null = null;
+    // your own part: how it's going, on this screen only
+    const gone = new Set<number>();
+    let score = 0, streak = 0, best = 0, notes = 0, clean = 0;
+    const mult = () => Math.min(4, 1 + Math.floor(streak / 8));
 
     const chamber = buildChamber(C.x, C.z, top, church);
-    // the vicar and his board stay out while you climb, so there's still somewhere to go up from
+    // the vicar and his board stay out, so there's still somewhere to go up from
     const welcome = new Welcome(w.scene, w.map, board, mid);
     let shown = false, chamberN = 0;
     w.mark("@challenge", { x: board.x, z: board.z }, offer.title, COLOUR);
 
-    const hudCanvas = document.createElement("canvas");
-    hudCanvas.style.cssText = "position:fixed;right:12px;bottom:150px;width:210px;height:330px;pointer-events:none;z-index:6;border-radius:10px;display:none";
-    (document.getElementById("hud") ?? document.body).appendChild(hudCanvas);
-    let pullBtn: HTMLButtonElement | null = null;
-    const touch = document.getElementById("touch");
-    if (touch) {
-      pullBtn = document.createElement("button");
-      pullBtn.className = "tbtn"; pullBtn.textContent = "Pull"; pullBtn.hidden = true;
-      pullBtn.style.cssText = "position:absolute;right:130px;bottom:120px;width:104px;height:104px;border-radius:52px;font-size:22px;pointer-events:auto;background:rgba(179,32,44,0.75)";
-      pullBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); pull(); });
-      touch.appendChild(pullBtn);
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.code === "Space" && !e.repeat && aboard && phase === "ring" && !paused()) pull(); };
-    addEventListener("keydown", onKey);
+    const ringing = () => aboard && phase === "ring" && !!go && mine.length > 0 && !paused();
+    const highway = new Highway((k, down) => { highway.press(k, down); if (down && ringing()) pull(k); });
+    const laneCount = () => (mine.length > 1 ? mine.length : 2);
+    const laneCtl = (k: number) => LANE_CTL[LANE_SET[laneCount() - 1][k]];
+    const laneOf = (b: number, r: number) => (mine.length > 1 ? mine.indexOf(b) : r % 2);
+    const laneFor = (match: (id: string) => boolean) => {
+      for (let k = 0; k < laneCount(); k++) if (match(laneCtl(k))) return k;
+      return -1;
+    };
+    // the lane keys are the chamber's while you ring: nothing else (a torch, the job's poster) hears them
+    const onKey = (e: KeyboardEvent) => {
+      if (!ringing() || e.target instanceof HTMLInputElement) return;
+      const k = laneFor((id) => isKey(e.code, id));
+      if (k < 0) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (e.type === "keyup") { highway.press(k, false); return; }
+      if (e.repeat) return;
+      highway.press(k, true);
+      pull(k);
+    };
+    addEventListener("keydown", onKey, true);
+    addEventListener("keyup", onKey, true);
+    padTake((b, down) => {
+      if (!ringing()) return false;
+      const k = laneFor((id) => control(id)?.pad === b);
+      if (k < 0) return false;
+      highway.press(k, down);
+      if (down) pull(k);
+      return true;
+    });
 
-    const myBell = () => (go ? go.band.indexOf(w.selfId) : -1);
-    const n = () => go?.n ?? Math.max(3, Math.min(MAX_BELLS, list.length));
+    const n = () => go?.n ?? bandFor(cast.length ? cast : list, level).length;
     const rowStart = (r: number) => (r * go!.n + Math.floor(r / 2)) * B;
     const beat = (b: number, r: number) => go!.T + rowStart(r) + placeOf[r][b] * B;
     const rowAt = (t: number) => {
@@ -646,11 +692,11 @@ registerChallenge({
       R = rows.length;
       placeOf = rows.map((row) => { const at: number[] = []; row.forEach((b, i) => { at[b] = i; }); return at; });
       B = (430 - 18 * g.n) * (1 - 0.07 * g.L);
-      clashT = B * (0.45 - 0.04 * g.L); goodT = B * 0.2;
+      okT = B * (0.36 - 0.04 * g.L); perfT = okT * 0.4;
       period = (g.n + 0.5) * B;
-      allow = 1 + Math.floor(R / 18);
       steady.clear();
       g.band.forEach((id, b) => { if (!id) steady.add(b); });
+      mine = g.band.flatMap((id, b) => (id === w.selfId ? [b] : []));
       phase = phase === "gather" ? "ring" : phase;
       const c = ctxNow();
       if (c) for (const f of tuning(g.n)) bellBuffer(c, f);
@@ -667,52 +713,83 @@ registerChallenge({
     function climb() {
       aboard = true;
       perchY = null; faced = false;
-      const k = list.indexOf(w.selfId);
-      const [sx, sz] = standSpot(k < 0 ? list.length : k);
+      const [sx, sz] = standSpot();
       w.moveTo(C.x + sx, C.z + sz, Math.atan2(sx, sz));
       w.mark("@challenge", null);
       if (w.isHost) job.event!({ k: "in" }, w.selfId); else send({ k: "in" });
     }
 
-    function standSpot(k: number): [number, number] {
-      const b = myBell();
-      if (go && b >= 0) return ropeAt(b, go.n, 0.95);
+    function standSpot(): [number, number] {
+      if (go && mine.length) return ropeAt(mine[0], go.n, 0.95);
+      const k = cast.indexOf(w.selfId);
       if (!go && k >= 0 && k < MAX_BELLS) return ropeAt(k, n(), 0.95);
-      const watchers = go ? list.filter((id) => !go!.band.includes(id)) : list.slice(MAX_BELLS);
+      const watchers = list.filter((id) => (go ? !go.band.includes(id) : !cast.includes(id)));
       return watchAt(Math.max(0, watchers.indexOf(w.selfId)));
     }
 
     function startRinging() {
       if (go || !w.isHost) return;
-      const band = list.slice(0, MAX_BELLS);
-      const bells = Math.max(3, band.length);
-      while (band.length < bells) band.push("");
-      tell({ k: "go", T: Math.round(nowS() + 5200), n: bells, L: hash("bells", dayNumber()) % 3, band });
+      const here = new Set(w.players().map((p) => p.id));
+      const inIt = cast.filter((id) => here.has(id));
+      const band = bandFor(inIt.length ? inIt : list, level);
+      // long enough for every screen to find the beat, and for the first notes to come down the highway
+      tell({ k: "go", T: Math.round(nowS() + 3000), n: band.length, L: level, band });
     }
 
-    function pull() {
-      const b = myBell();
-      if (!go || b < 0 || phase !== "ring" || off === null) return;
-      const s = nowS() + LEAD, mine = pulls.get(b) ?? new Map<number, number>();
-      pulls.set(b, mine);
-      let best = -1, bd = Infinity;
-      const r0 = Math.max(0, rowAt(s) - 1);
-      for (let r = r0; r < Math.min(R, r0 + 3); r++) {
-        if (mine.has(r) || r <= judged) continue;
-        const d = Math.abs(s - beat(b, r));
-        if (d < bd) { bd = d; best = r; }
-      }
+    /** A lane's key, pad or button: the note in it nearest now, struck. */
+    function pull(lane: number) {
+      if (!go || off === null) return;
+      const s = nowS() + LEAD;
       const c = ctxNow();
       if (c) ropeSound(c, c.currentTime, 0.25, false);
-      if (best < 0 || bd > period * 0.6) return;
-      mine.set(best, s);
-      send({ k: "p", b, r: best, t: Math.round(s) });
+      let nr = -1, nb = -1, bd = Infinity;
+      const r0 = Math.max(0, rowAt(s) - 2);
+      for (let r = r0; r < Math.min(R, r0 + 5); r++) {
+        if (r <= judged) continue;
+        for (const b of mine) {
+          if (laneOf(b, r) !== lane || pulls.get(b)?.has(r) || gone.has(b * 10000 + r)) continue;
+          const d = Math.abs(s - beat(b, r));
+          if (d < bd) { bd = d; nr = r; nb = b; }
+        }
+      }
+      if (nr < 0 || bd > Math.min(period * 0.45, 600)) { streak = 0; highway.judge(lane, "Nothing there", "#b9b4a8"); return; }
+      strikeNote(nb, nr, s);
+    }
+
+    /** Your bell b struck for row r, sounding at shared time s: out to everyone, and how you did. */
+    function strikeNote(b: number, r: number, s: number) {
+      const m = pulls.get(b) ?? new Map<number, number>();
+      pulls.set(b, m);
+      m.set(r, s);
+      send({ k: "p", b, r, t: Math.round(s) });
       strike(b, s);
-      const err = s - beat(b, best);
-      flash = Math.abs(err) <= goodT ? { text: "Good", colour: "#7fe08a", t: performance.now() }
-        : Math.abs(err) <= clashT ? { text: err < 0 ? "A touch quick" : "A touch slow", colour: "#e8c25a", t: performance.now() }
-        : { text: err < 0 ? "Early! Clash" : "Late! Clash", colour: "#ff6a5a", t: performance.now() };
-      if (err > clashT) yank();
+      const err = s - beat(b, r), lane = laneOf(b, r);
+      notes++;
+      if (Math.abs(err) <= okT) {
+        const perfect = Math.abs(err) <= perfT;
+        streak++; best = Math.max(best, streak); clean++;
+        score += (perfect ? 100 : 50) * mult();
+        highway.judge(lane, perfect ? "Perfect" : err < 0 ? "Good, a touch quick" : "Good, a touch slow", perfect ? "#58e06a" : "#e8c25a");
+      } else {
+        streak = 0;
+        highway.judge(lane, err < 0 ? "Early! Clash" : "Late! Clash", "#ff5a4e");
+        if (err > 0) yank();
+      }
+    }
+
+    /** Notes of yours gone past the line unstruck. */
+    function missed(t: number) {
+      if (!go || !mine.length || phase !== "ring") return;
+      const at = rowAt(t + LEAD);
+      for (let r = Math.max(0, at - 2); r <= Math.min(R - 1, at); r++) {
+        for (const b of mine) {
+          const key = b * 10000 + r;
+          if (gone.has(key) || pulls.get(b)?.has(r) || beat(b, r) - LEAD + okT > t) continue;
+          gone.add(key);
+          notes++; streak = 0;
+          highway.judge(laneOf(b, r), "Missed!", "#ff5a4e");
+        }
+      }
     }
 
     function yank() {
@@ -726,10 +803,13 @@ registerChallenge({
       if (said.has(key)) return;
       said.add(key);
       if (aboard || inside()) speak(text, 7, 0, { voice: 0, pitch: 0.8, rate: 1 });
-      if (title) stage = { key, title, sub, colour: COLOUR };
+      // a ringer's eyes are on the highway, so the call goes there rather than over it
+      if (title && aboard && mine.length && phase === "ring") shout = { text: title, t: performance.now() };
+      else if (title) stage = { key, title, sub, colour: COLOUR };
     }
 
-    /** Host: the band's done with row r. Bad if any bell in it was missed or struck out of its place. */
+    /** Host: the band's done with row r. Every bell missed or struck out of its place costs the
+     *  band's striking; a clean row gives a little back. */
     function judge(r: number) {
       if (!go) return;
       const who: [number, number | null][] = [];
@@ -737,114 +817,52 @@ registerChallenge({
         if (steady.has(b)) continue;
         const s = pulls.get(b)?.get(r);
         if (s === undefined) who.push([b, null]);
-        else if (Math.abs(s - beat(b, r)) > clashT) who.push([b, Math.round(s - beat(b, r))]);
+        else if (Math.abs(s - beat(b, r)) > okT) who.push([b, Math.round(s - beat(b, r))]);
       }
       const isBad = who.length > 0;
       const nb = bad + (isBad ? 1 : 0);
-      tell({ k: "row", r, bad: nb, lb: isBad ? r : lastBad, who });
-      if (isBad && lastBad === r - 1) tell({ k: "end", won: false, collapse: true, why: "The bells collapsed into a jangle" });
-      else if (nb > allow) tell({ k: "end", won: false, collapse: true, why: "Too many clashes: the conductor called Stand" });
-      else if (r === R - 1) tell({ k: "end", won: true, collapse: false, why: `${methodName} rung through with ${nb} clash${nb === 1 ? "" : "es"}` });
+      const m = Math.max(0, Math.min(1, striking - who.length * FAULT + (isBad ? 0 : MEND)));
+      tell({ k: "row", r, bad: nb, lb: isBad ? r : lastBad, who, m: Math.round(m * 1000) / 1000 });
+      if (m <= 0) tell({ k: "end", won: false, collapse: true, why: "The striking fell apart and the bells collapsed into a jangle" });
+      else if (r === R - 1) tell({ k: "end", won: true, collapse: false, why: `${methodName} rung through with ${nb} bad row${nb === 1 ? "" : "s"}` });
     }
 
     function finish() {
       if (job.done || !ending) return;
-      job.done = { won: ending.won, title: ending.won ? "Rung through!" : ending.why.startsWith("Too many") ? "Stand!" : "A jangle", text: ending.why, x: board.x, z: board.z, wear: ending.won && !bad ? ["muffs"] : [] };
+      const yours = notes ? ` You struck ${clean} of your ${notes} notes clean, for ${score} (best streak ${best}).` : "";
+      job.done = { won: ending.won, title: ending.won ? "Rung through!" : "A jangle", text: ending.why + "." + yours, x: board.x, z: board.z, wear: ending.won && !bad ? ["muffs"] : [] };
     }
 
     function drawHud() {
-      const show = aboard || (go && inside());
-      if (!show) { if (hudCanvas.style.display !== "none") hudCanvas.style.display = "none"; return; }
-      if (hudCanvas.style.display !== "block") hudCanvas.style.display = "block";
-      const dpr = Math.min(2, devicePixelRatio || 1), Wd = 210, Ht = 330;
-      if (hudCanvas.width !== Wd * dpr) { hudCanvas.width = Wd * dpr; hudCanvas.height = Ht * dpr; }
-      const x = hudCanvas.getContext("2d")!;
-      x.setTransform(dpr, 0, 0, dpr, 0, 0);
-      x.clearRect(0, 0, Wd, Ht);
-      x.fillStyle = "rgba(12,14,22,0.88)"; x.fillRect(0, 0, Wd, Ht);
-      x.textAlign = "left"; x.fillStyle = COLOUR; x.font = "700 13px 'Barlow Condensed', sans-serif";
-      const t = nowS(), b = myBell();
-      if (off === null) { x.fillStyle = "#ddd"; x.fillText("Finding the beat…", 12, 22); return; }
-      if (!go) {
-        x.fillText("THE RINGING CHAMBER", 12, 22);
-        x.fillStyle = "#ddd"; x.font = "13px sans-serif";
-        x.fillText(`${list.length} up the tower`, 12, 46);
-        x.fillText(`${n()} bells${list.length < 3 ? ` (${3 - Math.min(3, list.length)} steady old hands)` : ""}`, 12, 66);
-        x.fillStyle = "#aab"; x.font = "12px sans-serif";
-        x.fillText("Starts when everyone's up,", 12, 96);
-        x.fillText(`or ${ctl("bells.look")} to look to now`, 12, 112);
+      const mineUp = aboard && (go ? mine.length > 0 : cast.includes(w.selfId)) && phase !== "down";
+      highway.show(mineUp);
+      if (!mineUp) return;
+      const t = nowS();
+      const lanes = Array.from({ length: laneCount() }, (_, k) => {
+        const id = laneCtl(k);
+        return { ctl: id, colour: LANE_COLOUR[LANE_CTL.indexOf(id)], label: mine.length > 1 ? String(mine[k] + 1) : k ? "Back" : "Hand" };
+      });
+      if (off === null || !go) {
+        highway.draw({ title: "The ringing chamber", right: "", meter: striking, lanes, gems: [], bars: [], score, streak, mult: mult(), centre: "Finding the beat…" });
         return;
       }
-      x.fillText(methodName.toUpperCase(), 12, 20);
       const cur = Math.max(0, Math.min(R - 1, rowAt(t)));
-      x.textAlign = "right"; x.fillStyle = "#ddd"; x.font = "12px sans-serif";
-      x.fillText(t < go.T ? "Look to…" : `Row ${cur + 1}/${R}`, Wd - 10, 20);
-      x.textAlign = "left";
-      for (let k = 0; k <= allow; k++) {
-        x.fillStyle = k < bad ? "#ff6a5a" : "rgba(255,255,255,0.25)";
-        x.beginPath(); x.arc(14 + k * 12, 34, 4, 0, Math.PI * 2); x.fill();
-      }
-      x.fillStyle = "#99a"; x.font = "11px sans-serif"; x.fillText("clashes allowed", 18 + (allow + 1) * 12, 38);
-      // the blue line: the rows going by, your bell's path through them in blue, the treble's in red
-      const gx = 16, gw = Wd - 32, cw = gw / go.n, nowY = 165, px = 24 / period;
-      const rowY = (r: number) => nowY + (go!.T + rowStart(r) + (go!.n - 1) * B * 0.5 - t) * px;
-      x.save(); x.beginPath(); x.rect(0, 46, Wd, 190); x.clip();
-      const r0 = Math.max(0, cur - 5), r1 = Math.min(R - 1, cur + 6);
-      x.fillStyle = "rgba(255,255,255,0.06)"; x.fillRect(4, rowY(cur) - 9, Wd - 8, 18);
-      for (const [bell, col, wid] of [[0, "#d94a4a", 1.5], [b, "#4aa8ff", 3]] as [number, string, number][]) {
-        if (bell < 0 || (bell === 0 && b === 0 && col === "#d94a4a")) continue;
-        x.strokeStyle = col; x.lineWidth = wid; x.beginPath();
-        for (let r = r0; r <= r1; r++) { const xx = gx + (placeOf[r][bell] + 0.5) * cw, yy = rowY(r); if (r === r0) x.moveTo(xx, yy); else x.lineTo(xx, yy); }
-        x.stroke();
-      }
-      x.textAlign = "center"; x.textBaseline = "middle";
-      const inRow = Math.floor((t - go.T - rowStart(cur)) / B);
-      for (let r = r0; r <= r1; r++) {
-        for (let p = 0; p < go.n; p++) {
-          const bell = rows[r][p], xx = gx + (p + 0.5) * cw, yy = rowY(r);
-          if (r === cur && p === inRow && t >= go.T) { x.fillStyle = "rgba(217,164,65,0.5)"; x.fillRect(xx - cw / 2 + 1, yy - 8, cw - 2, 16); }
-          x.fillStyle = bell === b ? "#ffffff" : bell === 0 ? "#f08a8a" : "#7f889a";
-          x.font = bell === b ? "700 14px sans-serif" : "12px sans-serif";
-          x.fillText(String(bell + 1), xx, yy);
+      const gems: Gem[] = [], bars: { due: number; strong: boolean }[] = [];
+      // a note reaches the line when its rope wants pulling, LEAD before its bell sounds
+      for (let r = Math.max(0, rowAt(t + LEAD - 400) - 1); r < R; r++) {
+        const st = go.T + rowStart(r) - LEAD - t;
+        if (st > AHEAD) break;
+        bars.push({ due: st, strong: r % 2 === 0 });
+        for (const b of mine) {
+          gems.push({ lane: laneOf(b, r), due: beat(b, r) - LEAD - t, label: String(b + 1), state: pulls.get(b)?.has(r) ? 1 : gone.has(b * 10000 + r) ? 2 : 0 });
         }
       }
-      x.restore();
-      x.textBaseline = "alphabetic";
-      // the sally: when to pull for your next stroke
-      const gy = 262;
-      if (b < 0) {
-        x.fillStyle = "#aab"; x.font = "12px sans-serif"; x.textAlign = "left";
-        x.fillText(steady.size === go.n ? "The old hands are ringing" : "Watching the band", 12, gy);
-        x.fillText("Follow the treble's red line", 12, gy + 18);
-        return;
-      }
-      let next = -1;
-      const mine = pulls.get(b);
-      for (let r = Math.max(0, cur - 1); r < R; r++) { if (!mine?.has(r) && beat(b, r) - LEAD + clashT > t) { next = r; break; } }
-      x.textAlign = "left"; x.fillStyle = "#4aa8ff"; x.font = "700 13px sans-serif";
-      x.fillText(`You ring ${bellName(b, go.n)}`, 12, gy - 14);
-      const tx = 16, tw = Wd - 32, aim = tx + tw * 0.72, span = 1600;
-      x.fillStyle = "rgba(255,255,255,0.12)"; x.fillRect(tx, gy, tw, 16);
-      const sc = tw / span;
-      x.fillStyle = "rgba(232,194,90,0.45)"; x.fillRect(aim - clashT * sc, gy, clashT * 2 * sc, 16);
-      x.fillStyle = "rgba(127,224,138,0.7)"; x.fillRect(aim - goodT * sc, gy, goodT * 2 * sc, 16);
-      x.fillStyle = "#fff"; x.fillRect(aim - 1, gy - 3, 2, 22);
-      if (next >= 0 && phase === "ring") {
-        const due = beat(b, next) - LEAD, dx = aim + (t - due) * sc;
-        if (dx > tx - 6) {
-          x.fillStyle = "#4aa8ff"; x.beginPath(); x.arc(Math.min(tx + tw, dx), gy + 8, 7, 0, Math.PI * 2); x.fill();
-        }
-        x.fillStyle = "#ccd"; x.font = "11px sans-serif";
-        x.fillText(`${next % 2 ? "Backstroke" : "Handstroke"} · ${ordinal(placeOf[next][b] + 1)} place`, tx, gy + 32);
-      }
-      x.textAlign = "left"; x.fillStyle = "#99a"; x.font = "11px sans-serif";
-      x.fillText(`${ctl("bells.pull")} to pull when the dot's on the line`, tx, gy + 47);
-      if (flash && performance.now() - flash.t < 700) {
-        x.globalAlpha = 1 - (performance.now() - flash.t) / 700;
-        x.textAlign = "center"; x.fillStyle = flash.colour; x.font = "700 18px 'Barlow Condensed', sans-serif";
-        x.fillText(flash.text, Wd / 2, gy + 64);
-        x.globalAlpha = 1;
-      }
+      const centre = phase !== "ring" ? (ending?.won ? "Well rung!" : "Stand!") : t < go.T - 800 ? "Look to…"
+        : shout && performance.now() - shout.t < 2200 ? shout.text : undefined;
+      highway.draw({
+        title: methodName, right: t < go.T ? `${go.n} bells` : `Row ${cur + 1} / ${R}`, meter: striking, lanes, gems, bars,
+        score, streak, mult: mult(), centre,
+      });
     }
 
     /** How high bell b's sally is at shared time t: up out of reach after a handstroke, down to the hands after a backstroke. */
@@ -886,7 +904,7 @@ registerChallenge({
         // the chamber is only drawn while someone could see it
         const cam = camera(), near = Math.hypot(cam.x - C.x, cam.z - C.z) < 500;
         if (near !== shown) { shown = near; if (near) w.scene.add(chamber.root); else w.scene.remove(chamber.root); }
-        if (chamberN !== n()) { chamberN = n(); chamber.setBells(chamberN, go ? [...steady] : Array.from({ length: Math.max(0, 3 - list.length) }, (_, k) => list.length + k)); }
+        if (chamberN !== n()) { chamberN = n(); chamber.setBells(chamberN, go ? [...steady] : []); }
         if (shown) {
           chamber.ropes.forEach((m, b) => { m.position.y = sallyAt(b, t); });
           for (const f of chamber.figures) {
@@ -895,25 +913,22 @@ registerChallenge({
           }
         }
 
-        if (go && off !== null) {
+        if (go && off !== null && phase === "ring") {
           // the old hands ring on the beat on every screen alike
-          if (phase === "ring") {
-            const r0 = Math.max(0, rowAt(t) - 1), r1 = Math.min(R - 1, rowAt(t + 400) + 1);
-            for (const b of steady) {
-              for (let r = r0; r <= r1; r++) {
-                const bt = beat(b, r), key = b * 10000 + r;
-                if (bt > t - 40 && bt < t + 350 && !struck.has(key)) { struck.add(key); strike(b, bt); }
-              }
+          const r0 = Math.max(0, rowAt(t) - 1), r1 = Math.min(R - 1, rowAt(t + 400) + 1);
+          for (const b of steady) {
+            for (let r = r0; r <= r1; r++) {
+              const bt = beat(b, r), key = b * 10000 + r;
+              if (bt > t - 40 && bt < t + 350 && !struck.has(key)) { struck.add(key); strike(b, bt); }
             }
           }
           // the conductor's calls
-          if (phase === "ring") {
-            if (t > go.T - 5000) call("look", "Look to!", "Look to!", `${methodName}, ${go.n} bells`);
-            if (t > go.T - 2600) call("going", "Treble's going.");
-            if (t > go.T - 1200) call("gone", "She's gone!", "She's gone!", "Rounds first");
-            if (t > go.T + rowStart(changesFrom - 2)) call("go", `Go, ${methodName}!`, `Go ${methodName}`, "The changes start next handstroke");
-            if (t > go.T + rowStart(changesTo - 1)) call("all", "That's all!", "That's all!", "Back into rounds");
-          }
+          if (t > go.T - 2800) call("look", "Look to!");
+          if (t > go.T - 1700) call("going", "Treble's going.");
+          if (t > go.T - 700) call("gone", "She's gone!");
+          if (t > go.T + rowStart(changesFrom - 2)) call("go", `Go, ${methodName}!`, `Go ${methodName}`, "The changes start next handstroke");
+          if (t > go.T + rowStart(changesTo - 1)) call("all", "That's all!", "That's all!", "Back into rounds");
+          missed(t);
         }
 
         // the collapse: every bell clanging over every other
@@ -930,32 +945,28 @@ registerChallenge({
           if (!aboard) finish();
         }
 
-        const mb = myBell();
-        if (AUTO && go && mb >= 0 && phase === "ring" && off !== null) {
-          const mine = pulls.get(mb);
+        if (AUTO && go && mine.length && phase === "ring" && off !== null) {
           for (let r = Math.max(0, rowAt(t) - 1); r < Math.min(R, rowAt(t) + 3); r++) {
-            if (mine?.has(r) || r <= judged) continue;
-            const wobble = AUTO === "bad" ? (hash("wobble", r, mb) % 3 === 0 ? (hash("w", r) % 2 ? 0.7 : -0.6) * B : 0) : 0;
-            if (t >= beat(mb, r) - LEAD + wobble) pull();
-            break;
+            if (r <= judged) continue;
+            for (const b of mine) {
+              if (pulls.get(b)?.has(r) || gone.has(b * 10000 + r)) continue;
+              const wobble = AUTO === "bad" ? (hash("wobble", r, b) % 3 === 0 ? (hash("w", r, b) % 2 ? 0.7 : -0.6) * B : 0) : 0;
+              if (t >= beat(b, r) - LEAD + wobble) { highway.press(laneOf(b, r), true); highway.press(laneOf(b, r), false); strikeNote(b, r, t + LEAD); }
+            }
           }
-        }
-        if (pullBtn) {
-          const want = aboard && phase === "ring" && myBell() >= 0;
-          if (pullBtn.hidden === want) pullBtn.hidden = !want;
         }
         drawHud();
       },
       host() {
         if (phase === "gather") {
+          // everyone who entered goes straight up at GO, so the ringing starts at once
           const here = new Set(w.players().map((p) => p.id));
           if (list.length && !gatherSince) gatherSince = performance.now();
-          const all = cast.every((id) => !here.has(id) || list.includes(id));
-          if ((all && list.length && performance.now() - gatherSince > 1500) || lookAsked) startRinging();
+          if (cast.some((id) => here.has(id)) || lookAsked || (list.length && performance.now() - gatherSince > 1500)) startRinging();
           return;
         }
         if (!go || ending) return;
-        // a ringer gone from the game: an old hand takes the rope
+        // a ringer gone from the game: an old hand takes each of their ropes
         const here = new Set(w.players().map((p) => p.id));
         go.band.forEach((id, b) => { if (id && !here.has(id) && !steady.has(b)) tell({ k: "ai", b }); });
         const t = nowS();
@@ -977,8 +988,7 @@ registerChallenge({
             return;
           }
           case "in":
-            if (!w.isHost || go) { if (w.isHost && go && !list.includes(from)) tell({ k: "list", a: [...list, from] }); return; }
-            if (!list.includes(from)) tell({ k: "list", a: [...list, from] });
+            if (w.isHost && !list.includes(from)) tell({ k: "list", a: [...list, from] });
             return;
           case "list":
             if (Array.isArray(d.a)) list = d.a.filter((id: unknown) => typeof id === "string");
@@ -990,6 +1000,7 @@ registerChallenge({
             if (go || !Number.isFinite(d.T) || !Array.isArray(d.band)) return;
             setGo({ T: d.T, n: Math.max(3, Math.min(MAX_BELLS, d.n | 0)), L: Math.max(0, Math.min(2, d.L | 0)), band: d.band.map(String) });
             chamberN = 0;
+            if (aboard) { perchY = null; faced = false; }
             return;
           case "p": {
             if (!go || from === w.selfId || !Number.isFinite(d.b) || !Number.isFinite(d.r) || !Number.isFinite(d.t)) return;
@@ -1009,14 +1020,16 @@ registerChallenge({
             if (!Number.isFinite(d.r)) return;
             judged = Math.max(judged, d.r | 0);
             bad = d.bad | 0; lastBad = Number.isFinite(d.lb) ? d.lb : lastBad;
-            const who = Array.isArray(d.who) ? d.who : [];
-            if (who.length && go && (aboard || inside())) {
+            if (Number.isFinite(d.m)) striking = Math.max(0, Math.min(1, d.m));
+            // the others' clashes in the feed, now and then; your own are on the highway already
+            const who = (Array.isArray(d.who) ? d.who : []).filter(([b]: [number]) => go?.band[b] !== w.selfId);
+            if (who.length && go && (aboard || inside()) && performance.now() - feedAt > 2500) {
+              feedAt = performance.now();
               const names = who.slice(0, 2).map(([b, e]: [number, number | null]) => {
-                const id = go!.band[b], nm = id === w.selfId ? "You" : esc(w.nameOf(id));
+                const id = go!.band[b], nm = id ? esc(w.nameOf(id)) : "An old hand";
                 return `${nm} on ${bellName(b, go!.n)}${e === null ? " missed the stroke" : e > 0 ? " came in late" : " came in early"}`;
               });
               w.feed(`${named("Clash!", COLOUR)} ${names.join("; ")}`);
-              if (who.some(([b, e]: [number, number | null]) => go!.band[b] === w.selfId && e === null)) flash = { text: "Missed!", colour: "#ff6a5a", t: performance.now() };
             }
             return;
           }
@@ -1029,7 +1042,7 @@ registerChallenge({
             return;
         }
       },
-      progress: () => ({ a: list, g: go, j: judged, bad, lb: lastBad, ai: [...steady], e: ending ? { won: ending.won, why: ending.why, collapse: ending.collapse } : null }),
+      progress: () => ({ a: list, g: go, j: judged, bad, lb: lastBad, m: striking, ai: [...steady], e: ending ? { won: ending.won, why: ending.why, collapse: ending.collapse } : null }),
       restore(p) {
         if (!p || typeof p !== "object") return;
         if (Array.isArray(p.a)) list = p.a.filter((id: unknown) => typeof id === "string");
@@ -1037,6 +1050,7 @@ registerChallenge({
         if (Number.isFinite(p.j)) judged = p.j;
         if (Number.isFinite(p.bad)) bad = p.bad;
         if (Number.isFinite(p.lb)) lastBad = p.lb;
+        if (Number.isFinite(p.m)) striking = p.m;
         if (Array.isArray(p.ai)) for (const b of p.ai) if (Number.isFinite(b)) steady.add(b);
         if (p.e && !ending) job.event!({ k: "end", ...p.e }, "");
       },
@@ -1049,7 +1063,6 @@ registerChallenge({
           return true;
         }
         if (phase === "gather") { if (w.isHost) lookAsked = true; else send({ k: "look" }); return true; }
-        if (phase === "ring") { pull(); return true; }
         return false;
       },
       hint() {
@@ -1059,26 +1072,21 @@ registerChallenge({
           return Math.hypot(me.x - board.x, me.z - board.z) < CLIMB || Math.hypot(me.x - C.x, me.z - C.z) < CLIMB
             ? `<b>{use}</b> Climb the tower${go ? " and watch" : ""}` : "";
         }
-        if (phase === "gather") return `<b>{use}</b> Look to! Start the ringing`;
-        if (phase === "ring" && go && myBell() >= 0 && rowAt(nowS()) < changesFrom) {
-          return `<b>{bells.pull}</b> to pull ${bellName(myBell(), go.n)}'s rope when the sally gauge says`;
-        }
+        if (phase === "gather" && !cast.includes(w.selfId)) return `<b>{use}</b> Look to! Start the ringing`;
         return "";
       },
-      perch(dt) {
+      perch() {
         if (!aboard) return null;
-        const [sx, sz] = standSpot(list.indexOf(w.selfId));
-        const x = C.x + sx, z = C.z + sz, ground = w.map.ground(x, z);
-        // up the tower stairs, down again at the end, and hauled off your feet by a late rope
-        if (perchY === null) perchY = ground;
-        const target = phase === "down" ? ground : top + yankLift();
-        const step = (phase === "down" || perchY < top - 0.5 ? 28 : 9) * dt;
-        perchY += Math.max(-step, Math.min(step, target - perchY));
-        if (phase === "down" && perchY <= ground + 0.01) {
+        const [sx, sz] = standSpot();
+        const x = C.x + sx, z = C.z + sz;
+        // straight up into the chamber and straight down again at the end; a late rope hauls you off your feet
+        if (phase === "down") {
           aboard = false; perchY = null;
+          w.moveTo(x, z, Math.atan2(sx, sz));
           finish();
           return null;
         }
+        perchY = top + yankLift();
         const face = faced ? undefined : Math.atan2(sx, sz);
         faced = true;
         return { x, y: perchY, z, face, bare: true };
@@ -1089,26 +1097,28 @@ registerChallenge({
           const me = w.me(), d = Math.hypot(me.x - board.x, me.z - board.z);
           return { line: d > 30 ? `Go to ${church}` : "Climb the tower ({use} by the vicar)", progress: `${list.length} / ${ps.length} up`, stage };
         }
-        if (phase === "gather") return { line: "Waiting in the ringing chamber", sub: "Everyone up, or {bells.look} to look to", progress: `${list.length} / ${ps.length} up`, stage };
+        if (phase === "gather") return { line: "In the ringing chamber", sub: cast.includes(w.selfId) ? "Finding the beat" : "{bells.look} to look to", progress: `${list.length} / ${ps.length} up`, stage };
         if (!go) return { line: "Ringing", stage };
-        const cur = ending ? judged + 1 : Math.max(0, Math.min(R, rowAt(nowS()) + 1)), b = myBell();
+        const cur = ending ? judged + 1 : Math.max(0, Math.min(R, rowAt(nowS()) + 1));
+        const yours = mine.map((b) => bellName(b, go!.n));
         return {
-          line: b >= 0 ? `Ring ${bellName(b, go.n)} in its place` : "The band is ringing",
-          sub: `${methodName} · ${bad} of ${allow} clashes`,
+          line: yours.length ? `Ring ${yours.length > 2 ? `${yours.slice(0, -1).join(", ")} and ${yours[yours.length - 1]}` : yours.join(" and ")}` : "The band is ringing",
+          sub: `${methodName} · striking ${Math.round(striking * 100)}%`,
           progress: `${cur} / ${R}`, bar: cur / R, stage,
         };
       },
       scarAt: () => ({ x: board.x, z: board.z }),
       end() {
-        removeEventListener("keydown", onKey);
+        removeEventListener("keydown", onKey, true);
+        removeEventListener("keyup", onKey, true);
+        padTake(null);
         for (const id of posed) w.pose?.(id, 0, "");
-        if (aboard) { const [sx, sz] = standSpot(list.indexOf(w.selfId)); w.moveTo(board.x + sx * 0.2, board.z + sz * 0.2, 0); }
+        if (aboard) { const [sx, sz] = standSpot(); w.moveTo(board.x + sx * 0.2, board.z + sz * 0.2, 0); }
         aboard = false;
         if (shown) w.scene.remove(chamber.root);
         chamber.dispose();
         welcome.dispose();
-        hudCanvas.remove();
-        pullBtn?.remove();
+        highway.dispose();
         w.mark("@challenge", null);
       },
     };

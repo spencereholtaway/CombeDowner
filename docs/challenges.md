@@ -211,6 +211,8 @@ three of those a game day); keep it that way, so there are only twenty or forty 
   the use hint, the mission cards and the poster already do). A hint that offers use says
   `<b>{use}</b>`, which also puts up the touch screen's Use button. Interactions go on use; a
   challenge whose play is quite different gets its own table in `PLACES` and shows it as a strip
-  (`strip`) while you're in it. `node tools/check_keys.mjs` fails on a prompt that names a key, or on
+  (`strip`) while you're in it. If its buttons have to be its own while you play (the bells' note
+  highway lanes), catch its keys before the game sees them (a capturing keydown listener) and take
+  its pad buttons with `padTake` (`gamepad.ts`), giving both back in `end`. `node tools/check_keys.mjs` fails on a prompt that names a key, or on
   a control that comes out as its key on a pad or touch screen, or names a pad button that does nothing.
 - **Light.** Phones and iPads play this: instanced or merged meshes, built only when someone's near.

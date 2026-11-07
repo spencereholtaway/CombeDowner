@@ -274,7 +274,9 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
-A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. At a
+A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Up in the bell
+chamber the lanes of the note highway are L2, L1, Cross, R1 and R2, from the middle out (two lanes
+are L1 and R1), as D, F, Space, J and K are on the keys. At a
 narrowboat's helm the pad works as at a car's wheel: the triggers are the throttle, R1 rings the bell
 and Triangle lets go. Down the mines,
 R2 swings or shoots, L2 is the healing light, Square uses (hold it to pump, wind or pick a friend

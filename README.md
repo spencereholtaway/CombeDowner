@@ -408,14 +408,19 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
-  it, and at GO everyone who joined climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
-  bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
-  of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
-  screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of
-  it, as the blue line and the sally gauge on the right show. Early or late clashes, and a late rope
-  hauls you off your feet. Two bad rows running and it collapses into a jangle; too many over the
-  touch and the conductor calls Stand. With fewer than three of you, steady old ringers make up three
-  bells, and anyone who climbs up late stands by the wall and watches.
+  it, and at GO everyone who joined is straight up in the ringing chamber, with no countdown. It
+  starts in rounds, then the method moves the bells about every row: Plain Hunt on an easy day,
+  Plain Bob or Grandsire on a hard one. You play your part on a note highway in the middle of the
+  screen, Guitar Hero style: a lane for each of your bells, notes coming down each lane for every
+  time that bell rings, and a key for each lane, from the middle out (D F Space J K for five lanes,
+  F J for two; on a pad L2 L1 ✕ R1 R2; on a touch screen a pad under each lane). With one bell your
+  two lanes are its handstroke and backstroke. Strike on the line for Perfect or Good, a streak and
+  up to four times the score; early or late and the bell clashes (a late rope hauls you off your
+  feet). Alone you ring four or five bells yourself; the more of you, the more bells (up to eight),
+  shared out so up to four of you each have two or more, and the longer the touch. Every miss or
+  clash, anyone's, costs the band's striking (the bar over the highway) and clean rows win a little
+  back; let it run out and it all collapses into a jangle. Anyone who climbs up late stands by the
+  wall and watches.
 - **The Driving Test** (a team challenge, on any map with a car park on a decent road): a learner
   car with L plates and a roof sign waits outside the test centre (on London Road East in Bath), the
   examiner stood by it with his clipboard. E by them starts it; whoever gets in the driver's seat
