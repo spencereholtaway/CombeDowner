@@ -129,7 +129,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs, and ten to fifteen flags go up
   on its street and the streets running into it; shoot a lad off a ladder and it drops back. You
   can't pick a pub that's being taken over on the big map and go straight there: get there yourself. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
-  400 m for a bonus, or he's tomorrow's Wanted poster.
+  400 m for a bonus, or he's tomorrow's Wanted poster. Win the pub back and any lads still standing,
+  his right-hand man too, leg it.
 - **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, doing his round
   of a pub, a park and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
   you can sprint, but he's out of puff every few seconds (his puff is the bar across the top of the

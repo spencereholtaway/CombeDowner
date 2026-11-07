@@ -1173,8 +1173,15 @@ export class NaughtyBoys {
   release(i: number, gen: number, now = false) {
     const c = this.list[i];
     if (!c || c.gen !== gen) return;
-    c.keep = false; c.rush = false;
+    c.keep = false; c.rush = false; c.stay = false;
     if (now && c.state === ALIVE) c.state = GONE;
+  }
+
+  /** Host: the fight he was brought for is over and lost, so he's had enough: down, then up and
+   *  legging it, as if he'd been beaten, rather than hanging about to pick another. */
+  rout(i: number, gen: number, from?: { x: number; z: number }) {
+    const c = this.list[i];
+    if (c && c.state === ALIVE && c.gen === gen) this.down(c, from);
   }
 
   /**
@@ -1192,6 +1199,11 @@ export class NaughtyBoys {
       return "dmg";
     }
     if (c.hp > 0) return "dmg";
+    this.down(c, from);
+    return "kill";
+  }
+
+  private down(c: NaughtyBoy, from?: { x: number; z: number; a?: number }) {
     c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = ""; c.foe = -1; c.vx = c.vz = 0; c.detour = 0; c.hop = c.hopV = 0;
     let ux = Math.random() - 0.5, uz = Math.random() - 0.5;
     if (from && from.a !== undefined && Number.isFinite(from.a)) {
@@ -1201,7 +1213,6 @@ export class NaughtyBoys {
     } else if (from && Math.hypot(c.x - from.x, c.z - from.z) > 0.1) { ux = c.x - from.x; uz = c.z - from.z; }
     const l = Math.hypot(ux, uz) || 1;
     c.fleeX = ux / l; c.fleeZ = uz / l;
-    return "kill";
   }
 
   /** Host: the naughty boy goes for whoever shot him. */

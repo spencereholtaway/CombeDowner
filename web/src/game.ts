@@ -4680,6 +4680,7 @@ export class Game {
       for (const c of this.naughtyBoys.living()) {
         const at = this.naughtyBoys.at(c.i);
         if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
+        if (at.kind === CHAIR && !this.invasion.inFight(c.i, at.gen, at.x, at.z)) continue;
         bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
         bossFill = (100 * at.hp) / Math.max(1, at.top);
         bossOff = false;

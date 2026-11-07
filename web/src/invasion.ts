@@ -46,7 +46,8 @@
 // within 400 m (cuff him with E once he gives up, or put him down) for bonus prizes. If he gets away
 // he is the next game day's Wanted poster (wanted.ts), kept by the host like the day's scars.
 // A pub won back flies the welcome banner, leaves a ride and the odd free round out, and no flags go
-// up near it for the rest of the day. Shoot the last flag on the map and a card says the place (by
+// up near it for the rest of the day; any of the crew still standing, his right-hand man too, leg it.
+// A boss's bar only shows while he's still to be beaten, so not for a Gaffer stood about in cuffs. Shoot the last flag on the map and a card says the place (by
 // the map's own name) is safe from the Flag Lads, and none go up for QUIET_DAYS days. Each day (a
 // "season" in the code, from midnight GMT) the Flag Lads start again with a few new clusters.
 //
@@ -174,6 +175,7 @@ const FLAP = 35;                   // metres: you hear the nearest flag flapping
 const BANNER_SECS = 150;           // alone, the lads need this long on the ladder to get the banner up
 const BANNER_FASTER = 0.2;         // and each other player in the room makes it this much quicker
 const BANNER_FLOOR = 55;           // but never quicker than this
+const FIGHT_REACH = 200;           // metres from a takeover's pub its bosses still count as in the fight
 const KNOCK_BACK = 0.25;           // a lad shot off the ladder sets the banner back this much
 const LADDER_AGAIN = 15;           // seconds before another lad goes up the ladder
 const CUFF_REACH = 3;              // close enough to cuff the Gaffer
@@ -1004,7 +1006,11 @@ export class Invasion {
     const k = this.calls.indexOf(c);
     if (k < 0) return;
     this.calls.splice(k, 1);
-    for (const g of [...c.crew, ...c.lads, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) this.w.naughtyBoys.release(g.i, g.gen);
+    for (const g of [...c.crew, ...c.lads, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) {
+      // the pub's won with a lad or the right-hand man still standing: left about, they'd pick fights and keep his bar up
+      if (won) this.w.naughtyBoys.rout(g.i, g.gen, c);
+      this.w.naughtyBoys.release(g.i, g.gen);
+    }
     if (c.fled && won === false && this.chase) { this.w.naughtyBoys.flee(this.chase.i, this.chase.gen, 1, false); this.w.naughtyBoys.release(this.chase.i, this.chase.gen, true); this.endChase(); }
     if (!this.calls.length) this.callT = 240 + Math.random() * 120;
     this.dirty = true;
@@ -1405,6 +1411,14 @@ export class Invasion {
   joined(id: string) {
     if (this.w.isHost && this.on) this.w.send(this.state(), id);
     this.gaffers.joined(id);
+  }
+
+  /** Whether one of the Flag Lads' bosses is still to be beaten (a takeover on round him, or the
+   *  Gaffer on the run), for his bar: once he's caught or it's over he may stand about a while. */
+  inFight(i: number, gen: number, x: number, z: number) {
+    const g = this.runner;
+    if (g && g.i === i && g.gen === gen) return true;
+    return this.calls.some((c) => c.on && Math.hypot(c.x - x, c.z - z) < FIGHT_REACH);
   }
 
   /** The name on the boss bar for one of the Flag Lads' bosses, by their kit (0 the Gaffer, 1 his right-hand man, 2 his cousin). */

@@ -249,6 +249,7 @@ export class Scars {
       const s = this.list.find((o) => o.id === Number(d.id));
       if (!s) return;
       Paper.scarFixed(s.id, s.x, s.z, SAID[s.k](s.n), from === this.w.selfId ? "you" : this.w.nameOf(from));
+      for (const g of this.guards.get(s.id) ?? []) this.w.naughtyBoys.rout(g.i, g.gen, s);
       this.drop(s.id);
       this.w.prize(s.x, s.z, true);
       this.changed();
