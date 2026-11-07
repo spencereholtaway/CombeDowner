@@ -262,6 +262,8 @@ export interface Job {
   /** E's use isn't about anything in front of you just now (going again after a race), so
    *  anything else E could do where you stand comes first. */
   aside?(): boolean;
+  /** Riding, you ran into rider id on your screen (ridebump.ts), closing at this speed, with your speed and theirs (m/s). */
+  bumped?(id: string, closing: number, mine: number, theirs: number): void;
   /** Host: a naughty boy (or anything run by naughtyboys.ts) went down, to whoever by. */
   naughtyBoyDown?(i: number, by: string): void;
   card(): Card;
@@ -961,6 +963,7 @@ export class Quests {
   movers(): Mover[] { return this.job && !this.job.done ? this.job.movers?.() ?? [] : []; }
 
   /** Waiting for the job's end, out of harm's way (a race you're out of, while others ride on). */
+  bumped(id: string, closing: number, mine: number, theirs: number) { if (this.job && !this.job.done) this.job.bumped?.(id, closing, mine, theirs); }
   waiting(): boolean { return !!this.job && !this.job.done && !!this.job.waiting?.(); }
   spectate() { return this.job && !this.job.done ? this.job.spectate?.() ?? null : null; }
   cycle(by: number): boolean { return !!this.job && !this.job.done && !!this.job.cycle?.(by); }

@@ -2285,6 +2285,15 @@ export function whoosh() {
   tone(d, t, 0.4, 0.1, 300, 900, "triangle", 0.1);
 }
 
+/** Bumping another rider, hard as 0..1: a body's thud, a scuff, and a rattle of the ride when it's hard. */
+export function bump(hard: number) {
+  if (!ctx) return;
+  const k = Math.max(0, Math.min(1, hard)), t = now(), d = out(0.35 + 0.5 * k, 0, 0, 0.08);
+  tone(d, t, 0.12 + 0.08 * k, 0.6, 140 - 40 * k, 55);
+  burst(d, t, 0.08 + 0.1 * k, 0.25 + 0.2 * k, 500 + 600 * k, { q: 0.7 });
+  if (k > 0.35) clack(d, t + 0.03, 0.12 + 0.15 * k, 1800);
+}
+
 /** Barged off your ride: a dull thump and a clatter. */
 export function thump() {
   if (!ctx) return;

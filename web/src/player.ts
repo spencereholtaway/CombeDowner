@@ -26,7 +26,8 @@
 // still jumps, letting go of Space early makes a smaller hop, you come down a little quicker than you
 // go up, and how high you get doesn't depend on the frame rate. Bumping into things slides you along
 // them and never throws you back off.
-// All of it is yours alone: other players just see you, and your ride, move.
+// All of it is yours alone: other players just see you, and your ride, move. Other riders are
+// solid to yours (ridebump.ts): it holds you clear of them (nudge) and passes on their knocks (shove).
 import * as THREE from "three";
 import type { RideSpec } from "./rides";
 import type { GrindEdge } from "./map";
@@ -252,6 +253,10 @@ export class Player {
   events: RideEvent[] = [];
   /** Seconds left of coming off your ride (0: you're on it). */
   tumble = 0;
+  /** A bump from another rider, still shaking the view (1 just now .. 0), and which way it tips. */
+  jolt = 0; private joltSide = 1;
+  /** The sideways part of a bump from another rider, m/s: it carries you over and dies away, since a ride only rolls the way it points. */
+  private shoveX = 0; private shoveZ = 0;
   /** The kerb or wall you're grinding, if you are. */
   grind: Grind | null = null;
   /** Eased lean of the view into a grind, for the camera. */
@@ -821,6 +826,33 @@ export class Player {
     this.tumble = 0; this.grind = null; this.autoGrab = true; this.noGrab = 0; this.manual = 0; this.balance = 0; this.charge = 0;
     this.verbOn = false; this.trick = 0; this.airBig = false; this.dip = 0;
     this.jumpBuf = 0; this.coyote = 0; this.jumpRise = false;
+    this.jolt = 0; this.shoveX = this.shoveZ = 0;
+  }
+
+  /** Bumped by another rider, (ix, iz) m/s. Along the way you're going it speeds you up or holds you
+   *  back; across it, it carries you over, turns you a little that way and costs a little speed, as
+   *  leaning on someone does. A grind can't hold through it. */
+  shove(ix: number, iz: number) {
+    const s = this.ride;
+    if (!s) return;
+    const n = Math.hypot(ix, iz);
+    this.jolt = Math.min(1, this.jolt + 0.25 + n * 0.12);
+    if (s.pogo) { this.vel.x += ix; this.vel.z += iz; this.joltSide = Math.random() < 0.5 ? -1 : 1; return; }
+    if (this.grind && n > 1) this.endGrind();
+    const hx = -Math.sin(this.heading), hz = -Math.cos(this.heading);
+    const along = ix * hx + iz * hz, right = ix * -hz + iz * hx;
+    this.rideV = (this.rideV + along) * (1 - Math.min(0.12, Math.abs(right) * 0.03));
+    this.shoveX += ix - along * hx; this.shoveZ += iz - along * hz;
+    const twist = Math.max(-0.1, Math.min(0.1, right * 0.035));
+    this.heading -= twist; this.yaw -= twist;
+    this.joltSide = right > 0 ? 1 : -1;
+  }
+
+  /** Held clear of another rider: moved (dx, dz) at once, still kept out of walls. */
+  nudge(dx: number, dz: number) {
+    const p = { x: this.pos.x + dx, z: this.pos.z + dz };
+    this.bump(p);
+    this.pos.x = p.x; this.pos.z = p.z;
   }
 
   /** Riding: you roll the way the ride's heading, which only A and D (or the stick) turn. */
@@ -830,6 +862,7 @@ export class Player {
     this.prone += (0 - this.prone) * Math.min(1, dt * 8);
     this.proneLatch = false;
     this.kicked = false;
+    this.jolt = Math.max(0, this.jolt - dt * 4);
     if (this.tumble > 0 && (this.tumble -= dt) <= 0) {
       // back on the way the ride points (A and D turn it while you're down), never where you look
       this.tumble = 0;
@@ -989,7 +1022,9 @@ export class Player {
       }
       const target = this.verbOn ? (s.verb === "tuck" ? 0.35 : 0.25) : this.charge * 0.35 + (this.manual ? -0.06 : 0);
       this.dip += (target - this.dip) * Math.min(1, dt * 10);
-      const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
+      const p = { x: this.pos.x + (this.vel.x + this.shoveX) * dt, z: this.pos.z + (this.vel.z + this.shoveZ) * dt };
+      const ease = Math.exp(-5 * dt);
+      this.shoveX *= ease; this.shoveZ *= ease;
       this.bump(p);
       // how much of the way we meant to go we got (1: nothing in the way)
       const blocked = this.map.lastBlock, sp = Math.hypot(this.vel.x, this.vel.z), want = sp * dt;
@@ -1267,11 +1302,16 @@ export class Player {
     const bobY = Math.sin(this.bob * 2) * 0.035 * Math.min(1, this.speed / 5);
     // coming off a ride: down you go (head over heels, if you were going), a moment on your side, and up
     let drop = 0, roll = 0, nod = 0;
+    if (this.jolt > 0) {
+      const j = this.jolt * this.jolt;
+      roll = j * 0.07 * this.joltSide;
+      drop = j * 0.05;
+    }
     if (this.tumble > 0) {
       const t = 1 - this.tumble / TUMBLE, ease = (u: number) => u * u * (3 - 2 * u);
       const down = t < 0.3 ? ease(t / 0.3) : t < 0.7 ? 1 : 1 - ease((t - 0.7) / 0.3);
-      drop = down * (this.eyeHeight - 0.3);
-      roll = down * 1.2 * this.tumbleSide;
+      drop += down * (this.eyeHeight - 0.3);
+      roll += down * 1.2 * this.tumbleSide;
       if (this.tumbleHard && t < 0.45) { nod = -Math.PI * 2 * ease(t / 0.45); drop -= Math.sin((Math.PI * t) / 0.45) * 0.5; }
     }
     cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick - drop - this.stepUp, this.pos.z);

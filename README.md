@@ -171,8 +171,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
  Every ride is faster in a race, boost pads lie along the route (two or three between checkpoints), and riding close behind
   someone gives you a slipstream. A big clock counts down to the next checkpoint, carrying what's left
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
-  still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
-  enough and they come off. The shopping trolley and the skateboard are only raced downhill.
+  still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Racers are solid, so you can
+  lean on and shove each other for a line; barge into another racer hard enough and they come off. The shopping trolley and the skateboard are only raced downhill.
   Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
   pavement; if it's tight by the board, the board says where) and puts everyone who joined in the middle of it.
   Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
@@ -204,7 +204,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and holding it builds to full lock; a stick pushed forward with a little lean goes straight, and
   steers once it's clearly over. In the air only a hard turn spins you, and you snap on to a grind by
   yourself only off a jump of your own lined up with the edge (Shift catches one at more of an angle). Grinds, jumps and
-  air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
+  air tricks chain into one combo with a multiplier, best kept for each ride. Other riders are solid:
+  lean on someone riding alongside and you're both shoved apart and off line, and running into the back
+  of someone pushes them on and holds you up, with a thud, a jolt and a puff of dust or sparks), ladders up
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
   one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60; C goes round the chase camera, the driver's seat and a racing game's bonnet camera; at speed the tyres grip and let go like a driving game's: Space at speed with some lock on swings the back end out into a slide, the throttle holds it in a rear-drive car, hold it too long and it spins, and steering the other way catches it, with a wag of the tail as it grips again; a bus or a coach just leans on its tyres and turns, and at a crawl Space and the lock still do donuts), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car (in through a passage in the engine house at the back of each station, up steps where the platform stands above the ground),
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field takes in

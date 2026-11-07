@@ -26,9 +26,11 @@
 // some slack and more for the first leg, and time left over carries on; it turns amber with a beep
 // when it's getting short, and pips the last five seconds. Run out and you're out of the placings
 // and the medals, but can still ride on to the line for your time. A lone racer has a faint
-// gold-pace rider to chase, which gets going from the grid as the ride does. Riding hard into another racer
-// knocks them off: the rammer sees the contact and tells them ("knk", inside "qe"), and they
-// tumble themselves.
+// gold-pace rider to chase, which gets going from the grid as the ride does. Racers are solid
+// to each other, as all riders are (ridebump.ts): leaning on someone shoves you both apart, and a
+// bump from behind pushes the one in front on and holds up the one behind. Riding hard into another
+// racer, quicker than them, knocks them off: the rammer sees the contact and tells them ("knk",
+// inside "qe"), and they tumble themselves.
 //
 // The ride suits the route, from the lie of the land along the way: a steep climb is a BMX's (or a
 // racing bike's, if it's long), a run that only goes down is for the skateboard or the shopping
@@ -593,7 +595,6 @@ class Race implements Job {
   private padMesh: THREE.Mesh | null = null; private padKey = "";
   private padUntil = 0; private padHit = new Map<number, number>();
   private slip = false;
-  private prevPos = new Map<string, { x: number; z: number }>();
   private knockedAt = new Map<string, number>();
   private immune = 0;                       // when I can be knocked off again, ms since 1970
   private beeped = 6;
@@ -743,7 +744,6 @@ class Race implements Job {
     }
     this.lastMe = { x: me.x, z: me.z };
     if (!live || t < 0) this.rideNormally();
-    this.watchRacers(dt);
     this.drawTimer(live && t >= 0, t);
     this.drawPads(me);
     this.drawArrow(me, target, live);
@@ -924,34 +924,18 @@ class Race implements Job {
     missionAux("race-gate", `<div class="aux-big" style="color:${col}">${big}</div><div class="aux-tag">${tag}</div>`);
   }
 
-  /** Other racers' speeds from how far they moved, and a barge hard enough to knock one off. */
-  private watchRacers(dt: number) {
-    const me = this.w.me(), prev = this.prevPos.get(this.w.selfId);
-    const mine = { x: me.x, z: me.z };
-    const ids = this.w.players();
-    const vel = (id: string, x: number, z: number) => { const q = this.prevPos.get(id); return q && dt > 0 ? { x: (x - q.x) / dt, z: (z - q.z) / dt } : { x: 0, z: 0 }; };
-    const mv = prev ? vel(this.w.selfId, me.x, me.z) : { x: 0, z: 0 };
-    const t = this.now;
+  /** Run into another racer (ridebump.ts saw it on our screen): hard enough, and quicker than them, and they're off. */
+  bumped(id: string, closing: number, mine: number, theirs: number) {
+    const me = this.w.me(), t = this.now;
     const can = this.racing && !this.over && !this.out && !this.dnf && t >= 1 && !this.own && !this.w.passive && me.alive && this.grid;
-    for (const o of ids) {
-      if (o.id === this.w.selfId) continue;
-      if (can && this.grid!.includes(o.id) && o.alive && Date.now() > (this.knockedAt.get(o.id) ?? 0)) {
-        const dx = o.x - me.x, dz = o.z - me.z, d = Math.hypot(dx, dz);
-        if (d < 1.6 && d > 0.01) {
-          const ov = vel(o.id, o.x, o.z), closing = ((mv.x - ov.x) * dx + (mv.z - ov.z) * dz) / d;
-          if (closing > KNOCK_SPEED && Math.hypot(mv.x, mv.z) > Math.hypot(ov.x, ov.z)) {
-            this.knockedAt.set(o.id, Date.now() + KNOCK_COOL * 1000);
-            this.stats.barged++;
-            this.w.send("qe", { k: "knk", s: this.offer.seed }, o.id);
-            this.w.rideBoost?.(RACE_MUL, -Math.min(3, closing * 0.35));
-            SFX.thump();
-            score({ text: `Barged ${o.name} off!` });
-          }
-        }
-      }
-    }
-    for (const o of ids) this.prevPos.set(o.id, { x: o.x, z: o.z });
-    this.prevPos.set(this.w.selfId, mine);
+    if (!can || !this.grid!.includes(id) || Date.now() <= (this.knockedAt.get(id) ?? 0)) return;
+    if (closing <= KNOCK_SPEED || mine <= theirs) return;
+    this.knockedAt.set(id, Date.now() + KNOCK_COOL * 1000);
+    this.stats.barged++;
+    this.w.send("qe", { k: "knk", s: this.offer.seed }, id);
+    this.w.rideBoost?.(RACE_MUL, -Math.min(3, closing * 0.35));
+    SFX.thump();
+    score({ text: `Barged ${this.w.nameOf(id)} off!` });
   }
 
   /** Pads for the maps' sake are only drawn near: one mesh, laid on the ground and redone now and then as the squares load. */

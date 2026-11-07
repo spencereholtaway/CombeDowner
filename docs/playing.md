@@ -360,6 +360,12 @@ a combo, banked when you roll on the ground for a moment, and your bests on each
 Come down sideways or mid-trick and you bail, back on in under two seconds. Someone pushing a
 trolley can give a mate a lift: they walk up to the basket and press E to climb in.
 
+Other riders are solid: you can't ride through them. Lean on someone riding alongside and you're
+both shoved apart sideways, each turned a little off your line and a little slower; run into the
+back of someone and they're pushed on a touch while you're held up. Each bump thuds, jolts the view
+a little, kicks up dust (sparks, if it's hard) and rumbles a controller. Bumps are only between
+riders: on foot, and in cars, nothing changes.
+
 Speed traps (yellow boxes on poles, on the maps as yellow cameras) at the foot of Bath's steepest
 streets clock you as you go past, however you're moving (on foot, on a ride, in a car or
 on a bus) and anywhere across the road, and a manual down Milsom Street is timed. Both keep your
@@ -667,7 +673,9 @@ checkpoint, and what's left over carries on to the one after; it's set from bron
 spare, more for the first leg, so a fair first go gets round. It turns amber with a beep when it's
 getting short. Run out and you're out of the placings and the medals, but you can ride on to the
 line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Boost pads lie
-along the road between checkpoints, two or three on most legs. Killed on the way, you're out of the
+along the road between checkpoints, two or three on most legs. Racers are solid to each other, as
+all riders are, so you can lean on someone for the line; ride hard into another racer, going faster
+than them, and they come off. Killed on the way, you're out of the
 race: no time and no medal.
 
 At the end comes a results card: your place in big podium colours, your time, your medal with a
