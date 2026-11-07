@@ -585,6 +585,9 @@ export function buildCrag(room: Room) {
     });
     ropeMesh.count = n; coilMesh.count = c;
     ropeMesh.instanceMatrix.needsUpdate = true; coilMesh.instanceMatrix.needsUpdate = true;
+    // three sizes an instanced mesh once, on its first frame, and never again: with no rope down yet
+    // that size is nothing, and a rope dropped later would be culled as out of sight
+    ropeMesh.computeBoundingSphere(); coilMesh.computeBoundingSphere();
   }
 
   // a flag on top, crash mats at the foot, and the sign at the way down
