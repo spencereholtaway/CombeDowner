@@ -1,9 +1,9 @@
 // The bells' note highway (bells.ts): your part of the touch as a Guitar Hero chart, big in the
-// middle of the screen. One lane for each of your bells (or, if you've only one, a lane for its
-// handstroke and one for its backstroke), the notes coming down the lanes to the line at the bottom,
-// a lit ring where each lands, the word for how you struck it, your streak, multiplier and score
-// down the sides, and over it all the band's striking: how near the whole thing is to collapsing.
-// Under each lane is its key cap (keycap.ts), or on a touch screen a big pad to tap.
+// middle of the screen. Four lanes, the notes coming down them to the line at the bottom, a chord's
+// two notes joined by a bar, and the rest of the band's notes coming down faintly among yours; a lit
+// ring where each lands, the word for how you struck it, your multiplier, score and streak down the
+// sides, and over it all the band's striking: how near the whole thing is to collapsing. Under each
+// lane is its key cap (keycap.ts), or on a touch screen a big pad to tap.
 //
 // Who decides what: nothing here. bells.ts says what's on it each frame; this only draws it.
 import { input } from "./controls";
@@ -14,9 +14,10 @@ import { keycaps } from "./keycap";
 export const AHEAD = 1800;
 
 export interface Lane { ctl: string; colour: string; label: string }
-/** A note: which lane, ms till it's due at the line (less than nought once it's gone by), what's on
- *  it, and whether you've struck it (1) or let it go by (2). */
-export interface Gem { lane: number; due: number; label: string; state: 0 | 1 | 2 }
+/** A note: which lane (and pair, the second lane of a chord), ms till it's due at the line (less
+ *  than nought once it's gone by), what's on it, whether you've struck it (1) or let it go by (2),
+ *  and faint for someone else's, only there to show where yours fall among the band's. */
+export interface Gem { lane: number; pair?: number; due: number; label: string; state: 0 | 1 | 2; faint?: boolean }
 export interface HighwayFrame {
   title: string; right: string;
   /** The band's striking, 0..1: at nought the bells collapse. */
@@ -173,18 +174,38 @@ export class Highway {
       x.beginPath(); x.arc(laneX(k, 0), hy, R0, 0, Math.PI * 2); x.fill();
       x.globalAlpha = 1; x.stroke();
     }
-    // the notes, the far ones first
-    const gems = f.gems.filter((n) => n.due <= AHEAD && n.due / AHEAD > -below && n.state !== 1).sort((a, b) => b.due - a.due);
+    // the notes, the far ones first: the band's faint and small underneath, yours bright over them,
+    // a chord's two joined by a bar
+    const gems = f.gems.filter((n) => n.due <= AHEAD && n.due / AHEAD > -below && n.state !== 1).sort((a, b) => Number(!a.faint) - Number(!b.faint) || b.due - a.due);
     x.textAlign = "center"; x.textBaseline = "middle";
     for (const n of gems) {
-      const u = n.due / AHEAD, s = sAt(u), r = R0 * 0.82 * s, gx = laneX(n.lane, u), gy = yAt(u);
-      const col = n.state === 2 ? "#5a5f66" : f.lanes[n.lane]?.colour ?? "#fff";
-      x.globalAlpha = u < 0 ? Math.max(0, 1 + u / below) : 1;
-      x.fillStyle = col;
-      x.beginPath(); x.ellipse(gx, gy, r, r * 0.72, 0, 0, Math.PI * 2); x.fill();
-      x.lineWidth = Math.max(1.5, 3 * s); x.strokeStyle = n.state === 2 ? "#2a2d31" : "#fff"; x.stroke();
-      x.fillStyle = n.state === 2 ? "#aab" : "#0b0c0c"; x.font = font(Math.max(10, r * 0.95), 800);
-      x.fillText(n.label, gx, gy + 1);
+      const u = n.due / AHEAD, s = sAt(u), gy = yAt(u), fade = u < 0 ? Math.max(0, 1 + u / below) : 1;
+      if (n.faint) {
+        x.globalAlpha = 0.5 * fade; x.fillStyle = "#d8d2c4"; x.strokeStyle = "#d8d2c4"; x.lineWidth = Math.max(1, 2 * s);
+        if (n.pair !== undefined) { x.beginPath(); x.moveTo(laneX(n.lane, u), gy); x.lineTo(laneX(n.pair, u), gy); x.stroke(); }
+        for (const l of n.pair !== undefined ? [n.lane, n.pair] : [n.lane]) {
+          x.beginPath(); x.ellipse(laneX(l, u), gy, R0 * 0.42 * s, R0 * 0.27 * s, 0, 0, Math.PI * 2); x.fill();
+        }
+        x.globalAlpha = 1;
+        continue;
+      }
+      const r = R0 * 0.82 * s, dead = n.state === 2;
+      x.globalAlpha = fade;
+      if (n.pair !== undefined) {
+        x.strokeStyle = dead ? "#5a5f66" : "#ffffff"; x.lineWidth = Math.max(3, r * 0.45); x.lineCap = "round";
+        x.beginPath(); x.moveTo(laneX(n.lane, u), gy); x.lineTo(laneX(n.pair, u), gy); x.stroke();
+        x.strokeStyle = dead ? "#2a2d31" : "#d9a441"; x.lineWidth = Math.max(1.5, r * 0.22);
+        x.beginPath(); x.moveTo(laneX(n.lane, u), gy); x.lineTo(laneX(n.pair, u), gy); x.stroke();
+        x.lineCap = "butt";
+      }
+      for (const l of n.pair !== undefined ? [n.lane, n.pair] : [n.lane]) {
+        const gx = laneX(l, u);
+        x.fillStyle = dead ? "#5a5f66" : f.lanes[l]?.colour ?? "#fff";
+        x.beginPath(); x.ellipse(gx, gy, r, r * 0.72, 0, 0, Math.PI * 2); x.fill();
+        x.lineWidth = Math.max(1.5, 3 * s); x.strokeStyle = dead ? "#2a2d31" : "#fff"; x.stroke();
+        x.fillStyle = dead ? "#aab" : "#0b0c0c"; x.font = font(Math.max(10, r * 0.95), 800);
+        x.fillText(n.label, gx, gy + 1);
+      }
       x.globalAlpha = 1;
     }
     // the word for the last one you struck, and its burst
@@ -207,20 +228,21 @@ export class Highway {
       x.shadowBlur = 0;
     }
     // the multiplier down the left, the score and streak down the right
-    const side = (W - bw) / 2;
+    // up out of the way of the health and ammo panels where there's height for it
+    const side = (W - bw) / 2, lift = titled ? 46 : 0;
     x.shadowColor = "rgba(0,0,0,0.85)"; x.shadowBlur = 4;
     x.textAlign = "center"; x.textBaseline = "alphabetic";
     x.fillStyle = f.mult >= 4 ? "#ffdd00" : f.mult >= 2 ? "#f4f1ea" : "#b9b4a8";
     x.font = font(small ? 26 : 36, 800);
-    x.fillText(`×${f.mult}`, side / 2, hy - 18);
+    x.fillText(`×${f.mult}`, side / 2, hy - 18 - lift);
     x.font = font(small ? 11 : 13, 600); x.fillStyle = "#b9b4a8";
-    x.fillText("MULTIPLIER", side / 2, hy - 2);
+    x.fillText("MULTIPLIER", side / 2, hy - 2 - lift);
     x.font = font(small ? 20 : 28, 800); x.fillStyle = "#f4f1ea";
-    x.fillText(String(f.score), W - side / 2, hy - 18);
+    x.fillText(String(f.score), W - side / 2, hy - 18 - lift);
     x.font = font(small ? 11 : 13, 600); x.fillStyle = "#b9b4a8";
-    x.fillText("SCORE", W - side / 2, hy - 2);
+    x.fillText("SCORE", W - side / 2, hy - 2 - lift);
     x.font = font(small ? 15 : 18, 800); x.fillStyle = f.streak >= 10 ? "#ffdd00" : "#f4f1ea";
-    x.fillText(`${f.streak} streak`, W - side / 2, hy + 18);
+    x.fillText(`${f.streak} streak`, W - side / 2, hy + 18 - lift);
     x.shadowBlur = 0;
   }
 

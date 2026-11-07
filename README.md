@@ -418,20 +418,22 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
-  it, and at GO everyone who joined is straight up in the ringing chamber, with no countdown. It
-  starts in rounds, then the method moves the bells about every row: Plain Hunt on an easy day,
-  Plain Bob or Grandsire on a hard one. You play your part on a note highway in the middle of the
-  screen, Guitar Hero style: a lane for each of your bells, notes coming down each lane for every
-  time that bell rings, and a key for each lane, laid out as they sit: A W S D left to right (A and
-  D for two lanes, A W D for three, and Space for a rare fifth), on a pad □ △ ✕ ○ (and R1), and on a
-  touch screen a pad under each lane. Up there they ring and do nothing else. With one bell your
-  two lanes are its handstroke and backstroke. Strike on the line for Perfect or Good, a streak and
-  up to four times the score; early or late and the bell clashes (a late rope hauls you off your
-  feet). Alone you ring four or five bells yourself; the more of you, the more bells (up to eight),
-  shared out so up to four of you each have two or more, and the longer the touch. Every miss or
-  clash, anyone's, costs the band's striking (the bar over the highway) and clean rows win a little
-  back; let it run out and it all collapses into a jangle. Anyone who climbs up late stands by the
-  wall and watches.
+  it, and at GO everyone who joined (up to eight) is straight up in the ringing chamber, with no
+  countdown. It starts in rounds, then the method moves the bells about every row: Plain Hunt on an
+  easy day, Plain Bob or Grandsire on a hard one. Alone you ring four or five bells, up to four of you
+  two or three each, and five to eight of you one or two each, on a ring of up to twelve. You play
+  your part on a note highway in the middle of the screen, Guitar Hero style: four lanes, A W S D
+  left to right (□ △ ✕ ○ on a pad, a pad under each lane on a touch screen), and a note for every
+  time one of your bells rings, stepping a lane right as the bell moves up a place and left as it
+  moves down, so the method runs across the lanes. Some notes are chords, two lanes joined by a bar,
+  struck together: more of them the fewer notes you have, and on a harder day. The rest of the
+  band's notes come down faintly, so you can see yours fall among theirs. Strike on the line for
+  Perfect or Good, a streak and up to four times the score; the fewer notes you have, the tighter
+  the timing. Early or late, or half a chord, and the bell clashes (a late rope hauls you off your
+  feet). Every miss or clash, anyone's, costs the band's striking (the bar over the highway; a slip
+  costs a big band less), and clean rows win a little back; let it run out and it all collapses into
+  a jangle. Up there the lane keys only ring. Anyone who climbs up late, or past eight, stands by
+  the wall and watches.
 - **The Driving Test** (a team challenge, on any map with a car park on a decent road): a learner
   car with L plates and a roof sign waits outside the test centre (on London Road East in Bath), the
   examiner stood by it with his clipboard. E by them starts it; whoever gets in the driver's seat

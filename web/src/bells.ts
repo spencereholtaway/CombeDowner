@@ -7,23 +7,28 @@
 // swapping places every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one.
 //
 // Each ringer plays their part on a note highway in the middle of the screen (bellhighway.ts), the
-// way Guitar Hero does: a lane for each of their bells, a key for each lane (the bells' table in
-// controls.ts: W A S D, or a pad's face buttons, laid out as they sit; a pad to tap on a touch
-// screen), and a note coming down a lane for each time that bell sounds, in its place in the row, so
-// the lanes trace the method. With only one bell your two lanes are its handstroke and its
-// backstroke. The more of you there are, the more bells (up to eight), shared out in turn so up to
-// four of you each have two or more, and the longer the touch; a harder day adds a bell. A note struck on the line is Perfect or Good, and
-// builds your streak and multiplier; early or late and the bell clashes with its neighbour (late
-// enough and the rope hauls you off the floor); left alone it's missed. Every bell missed or clashed
-// costs the whole band's striking and a clean row gives a little back: let it run out and the lot
-// collapses into a jangle. Ring it through and the strange object turns up at the church door.
-// A bell sounds a moment (LEAD) after its rope is pulled, as a real one does. Anyone else can climb
-// up too (use, by the vicar), and once the ringing has started stands by the wall and watches.
+// way Guitar Hero does: four lanes, A W S D or a pad's face buttons laid out as they sit (the bells'
+// table in controls.ts), or a pad to tap under each on a touch screen. Every player up to eight
+// rings: four or five bells alone, two or three each for up to four, one or two each for five to
+// eight, up to twelve bells. Each strike of your bells comes down as a note. Its lane follows the
+// bell: a lane right as it moves up a place, left as it moves down, the same as it makes one, round
+// the four (chart), so the method reads as runs across the lanes. Some notes are chords, two lanes
+// at once, more of them the fewer notes you have and on a harder day; a chord is one strike, and
+// one key of it alone is a clash. Everyone else's notes come down too, faintly, so you can see
+// yours fall among the band's. The fewer notes you have, the narrower the window to strike them
+// in. A note struck on the line is Perfect or Good, and builds your streak and multiplier; early or
+// late and the bell clashes with its neighbour (late enough and the rope hauls you off the floor);
+// left alone it's missed. Every bell missed or clashed costs the whole band's striking, less the
+// bigger the band, and a clean row gives a little back: let it run out and the lot collapses into
+// a jangle. Ring it through and the strange object turns up at the church door. A bell sounds a
+// moment (LEAD) after its rope is pulled, as a real one does. Anyone else can climb up too (use, by
+// the vicar), and once the ringing has started stands by the wall and watches.
 //
 // Who decides what: the host keeps the time and runs the band. Each screen syncs its clock to the
 // host's ("tq"/"ta" inside "qe"), so the rows are laid out on one shared clock from the moment the
 // host says go. "go" carries the bells, the day's level and whose each bell is, so every screen
-// draws the same chart from it. A pull is timed on the puller's own synced clock, and what goes
+// works out the same chart from it and the seed; anyone who comes up after it went round is sent it
+// again. A chord left with one key is said ("ph"), so the host counts it. A pull is timed on the puller's own synced clock, and what goes
 // round is when that pull makes the bell sound; since that's a little after the pull, it usually
 // reaches everyone before the bell is due, and every screen plays it at the same shared moment,
 // however far away the puller is. The host judges each row from those times (the puller decided
@@ -54,9 +59,10 @@ const LEAD = 200;            // ms from pulling the rope to the bell sounding
 const HALF = 5;              // the ringing chamber's half-width, metres
 const ROOM_H = 3.7;
 const CLIMB = 6;             // how close to the vicar's board (or under the chamber) to climb the tower
-const MAX_BELLS = 8;
-const PLACE = "12345678";
-const STAGE = ["", "", "", "Singles", "Minimus", "Doubles", "Minor", "Triples", "Major"];
+const MAX_BELLS = 12;
+const MAX_RINGERS = 8;
+const PLACE = "1234567890ET";
+const STAGE = ["", "", "", "Singles", "Minimus", "Doubles", "Minor", "Triples", "Major", "Caters", "Royal", "Cinques", "Maximus"];
 const AUTO = new URLSearchParams(location.search).get("ringer");
 const PATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track"]);
 
@@ -90,6 +96,8 @@ function change(row: number[], c: string): number[] {
 /** Which method on which day: plain hunting when it's easy, and the bigger the band the longer the course. */
 function plan(n: number, level: number): Plan {
   const huntName = n === 3 ? "Plain Hunt on Three" : `Plain Hunt ${STAGE[n]}`;
+  // a big ring hunts: a course of anything else on ten or twelve would take the best part of an hour
+  if (n > 8) return { name: huntName, kind: "hunt", courses: level ? 2 : 1 };
   if (level === 0) return { name: huntName, kind: "hunt", courses: n <= 4 ? 3 : 2 };
   if (n === 3) return { name: huntName, kind: "hunt", courses: level === 1 ? 4 : 6 };
   if (level === 1) {
@@ -229,9 +237,10 @@ function bellBuffer(c: AudioContext, f: number): AudioBuffer {
   return buf;
 }
 
-/** The ring tuned to a major scale, tenor lowest on the key note and the treble at the top. */
+/** The ring tuned to a major scale, tenor lowest on the key note and the treble at the top; a big
+ *  ring has a heavier tenor, as real ones do. */
 function tuning(n: number): number[] {
-  const MAJOR = [0, 2, 4, 5, 7, 9, 11, 12], tenor = 311.1;
+  const MAJOR = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19], tenor = n > 8 ? 233.1 : 311.1;
   return Array.from({ length: n }, (_, b) => tenor * Math.pow(2, MAJOR[n - 1 - b] / 12));
 }
 
@@ -480,7 +489,7 @@ function buildChamber(cx: number, cz: number, top: number, church: string): Cham
   root.position.set(cx, top, cz);
   const mats: THREE.Material[] = [];
   const wall = new THREE.MeshBasicMaterial({ map: wallTexture(church), side: THREE.BackSide });
-  const floorMat = new THREE.MeshBasicMaterial({ map: floorTexture(1.3 + 0.22 * MAX_BELLS), side: THREE.BackSide });
+  const floorMat = new THREE.MeshBasicMaterial({ map: floorTexture(ropeR(MAX_BELLS)), side: THREE.BackSide });
   const ceil = new THREE.MeshBasicMaterial({ map: ceilingTexture(), side: THREE.BackSide });
   const room = new THREE.Mesh(new THREE.BoxGeometry(HALF * 2, ROOM_H, HALF * 2), [wall, wall, ceil, floorMat, wall, wall]);
   room.position.y = ROOM_H / 2;
@@ -529,9 +538,11 @@ function buildChamber(cx: number, cz: number, top: number, church: string): Cham
   return ch;
 }
 
+/** How far out from the middle of the chamber a ring of n ropes hangs. */
+const ropeR = (n: number) => 1.3 + 0.18 * n;
 /** Where bell b's rope hangs (out: 0), or where its ringer stands (out: 0.95), from the middle of the chamber. */
 function ropeAt(b: number, n: number, out: number): [number, number] {
-  const r = 1.3 + 0.22 * n + out, a = Math.PI - (b / n) * Math.PI * 2;
+  const r = ropeR(n) + out, a = Math.PI - (b / n) * Math.PI * 2;
   return [Math.sin(a) * r, Math.cos(a) * r];
 }
 /** Where someone watching stands, against the wall between the ropes. */
@@ -545,23 +556,35 @@ function watchAt(k: number): [number, number] {
 interface Go { T: number; n: number; L: number; band: string[] }
 type Phase = "gather" | "ring" | "stand" | "down";
 
-/** The five lane controls, each always in its own colour. */
-const LANE_CTL = ["bells.lane1", "bells.lane2", "bells.lane3", "bells.lane4", "bells.lane5"];
-const LANE_COLOUR = ["#3fd24a", "#e8423a", "#f2d43a", "#3a8af2", "#f2913a"];
-/** Which of them a highway of so many lanes uses: the outer pair first, then the top, then the bottom. */
-const LANE_SET = [[0], [0, 3], [0, 1, 3], [0, 1, 2, 3], [0, 1, 2, 3, 4]];
+/** The four lanes, left to right, each in its own colour, and on a touch screen where it sits. */
+const LANE_CTL = ["bells.lane1", "bells.lane2", "bells.lane3", "bells.lane4"];
+const LANE_COLOUR = ["#3fd24a", "#e8423a", "#f2d43a", "#3a8af2"];
+const LANE_PAD = ["◀", "▲", "▼", "▶"];
 
-/** The bells for this many ringers on a day of level L, and whose each is (blank for a steady old
- *  ringer): the more of you, the more bells, shared out in turn, so up to four of you all have two
- *  or more each, and a harder day has one more while there's room. */
+/** The bells for this many ringers (up to eight) on a day of level L, and whose each is (blank for
+ *  a steady old ringer): four or five alone, two or three each for up to four of you, one or two
+ *  each beyond that, up to twelve, shared out in turn; a harder day has one more while there's room. */
 function bandFor(ids: string[], L: number): string[] {
-  const k = Math.min(MAX_BELLS, ids.length);
-  const n = Math.min(MAX_BELLS, [4, 4, 5, 6, 8][Math.min(4, k)] + (L >= 1 && k <= 3 ? 1 : 0));
+  const k = Math.min(MAX_RINGERS, ids.length);
+  const n = Math.min(MAX_BELLS, [4, 4, 5, 7, 8, 9, 10, 11, 12][k] + (L >= 1 ? 1 : 0));
   return Array.from({ length: n }, (_, b) => (k ? ids[b % k] : ""));
 }
 
+/** How long a bell's beat is, ms: quicker with more bells and on a harder day. */
+const beatOf = (n: number, L: number) => (430 - 18 * Math.min(n, 12)) * (1 - 0.07 * L);
+/** A ringer's notes a second, from how many bells they hold. */
+const npsOf = (bells: number, n: number, L: number) => (bells * 1000) / ((n + 0.5) * beatOf(n, L));
+/** How many of a ringer's notes are chords: none to speak of when they're busy, a third or more when
+ *  they've a strike every couple of seconds, and more on a harder day. */
+const chordRate = (nps: number, L: number) => Math.max(0, Math.min(0.55, 0.52 - 0.22 * nps)) + 0.08 * L;
+/** A ringer's Good window either side of the beat, ms: narrower the fewer notes they have, so a
+ *  bell or two each still takes some striking, and on a harder day, but never so narrow that a pad's
+ *  or a screen's lag makes it a lottery. Perfect is two fifths of it, and never under 30 ms. */
+const windowOf = (nps: number, L: number) => Math.max(70, 135 * Math.min(1, 0.45 + 0.22 * nps) * (1 - 0.1 * L));
+const perfectOf = (ok: number) => Math.max(30, ok * 0.4);
+
 const STRIKING = 0.6;        // the band's striking at the start, 0..1
-const FAULT = 0.07;          // what each bell missed or clashed in a row costs it
+const FAULT = 0.07;          // what each bell missed or clashed in a row costs it, for two ringers or fewer
 const MEND = 0.03;           // and what a clean row gives back
 
 registerChallenge({
@@ -594,8 +617,13 @@ registerChallenge({
     let list: string[] = [];
     let go: Go | null = null;
     let rows: number[][] = [], placeOf: number[][] = [], changesFrom = 4, changesTo = 4, methodName = "";
-    let B = 400, okT = 130, perfT = 50, period = 1000, R = 0;
+    let B = 400, okT = 130, perfT = 50, period = 1000, R = 0, fault = FAULT;
     let mine: number[] = [];
+    // the chart, for every bell: its lane in each row, the lane it's paired with for a chord (or -1),
+    // and how wide its ringer's window is
+    let laneAt: number[][] = [], pairAt: number[][] = [], okOf: number[] = [];
+    const half = new Map<number, number>();      // my chords with one key down: the key it was
+    const halves = new Set<number>();            // anyone's chords struck with one key only
     const steady = new Set<number>();
     const pulls = new Map<number, Map<number, number>>();
     const struck = new Set<number>();
@@ -624,21 +652,18 @@ registerChallenge({
 
     const ringing = () => aboard && phase === "ring" && !!go && mine.length > 0 && !paused();
     const highway = new Highway((k, down) => { highway.press(k, down); if (down && ringing()) pull(k); });
-    const laneCount = () => (mine.length > 1 ? mine.length : 2);
-    const laneCtl = (k: number) => LANE_CTL[LANE_SET[laneCount() - 1][k]];
-    const laneOf = (b: number, r: number) => (mine.length > 1 ? mine.indexOf(b) : r % 2);
-    const laneFor = (match: (id: string) => boolean) => {
-      for (let k = 0; k < laneCount(); k++) if (match(laneCtl(k))) return k;
-      return -1;
-    };
-    // every lane key, used or not, is the chamber's while you ring: W A S D don't walk you and Space
-    // doesn't jump. Let-gos still go through, so nothing held from before is left down.
+    /** The lanes a note of bell b in row r wants struck: one, or two together for a chord. */
+    const lanesOf = (b: number, r: number) => (pairAt[b][r] >= 0 ? [laneAt[b][r], pairAt[b][r]] : [laneAt[b][r]]);
+    const laneFor = (match: (id: string) => boolean) => LANE_CTL.findIndex(match);
+    // the lane keys are the chamber's while you ring: W A S D don't walk you. Let-gos still go
+    // through, so nothing held from before is left down.
     const onKey = (e: KeyboardEvent) => {
-      if (!ringing() || e.target instanceof HTMLInputElement || !LANE_CTL.some((id) => isKey(e.code, id))) return;
+      if (!ringing() || e.target instanceof HTMLInputElement) return;
       const k = laneFor((id) => isKey(e.code, id));
-      if (e.type === "keyup") { if (k >= 0) highway.press(k, false); return; }
+      if (k < 0) return;
+      if (e.type === "keyup") { highway.press(k, false); return; }
       e.preventDefault(); e.stopImmediatePropagation();
-      if (k < 0 || e.repeat) return;
+      if (e.repeat) return;
       highway.press(k, true);
       pull(k);
     };
@@ -646,11 +671,11 @@ registerChallenge({
     addEventListener("keyup", onKey, true);
     // and so is every lane's button on a pad: the face buttons neither jump, fire nor reload
     padTake((b, down) => {
-      if (!ringing() || !LANE_CTL.some((id) => control(id)?.pad === b)) return false;
       const k = laneFor((id) => control(id)?.pad === b);
-      if (k >= 0) highway.press(k, down);
+      if (!ringing() || k < 0) return false;
+      highway.press(k, down);
       if (!down) return false;
-      if (k >= 0) pull(k);
+      pull(k);
       return true;
     });
 
@@ -693,15 +718,46 @@ registerChallenge({
       rows = t.rows; changesFrom = t.changesFrom; changesTo = t.changesTo; methodName = p.name;
       R = rows.length;
       placeOf = rows.map((row) => { const at: number[] = []; row.forEach((b, i) => { at[b] = i; }); return at; });
-      B = (430 - 18 * g.n) * (1 - 0.07 * g.L);
-      okT = B * (0.36 - 0.04 * g.L); perfT = okT * 0.4;
+      B = beatOf(g.n, g.L);
       period = (g.n + 0.5) * B;
       steady.clear();
       g.band.forEach((id, b) => { if (!id) steady.add(b); });
       mine = g.band.flatMap((id, b) => (id === w.selfId ? [b] : []));
+      const ringers = new Set(g.band.filter(Boolean)).size;
+      // a big band has many more chances to slip every row, so each slip costs it less
+      fault = FAULT / Math.sqrt(Math.max(1, ringers / 2));
+      chart(g);
+      okT = okOf[mine[0]] ?? okT; perfT = perfectOf(okT);
       phase = phase === "gather" ? "ring" : phase;
       const c = ctxNow();
       if (c) for (const f of tuning(g.n)) bellBuffer(c, f);
+    }
+
+    /** Every bell's lanes, the same on every screen from the seed and the method. Each strike moves a
+     *  lane right as its bell moves up a place, left as it moves down, and stays put as it makes a
+     *  place (round the four, so a bell hunting up runs A W S D A W...); a ringer's bells start
+     *  spread across the lanes. Some strikes are chords, a second lane with the first: the one the
+     *  bell came from as it moved, or the opposite one as it made a place. */
+    function chart(g: Go) {
+      const owned = new Map<string, number[]>();
+      g.band.forEach((id, b) => owned.set(id || `steady${b}`, [...(owned.get(id || `steady${b}`) ?? []), b]));
+      const twist = hash("lanes", offer.seed) % 4;
+      laneAt = []; pairAt = []; okOf = [];
+      for (let b = 0; b < g.n; b++) {
+        const theirs = owned.get(g.band[b] || `steady${b}`)!, nps = npsOf(theirs.length, g.n, g.L);
+        const rate = chordRate(nps, g.L);
+        okOf.push(windowOf(nps, g.L));
+        let lane = (theirs.indexOf(b) + twist) % 4;
+        const ls: number[] = [], ps: number[] = [];
+        for (let r = 0; r < R; r++) {
+          const d = r ? placeOf[r][b] - placeOf[r - 1][b] : 0, was = lane;
+          lane = (lane + d + 4) % 4;
+          // more on the handstroke, the strong beat
+          const chord = r >= 2 && r < R - 1 && (hash("chord", offer.seed, b, r) % 1000) / 1000 < rate * (r % 2 ? 0.7 : 1.3);
+          ls.push(lane); ps.push(chord ? (d ? was : (lane + 2) % 4) : -1);
+        }
+        laneAt.push(ls); pairAt.push(ps);
+      }
     }
 
     function send(d: Record<string, unknown>, to?: string) {
@@ -724,7 +780,7 @@ registerChallenge({
     function standSpot(): [number, number] {
       if (go && mine.length) return ropeAt(mine[0], go.n, 0.95);
       const k = cast.indexOf(w.selfId);
-      if (!go && k >= 0 && k < MAX_BELLS) return ropeAt(k, n(), 0.95);
+      if (!go && k >= 0 && k < MAX_RINGERS) return ropeAt(k, n(), 0.95);
       const watchers = list.filter((id) => (go ? !go.band.includes(id) : !cast.includes(id)));
       return watchAt(Math.max(0, watchers.indexOf(w.selfId)));
     }
@@ -738,7 +794,7 @@ registerChallenge({
       tell({ k: "go", T: Math.round(nowS() + 3000), n: band.length, L: level, band });
     }
 
-    /** A lane's key, pad or button: the note in it nearest now, struck. */
+    /** A lane's key, pad or button: the note in it nearest now, struck, or the second key of a chord. */
     function pull(lane: number) {
       if (!go || off === null) return;
       const s = nowS() + LEAD;
@@ -749,28 +805,46 @@ registerChallenge({
       for (let r = r0; r < Math.min(R, r0 + 5); r++) {
         if (r <= judged) continue;
         for (const b of mine) {
-          if (laneOf(b, r) !== lane || pulls.get(b)?.has(r) || gone.has(b * 10000 + r)) continue;
+          const key = b * 10000 + r;
+          if (gone.has(key) || !lanesOf(b, r).includes(lane)) continue;
+          if (pulls.get(b)?.has(r) && (half.get(key) ?? lane) === lane) continue;
           const d = Math.abs(s - beat(b, r));
           if (d < bd) { bd = d; nr = r; nb = b; }
         }
       }
       if (nr < 0 || bd > Math.min(period * 0.45, 600)) { streak = 0; highway.judge(lane, "Nothing there", "#b9b4a8"); return; }
-      strikeNote(nb, nr, s);
+      const key = nb * 10000 + nr;
+      if (half.has(key)) {
+        // the chord's other key: judged as one strike, by whichever key was further out
+        const first = pulls.get(nb)!.get(nr)!;
+        half.delete(key);
+        const e1 = first - beat(nb, nr), e2 = s - beat(nb, nr);
+        grade(nb, nr, Math.abs(e1) > Math.abs(e2) ? e1 : e2);
+        return;
+      }
+      ringNote(nb, nr, s);
+      // the first key of a chord: the bell's away, but it's only judged once the other key comes
+      if (pairAt[nb][nr] >= 0) half.set(key, lane);
+      else grade(nb, nr, s - beat(nb, nr));
     }
 
-    /** Your bell b struck for row r, sounding at shared time s: out to everyone, and how you did. */
-    function strikeNote(b: number, r: number, s: number) {
+    /** Your bell b rung for row r, sounding at shared time s: out to everyone. */
+    function ringNote(b: number, r: number, s: number) {
       const m = pulls.get(b) ?? new Map<number, number>();
       pulls.set(b, m);
       m.set(r, s);
       send({ k: "p", b, r, t: Math.round(s) });
       strike(b, s);
-      const err = s - beat(b, r), lane = laneOf(b, r);
+    }
+
+    /** How you struck your note of bell b in row r, err ms off the beat. */
+    function grade(b: number, r: number, err: number) {
+      const lane = laneAt[b][r];
       notes++;
       if (Math.abs(err) <= okT) {
         const perfect = Math.abs(err) <= perfT;
         streak++; best = Math.max(best, streak); clean++;
-        score += (perfect ? 100 : 50) * mult();
+        score += (perfect ? 100 : 50) * (pairAt[b][r] >= 0 ? 2 : 1) * mult();
         highway.judge(lane, perfect ? "Perfect" : err < 0 ? "Good, a touch quick" : "Good, a touch slow", perfect ? "#58e06a" : "#e8c25a");
       } else {
         streak = 0;
@@ -779,17 +853,25 @@ registerChallenge({
       }
     }
 
-    /** Notes of yours gone past the line unstruck. */
+    /** Notes of yours gone past the line unstruck, and chords left with one key. */
     function missed(t: number) {
       if (!go || !mine.length || phase !== "ring") return;
       const at = rowAt(t + LEAD);
       for (let r = Math.max(0, at - 2); r <= Math.min(R - 1, at); r++) {
         for (const b of mine) {
           const key = b * 10000 + r;
-          if (gone.has(key) || pulls.get(b)?.has(r) || beat(b, r) - LEAD + okT > t) continue;
-          gone.add(key);
-          notes++; streak = 0;
-          highway.judge(laneOf(b, r), "Missed!", "#ff5a4e");
+          if (gone.has(key) || beat(b, r) - LEAD + okT > t) continue;
+          if (half.has(key)) {
+            half.delete(key);
+            gone.add(key);
+            tell({ k: "ph", b, r });
+            notes++; streak = 0;
+            highway.judge(laneAt[b][r], "Half a chord! Clash", "#ff5a4e");
+          } else if (!pulls.get(b)?.has(r)) {
+            gone.add(key);
+            notes++; streak = 0;
+            highway.judge(laneAt[b][r], "Missed!", "#ff5a4e");
+          }
         }
       }
     }
@@ -819,11 +901,12 @@ registerChallenge({
         if (steady.has(b)) continue;
         const s = pulls.get(b)?.get(r);
         if (s === undefined) who.push([b, null]);
-        else if (Math.abs(s - beat(b, r)) > okT) who.push([b, Math.round(s - beat(b, r))]);
+        else if (Math.abs(s - beat(b, r)) > okOf[b]) who.push([b, Math.round(s - beat(b, r))]);
+        else if (halves.has(b * 10000 + r)) who.push([b, 0]);
       }
       const isBad = who.length > 0;
       const nb = bad + (isBad ? 1 : 0);
-      const m = Math.max(0, Math.min(1, striking - who.length * FAULT + (isBad ? 0 : MEND)));
+      const m = Math.max(0, Math.min(1, striking - who.length * fault + (isBad ? 0 : MEND)));
       tell({ k: "row", r, bad: nb, lb: isBad ? r : lastBad, who, m: Math.round(m * 1000) / 1000 });
       if (m <= 0) tell({ k: "end", won: false, collapse: true, why: "The striking fell apart and the bells collapsed into a jangle" });
       else if (r === R - 1) tell({ k: "end", won: true, collapse: false, why: `${methodName} rung through with ${nb} bad row${nb === 1 ? "" : "s"}` });
@@ -840,10 +923,7 @@ registerChallenge({
       highway.show(mineUp);
       if (!mineUp) return;
       const t = nowS();
-      const lanes = Array.from({ length: laneCount() }, (_, k) => {
-        const id = laneCtl(k);
-        return { ctl: id, colour: LANE_COLOUR[LANE_CTL.indexOf(id)], label: mine.length > 1 ? String(mine[k] + 1) : k ? "Back" : "Hand" };
-      });
+      const lanes = LANE_CTL.map((id, k) => ({ ctl: id, colour: LANE_COLOUR[k], label: LANE_PAD[k] }));
       if (off === null || !go) {
         highway.draw({ title: "The ringing chamber", right: "", meter: striking, lanes, gems: [], bars: [], score, streak, mult: mult(), centre: "Finding the beat…" });
         return;
@@ -855,8 +935,13 @@ registerChallenge({
         const st = go.T + rowStart(r) - LEAD - t;
         if (st > AHEAD) break;
         bars.push({ due: st, strong: r % 2 === 0 });
-        for (const b of mine) {
-          gems.push({ lane: laneOf(b, r), due: beat(b, r) - LEAD - t, label: String(b + 1), state: pulls.get(b)?.has(r) ? 1 : gone.has(b * 10000 + r) ? 2 : 0 });
+        // the whole band's strikes come down, the others' faint, so you see yours come between them
+        for (let b = 0; b < go.n; b++) {
+          const key = b * 10000 + r, own = mine.includes(b);
+          gems.push({
+            lane: laneAt[b][r], pair: pairAt[b][r] >= 0 ? pairAt[b][r] : undefined, due: beat(b, r) - LEAD - t, label: String(b + 1),
+            state: own ? (pulls.get(b)?.has(r) && !half.has(key) ? 1 : gone.has(key) ? 2 : 0) : 0, faint: !own,
+          });
         }
       }
       const centre = phase !== "ring" ? (ending?.won ? "Well rung!" : "Stand!") : t < go.T - 800 ? "Look to…"
@@ -886,7 +971,9 @@ registerChallenge({
     // what a probe compares across screens (?ringer only)
     if (AUTO) (window as unknown as Record<string, unknown>).__bells = () => ({
       phase, method: methodName, R, n: go?.n ?? 0, band: go?.band ?? [], mine, T: go?.T ?? 0, rows: rows.map((r) => r.join("")).join("/"),
-      striking, judged, bad, ending, heard, sounded, aboard, score, clean, notes,
+      striking, judged, bad, ending, heard, sounded, aboard, score, clean, notes, okT, perfT,
+      chart: laneAt.map((l, b) => l.join("") + ":" + pairAt[b].join(",")).join("/"),
+      chords: mine.reduce((a, b) => a + pairAt[b].filter((p) => p >= 0).length, 0), myNotes: mine.length * R,
     });
 
     const job: Job = {
@@ -959,7 +1046,11 @@ registerChallenge({
             for (const b of mine) {
               if (pulls.get(b)?.has(r) || gone.has(b * 10000 + r)) continue;
               const wobble = AUTO === "bad" ? (hash("wobble", r, b) % 3 === 0 ? (hash("w", r, b) % 2 ? 0.7 : -0.6) * B : 0) : 0;
-              if (t >= beat(b, r) - LEAD + wobble) { highway.press(laneOf(b, r), true); highway.press(laneOf(b, r), false); strikeNote(b, r, t + LEAD); }
+              if (t >= beat(b, r) - LEAD + wobble) {
+                for (const l of lanesOf(b, r)) { highway.press(l, true); highway.press(l, false); }
+                ringNote(b, r, t + LEAD);
+                grade(b, r, t + LEAD - beat(b, r));
+              }
             }
           }
         }
@@ -1028,6 +1119,9 @@ registerChallenge({
             if (!ending) strike(b, d.t);
             return;
           }
+          case "ph":
+            if (go && Number.isFinite(d.b) && Number.isFinite(d.r)) halves.add((d.b | 0) * 10000 + (d.r | 0));
+            return;
           case "ai":
             if (go && Number.isFinite(d.b)) { steady.add(d.b | 0); chamberN = 0; }
             return;
@@ -1042,7 +1136,7 @@ registerChallenge({
               feedAt = performance.now();
               const names = who.slice(0, 2).map(([b, e]: [number, number | null]) => {
                 const id = go!.band[b], nm = id ? esc(w.nameOf(id)) : "An old hand";
-                return `${nm} on ${bellName(b, go!.n)}${e === null ? " missed the stroke" : e > 0 ? " came in late" : " came in early"}`;
+                return `${nm} on ${bellName(b, go!.n)}${e === null ? " missed the stroke" : e === 0 ? " struck half a chord" : e > 0 ? " came in late" : " came in early"}`;
               });
               w.feed(`${named("Clash!", COLOUR)} ${names.join("; ")}`);
             }

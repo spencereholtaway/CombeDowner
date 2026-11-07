@@ -174,15 +174,13 @@ export const PLACES: Record<string, Control[]> = {
   card: [
     { id: "card.close", name: "close", keys: ["Escape"], pad: B.options, touch: "×" },
   ],
-  // the bells' ringing chamber: a lane of the note highway each, laid out as the keys and the face
-  // buttons sit, left to right (two lanes are the outer pair, three add the top one), and the rare
-  // fifth lane last; use looks to before the ringing
+  // the bells' ringing chamber: the note highway's four lanes, laid out as the keys and the face
+  // buttons sit, left to right (a chord is two at once); use looks to before the ringing
   bells: [
     { id: "bells.lane1", name: "ring the left lane", keys: ["KeyA"], pad: B.square, touch: "its pad" },
     { id: "bells.lane2", name: "ring the second lane", keys: ["KeyW"], pad: B.triangle, touch: "its pad" },
     { id: "bells.lane3", name: "ring the third lane", keys: ["KeyS"], pad: B.cross, touch: "its pad" },
     { id: "bells.lane4", name: "ring the right lane", keys: ["KeyD"], pad: B.circle, touch: "its pad" },
-    { id: "bells.lane5", name: "ring the fifth lane", keys: ["Space"], pad: B.r1, touch: "its pad" },
     { id: "bells.look", name: "look to now", keys: ["KeyE"], via: "use" },
   ],
   // the Climb: hanging on a hold or a rope
