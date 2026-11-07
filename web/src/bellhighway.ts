@@ -212,9 +212,9 @@ export class Highway {
     x.textAlign = "center"; x.textBaseline = "alphabetic";
     x.fillStyle = f.mult >= 4 ? "#ffdd00" : f.mult >= 2 ? "#f4f1ea" : "#b9b4a8";
     x.font = font(small ? 26 : 36, 800);
-    x.fillText(`×${f.mult}`, side / 2, hy + 4);
+    x.fillText(`×${f.mult}`, side / 2, hy - 18);
     x.font = font(small ? 11 : 13, 600); x.fillStyle = "#b9b4a8";
-    x.fillText("MULTIPLIER", side / 2, hy + 20);
+    x.fillText("MULTIPLIER", side / 2, hy - 2);
     x.font = font(small ? 20 : 28, 800); x.fillStyle = "#f4f1ea";
     x.fillText(String(f.score), W - side / 2, hy - 18);
     x.font = font(small ? 11 : 13, 600); x.fillStyle = "#b9b4a8";

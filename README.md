@@ -412,8 +412,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   starts in rounds, then the method moves the bells about every row: Plain Hunt on an easy day,
   Plain Bob or Grandsire on a hard one. You play your part on a note highway in the middle of the
   screen, Guitar Hero style: a lane for each of your bells, notes coming down each lane for every
-  time that bell rings, and a key for each lane, from the middle out (D F Space J K for five lanes,
-  F J for two; on a pad L2 L1 ✕ R1 R2; on a touch screen a pad under each lane). With one bell your
+  time that bell rings, and a key for each lane, laid out as they sit: A W S D left to right (A and
+  D for two lanes, A W D for three, and Space for a rare fifth), on a pad □ △ ✕ ○ (and R1), and on a
+  touch screen a pad under each lane. Up there they ring and do nothing else. With one bell your
   two lanes are its handstroke and backstroke. Strike on the line for Perfect or Good, a streak and
   up to four times the score; early or late and the bell clashes (a late rope hauls you off your
   feet). Alone you ring four or five bells yourself; the more of you, the more bells (up to eight),

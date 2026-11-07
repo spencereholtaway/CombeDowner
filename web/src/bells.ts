@@ -8,11 +8,11 @@
 //
 // Each ringer plays their part on a note highway in the middle of the screen (bellhighway.ts), the
 // way Guitar Hero does: a lane for each of their bells, a key for each lane (the bells' table in
-// controls.ts; a pad's shoulder buttons, or a pad to tap on a touch screen), and a note coming down
-// a lane for each time that bell sounds, in its place in the row, so the lanes trace the method. With
-// only one bell your two lanes are its handstroke and its backstroke. The more of you there are, the
-// more bells (up to eight), shared out in turn so up to four of you each have two or more, and the
-// longer the touch; a harder day adds a bell. A note struck on the line is Perfect or Good, and
+// controls.ts: W A S D, or a pad's face buttons, laid out as they sit; a pad to tap on a touch
+// screen), and a note coming down a lane for each time that bell sounds, in its place in the row, so
+// the lanes trace the method. With only one bell your two lanes are its handstroke and its
+// backstroke. The more of you there are, the more bells (up to eight), shared out in turn so up to
+// four of you each have two or more, and the longer the touch; a harder day adds a bell. A note struck on the line is Perfect or Good, and
 // builds your streak and multiplier; early or late and the bell clashes with its neighbour (late
 // enough and the rope hauls you off the floor); left alone it's missed. Every bell missed or clashed
 // costs the whole band's striking and a clean row gives a little back: let it run out and the lot
@@ -32,7 +32,7 @@
 // old ringers, striking on the beat on every screen alike, take over a ringer's ropes if they leave.
 //
 // For testing, ?ringer=good rings your own bells for you on the beat, and ?ringer=bad rings them
-// all over the place.
+// all over the place; either puts window.__bells up for a probe to read.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
@@ -548,8 +548,8 @@ type Phase = "gather" | "ring" | "stand" | "down";
 /** The five lane controls, each always in its own colour. */
 const LANE_CTL = ["bells.lane1", "bells.lane2", "bells.lane3", "bells.lane4", "bells.lane5"];
 const LANE_COLOUR = ["#3fd24a", "#e8423a", "#f2d43a", "#3a8af2", "#f2913a"];
-/** Which of them a highway of so many lanes uses, from the middle out. */
-const LANE_SET = [[2], [1, 3], [1, 2, 3], [0, 1, 3, 4], [0, 1, 2, 3, 4]];
+/** Which of them a highway of so many lanes uses: the outer pair first, then the top, then the bottom. */
+const LANE_SET = [[0], [0, 3], [0, 1, 3], [0, 1, 2, 3], [0, 1, 2, 3, 4]];
 
 /** The bells for this many ringers on a day of level L, and whose each is (blank for a steady old
  *  ringer): the more of you, the more bells, shared out in turn, so up to four of you all have two
@@ -609,7 +609,7 @@ registerChallenge({
     let jangleT = 0;
     let gatherSince = 0;
     let upAtGo = cast.includes(w.selfId);
-    let feedAt = 0;
+    let feedAt = 0, heard = 0, sounded = 0;
     let shout: { text: string; t: number } | null = null;
     // your own part: how it's going, on this screen only
     const gone = new Set<number>();
@@ -631,25 +631,26 @@ registerChallenge({
       for (let k = 0; k < laneCount(); k++) if (match(laneCtl(k))) return k;
       return -1;
     };
-    // the lane keys are the chamber's while you ring: nothing else (a torch, the job's poster) hears them
+    // every lane key, used or not, is the chamber's while you ring: W A S D don't walk you and Space
+    // doesn't jump. Let-gos still go through, so nothing held from before is left down.
     const onKey = (e: KeyboardEvent) => {
-      if (!ringing() || e.target instanceof HTMLInputElement) return;
+      if (!ringing() || e.target instanceof HTMLInputElement || !LANE_CTL.some((id) => isKey(e.code, id))) return;
       const k = laneFor((id) => isKey(e.code, id));
-      if (k < 0) return;
+      if (e.type === "keyup") { if (k >= 0) highway.press(k, false); return; }
       e.preventDefault(); e.stopImmediatePropagation();
-      if (e.type === "keyup") { highway.press(k, false); return; }
-      if (e.repeat) return;
+      if (k < 0 || e.repeat) return;
       highway.press(k, true);
       pull(k);
     };
     addEventListener("keydown", onKey, true);
     addEventListener("keyup", onKey, true);
+    // and so is every lane's button on a pad: the face buttons neither jump, fire nor reload
     padTake((b, down) => {
-      if (!ringing()) return false;
+      if (!ringing() || !LANE_CTL.some((id) => control(id)?.pad === b)) return false;
       const k = laneFor((id) => control(id)?.pad === b);
-      if (k < 0) return false;
-      highway.press(k, down);
-      if (down) pull(k);
+      if (k >= 0) highway.press(k, down);
+      if (!down) return false;
+      if (k >= 0) pull(k);
       return true;
     });
 
@@ -682,6 +683,7 @@ registerChallenge({
       src.playbackRate.value = rate;
       src.connect(o);
       src.start(c.currentTime + Math.max(0, (s - nowS()) / 1000));
+      sounded++;
     }
 
     function setGo(g: Go) {
@@ -881,6 +883,12 @@ registerChallenge({
 
     const paused = () => { const el = document.getElementById("pause"); return !!el && !el.hidden; };
 
+    // what a probe compares across screens (?ringer only)
+    if (AUTO) (window as unknown as Record<string, unknown>).__bells = () => ({
+      phase, method: methodName, R, n: go?.n ?? 0, band: go?.band ?? [], mine, T: go?.T ?? 0, rows: rows.map((r) => r.join("")).join("/"),
+      striking, judged, bad, ending, heard, sounded, aboard, score, clean, notes,
+    });
+
     const job: Job = {
       offer, done: null,
       aloft: inside,
@@ -959,10 +967,13 @@ registerChallenge({
       },
       host() {
         if (phase === "gather") {
-          // everyone who entered goes straight up at GO, so the ringing starts at once
+          // everyone who entered goes straight up at GO: ring as soon as each of them is up, which is
+          // also when their screen is listening for the go, or after a few seconds whoever is up
           const here = new Set(w.players().map((p) => p.id));
           if (list.length && !gatherSince) gatherSince = performance.now();
-          if (cast.some((id) => here.has(id)) || lookAsked || (list.length && performance.now() - gatherSince > 1500)) startRinging();
+          const inIt = cast.filter((id) => here.has(id));
+          const waited = gatherSince && performance.now() - gatherSince > (inIt.length ? 4000 : 1500);
+          if ((inIt.length && inIt.every((id) => list.includes(id))) || lookAsked || (list.length && waited)) startRinging();
           return;
         }
         if (!go || ending) return;
@@ -988,7 +999,10 @@ registerChallenge({
             return;
           }
           case "in":
-            if (w.isHost && !list.includes(from)) tell({ k: "list", a: [...list, from] });
+            if (!w.isHost) return;
+            if (!list.includes(from)) tell({ k: "list", a: [...list, from] });
+            // up after the go went round, so it never heard it
+            if (go && from !== w.selfId) send({ k: "go", ...go }, from);
             return;
           case "list":
             if (Array.isArray(d.a)) list = d.a.filter((id: unknown) => typeof id === "string");
@@ -1010,6 +1024,7 @@ registerChallenge({
             pulls.set(b, m);
             if (m.has(r)) return;
             m.set(r, d.t);
+            heard++;
             if (!ending) strike(b, d.t);
             return;
           }
