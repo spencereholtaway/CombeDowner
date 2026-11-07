@@ -6,7 +6,8 @@
 //                    2, 1, GO! of its own. missionCountdown is that countdown on its own, for a
 //                    line-up that keeps time across the room.
 //   missionWaiting   the banner while entries are open and racers line up.
-//   missionProgress  a status panel that stays up (the goal, how far, a clock, the step you're on),
+//   missionProgress  a status panel that stays up (the goal, how far, a clock, your place in a
+//                    race, the step you're on),
 //                    one per mission id, stacked in the HUD's left column. missionAux is the slot
 //                    under the crosshair for a mode's meter (a beat bar, a grip, a gate's clock).
 //   missionCall      a stage call on the plate over the crosshair (a wave, a checkpoint, a life gone,
@@ -55,6 +56,10 @@ addStyle("mission", `
 .mprog .jobline{font-size:15px;line-height:1.3}
 .mprog .jobline b{color:var(--kc,var(--accent))}
 .mprog .jobline b.clue{display:inline-block;color:#fff;letter-spacing:.08em;font-size:17px;margin:2px 0}
+.mprog .place{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;font-size:20px;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums;margin:2px 0}
+.mprog .place b{font-size:40px;line-height:1;color:var(--kc,var(--accent));text-shadow:0 2px 0 #000}
+.mprog .place sup{font-size:.45em}
+.mprog .place span{font-size:13px;font-weight:700;margin-left:4px;line-height:1.2}
 .mprog .bar{margin-top:6px;height:8px}
 .mprog .bar::after{display:none}
 .mprog .bar>div{background:var(--kc,var(--accent))}
@@ -64,6 +69,8 @@ addStyle("mission", `
 @media (max-width:700px),(max-height:500px){
   .mprog .jobtitle{font-size:17px}
   .mprog .count{font-size:17px}
+  .mprog .place{font-size:15px}
+  .mprog .place b{font-size:28px}
   .mprog .jobline{font-size:13px}
 }
 #maux{position:absolute;left:50%;top:calc(50% + 84px);transform:translateX(-50%);width:min(340px,calc(100vw - 32px));display:flex;flex-direction:column;align-items:center;gap:6px;
@@ -211,6 +218,8 @@ export interface MissionProgress {
   /** 0..1, as well as the words. */
   bar?: number;
   timer?: string;
+  /** Your place in a race against others: a big "2nd / 5" under the title, and the gap (html). */
+  place?: { n: number; of: number; gap?: string };
   /** The step you're on, in words (html). */
   hint?: string;
   sub?: string;
@@ -270,7 +279,8 @@ export function missionProgress(o: MissionProgress) {
   if (panel.style.getPropertyValue("--kc") !== col) colourOn(panel, col);
   const top = (o.label ? `<div class="label" style="color:var(--kc,var(--accent))">${o.label}</div>` : "")
     + `<div class="head"><div class="jobtitle">${esc(ctlText(o.goal))}</div>${count ? `<div class="count">${esc(count)}</div>` : ""}</div>`
-    + (o.timer ? `<div class="timer">${esc(o.timer)}</div>` : "");
+    + (o.timer ? `<div class="timer">${esc(o.timer)}</div>` : "")
+    + (o.place ? `<div class="place"><b>${nth(o.place.n)}</b> / ${o.place.of}${o.place.gap ? `<span>${o.place.gap}</span>` : ""}</div>` : "");
   const foot = (frac !== undefined ? `<div class="bar"><div style="width:${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%"></div></div>` : "")
     + (o.sub ? `<em>${ctlText(o.sub)}</em>` : "");
   const key = o.flash ?? "";

@@ -8,7 +8,8 @@
 // (raceroute.ts). Checkpoints stand across the road along it, a gate at a time, and have to be
 // ridden through in order before the finish counts; between them it's any way you like. The route
 // and its checkpoints are drawn on the maps, and an arrow over the crosshair points at the next
-// one. At the end comes a results card: your place, time and medal, your best, how the run went,
+// one. Racing with others, the panel shows your place live (2nd / 5) and how far you are from the
+// one just ahead, or the one behind if you lead. At the end comes a results card: your place, time and medal, your best, how the run went,
 // everyone's standings, and a fanfare for how you did.
 //
 // Killed on the way, you're out of the race: no time and no medal. Out of the room's race, or over
@@ -51,7 +52,8 @@
 // Who decides what: the route and its checkpoints come from the poster's seed and the map everyone
 // has. Who's racing, in grid order, is lineup.ts's line-up, the same on every screen. Each racer
 // times themselves and says as they pass each checkpoint ("cp") and cross the line ("fin"), with their run ("gh") if it's a best. Everyone keeps the results from
-// those, counting a finish only from someone who's been through every checkpoint in order; the
+// those, counting a finish only from someone who's been through every checkpoint in order, and
+// works out everyone's place live from the same checkpoints and where each racer is; the
 // host checks the time against its own clock as well, and sends the results that stand ("res"),
 // or says a finish doesn't count ("dq"). A racer out of time says "out"; riding on, they send no more checkpoints and
 // no finish, but say "home" over the line. Killed (or given up riding on), they say "out" with dnf.
@@ -1383,18 +1385,37 @@ class Race implements Job {
     for (const [k, set] of [["o", this.outs], ["d", this.dnfs], ["h", this.homes]] as const) if (Array.isArray(p[k])) for (const id of p[k].slice(0, 64)) set.add(String(id));
   }
 
-  /** Where I am in the room's race: finished ones by their times, then by checkpoints, then by
-   *  who's nearest their next one. */
-  private place(): number {
-    const ids = this.grid ?? [], pos = new Map(this.w.players().map((p) => [p.id, p]));
+  /** Where I am in the room's race, worked out on every screen from what each already hears: the
+   *  finished by their times, then those still in it by checkpoints passed and then by who's nearest
+   *  their next one, then anyone out of time or out of the race. With it, the gap to the one just
+   *  ahead (or, leading, to the one behind) while you're both on the same leg. */
+  private standing(): { n: number; of: number; gap?: string } | null {
+    if (this.own || !this.grid) return null;
+    const ids = this.grid.filter((id) => id === this.w.selfId || this.here(id));
+    if (ids.length < 2) return null;
+    const pos = new Map(this.w.players().map((p) => [p.id, p]));
+    const toGate = (id: string) => {
+      const g = this.gates[Math.min(this.cps.get(id) ?? 0, this.gates.length - 1)], p = pos.get(id);
+      return p ? Math.hypot(g.x - p.x, g.z - p.z) : 9e4;
+    };
     const score = (id: string) => {
       const r = this.results.findIndex((o) => o.id === id);
       if (r >= 0) return 1e9 - r;
-      const n = this.cps.get(id) ?? 0, g = this.gates[Math.min(n, this.gates.length - 1)], p = pos.get(id);
-      return n * 1e5 - (p ? Math.hypot(g.x - p.x, g.z - p.z) : 9e4);
+      if (this.dnfs.has(id)) return -2e9;
+      if (this.outs.has(id) || this.homes.has(id)) return -1e9 + (this.cps.get(id) ?? 0);
+      return (this.cps.get(id) ?? 0) * 1e5 - toGate(id);
     };
-    const mine = score(this.w.selfId);
-    return 1 + ids.filter((id) => id !== this.w.selfId && score(id) > mine).length;
+    const order = ids.map((id) => ({ id, s: score(id) })).sort((a, b) => b.s - a.s);
+    const n = order.findIndex((o) => o.id === this.w.selfId) + 1;
+    const other = order[n === 1 ? 1 : n - 2];
+    const leg = (id: string) => this.cps.get(id) ?? 0;
+    const racing = (id: string) => !this.results.some((r) => r.id === id) && !this.outs.has(id) && !this.homes.has(id);
+    let gap: string | undefined;
+    if (other && racing(other.id) && racing(this.w.selfId) && leg(other.id) === leg(this.w.selfId)) {
+      const m = Math.abs(toGate(this.w.selfId) - toGate(other.id));
+      gap = m < 5 ? `level with ${esc(this.w.nameOf(other.id))}` : n === 1 ? `${far(m)} clear of ${esc(this.w.nameOf(other.id))}` : `${far(m)} behind ${esc(this.w.nameOf(other.id))}`;
+    }
+    return { n, of: ids.length, gap };
   }
 
   card(): Card {
@@ -1436,11 +1457,12 @@ class Race implements Job {
       return was === undefined ? clock(s, true) : `<span style="color:${s <= was ? "#58e06a" : "#ff5a4e"}">${clock(s, true)}</span>`;
     }).join(" · ");
     const where = this.next < last ? `Checkpoint ${this.next + 1}/${last}` : `<b>${esc(this.rt.to.n)}</b>`;
-    const pos = !this.own && this.grid && this.grid.length > 1 ? ` · <b>${nth(this.place())}</b> of ${this.grid.length}` : "";
+    const st = this.out ? null : this.standing();
     return {
-      line: `${far(d)} to ${where}, ${compassWord(g.x - me.x, g.z - me.z)} · ${clock(Math.max(0, t), true)}${this.own ? " (your own go)" : pos}`,
+      line: `${far(d)} to ${where}, ${compassWord(g.x - me.x, g.z - me.z)} · ${clock(Math.max(0, t), true)}${this.own ? " (your own go)" : ""}`,
       sub: `${sp ? `Splits ${sp}<br>` : ""}${medalLine}${!this.own && this.results.length ? ` · leader ${clock(this.results[0].t, true)}` : ""}`,
       bar: this.next / Math.max(1, last + 1),
+      place: st ?? undefined,
     };
   }
 

@@ -218,6 +218,8 @@ export interface Card {
   line: string; sub?: string; bar?: number;
   /** How far you've got in a few characters ("2 / 5"), and the clock if the job has one. */
   progress?: string; timer?: string;
+  /** Your place among several racing at once, and the gap to the nearest (html). */
+  place?: { n: number; of: number; gap?: string };
   /** Where the job has got to (a wave, a checkpoint): when key changes everyone gets a banner. */
   stage?: { key: string; title: string; sub?: string; colour?: string; went?: "well" | "badly" | "close" };
 }
@@ -1034,7 +1036,7 @@ export class Quests {
       const kind = kinds.get(job.offer.kind)!, c = job.card();
       missionProgress({
         id: "job", label: `${esc(kind.label)} · ${starText(job.offer.stars)}`, colour: kind.colour, goal: job.offer.title,
-        progress: c.progress, bar: c.bar, timer: c.timer, hint: c.line, sub: c.sub, flash: c.line.replace(/\d+ s to/, ""),
+        progress: c.progress, place: c.place, bar: c.bar, timer: c.timer, hint: c.line, sub: c.sub, flash: c.line.replace(/\d+ s to/, ""),
       });
       const st = c.stage;
       if (st && st.key !== this.stageKey) {

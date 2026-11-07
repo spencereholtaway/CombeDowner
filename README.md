@@ -159,7 +159,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   a plain count in the job's colour for anything against the clock. On your own there's no count,
   and a calm job (the gallery, the test challenge) never has one. Anyone who didn't join, or turns up later, is left where they are and can
   watch. Races put the entrants on a grid in the street on the race's ride,
-  run through checkpoints along a route drawn on the map, and end with a results
+  run through checkpoints along a route drawn on the map (racing with others, the panel shows your
+  place in big figures, 2nd / 5, as it changes, and how far you are behind the one ahead), and end with a results
   card: your place, time and medal, your best, how the run went and everyone's standings, with a
   fanfare. Killed on the way, you're out of the race. Over the line or out of it while others still
   ride, you wait where you stopped, safe, and watch them (Q/E, the d-pad or the arrows on a touch
