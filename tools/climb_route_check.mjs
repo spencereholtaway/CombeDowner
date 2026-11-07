@@ -2,7 +2,7 @@
 // size of team, which climbers can get from the foot to the top on the holds alone, with ropes left
 // out (a rope needs a mate already up, holding it).
 // - alone (no shoulders, no bridge) the solo route must go all the way;
-// - with two or more the holds alone must not: somewhere there's a blank stretch or the traverse's gap;
+// - with two or more the holds alone must not: somewhere there's a blank stretch, and the traverse's gap;
 // - with the whole team's tricks (two stacked, a bridge across the gap) it must go;
 // - a stretch that needs two stacked must not go off one mate's shoulders;
 // - with --against <git rev>, the route for one climber must be exactly that rev's.
@@ -21,7 +21,7 @@ const argv = process.argv.slice(2), opt = { seeds: "300" };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
 
 const JUMP = 2 + 7.2 ** 2 / (2 * 22) + 1.0;   // hands over feet, a jump's rise, and the catch
-const LUNGE = 3.4, SHOULDER = 1.0;
+const LUNGE = 3.4, REACH = 2.2, SHOULDER = 1.0;
 
 // quests.ts pulls in the whole game: only its seeded randomness is wanted here
 const quests = fs.readFileSync(WEB + "src/quests.ts", "utf8");
@@ -72,7 +72,12 @@ for (let n = 1; n <= 8; n++) {
     if (!goes(r, 2 * SHOULDER, true)) say("even the whole team can't get up");
     const two = r.holds.some((h) => h.two);
     if (two && goes(r, SHOULDER, true)) say("the two-stacked stretch goes off one mate's shoulders");
-    if (r.gap && goes(r, 2 * SHOULDER, false)) say("the traverse goes without a bridge");
+    if (!r.gap) say("no gap on the traverse for a human chain");
+    else {
+      const [a, b] = r.gap.map((i) => r.holds[i]), d = Math.hypot(b.s - a.s, b.y - a.y);
+      if (d <= LUNGE || d / 2 > REACH) say(`the traverse's gap is ${d.toFixed(2)} m: it has to be past a lunge, and each half in a reach`);
+      if (goes(r, 2 * SHOULDER, false)) say("the traverse goes without a bridge");
+    }
   }
 }
 if (opt.against) {

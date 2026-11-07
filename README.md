@@ -405,7 +405,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   someone up on its ledge holds it (E at its top): holding it you can't climb, your grip drains for
   every mate hanging on it (a strain meter shows how many), and if you let go it goes slack and
   whoever's on it slides down to the ledge below, so someone always stays behind each rope. Alone
-  a rope is tied off. A short fall hurts your grip till
+  a rope is tied off. With a team the traverse has a gap no lunge will cross: one climber, on the
+  hold before it, stretches across as a bridge (E), their grip draining fast, and the rest climb
+  over them; once a mate's across, the bridge reaches their way and is pulled over. Alone the
+  traverse has no gap. A short fall hurts your grip till
   you've rested; a big one knocks you out where you land, and a mate has to come down, pick you up
   (E) and carry you back up to the team's ledge in time, or you're out, a ghost, till someone drops
   a rope from the next ledge. The team shares its lives, hearts on the card (three, and one more

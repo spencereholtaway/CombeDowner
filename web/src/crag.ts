@@ -9,7 +9,8 @@
 // The way up is laid out for a team, not found:
 // - the slab, leaning back, easy, up to the first ledge, wide enough for everyone;
 // - a wall up to the rope ledge, a small one out to the left;
-// - a traverse right along a band of holds to the far ledge;
+// - a traverse right along a band of holds to the far ledge, with a team broken by a gap only a
+//   human chain crosses (Route.gap);
 // - out under a bulge of overhanging rock and over its lip onto the roof;
 // - up a chimney, a groove in the rock, to the terrace that runs the whole width;
 // - and the headwall to the top, where everyone has to stand together.
@@ -30,7 +31,9 @@ export const FRONT = 12.5;     // how far out from the face the grass at the foo
 export const BACK = 12;        // how far back from the edge you can walk on the top
 export const H = 43.5;         // foot to top
 export const BOOST_HOLD = 4.7; // a boost gap's hold above its ledge: out of a jump's reach, in reach off shoulders
-export const STACK_HOLD = 5.7; // and one that needs two stacked: out of reach off one mate's shoulders, in reach off two
+export const STACK_HOLD = 5.7;
+const CHAIN_GAP = [3.8, 4.3];  // the traverse's gap: past a lunge (3.4), and each half within a reach (2.2) of a body across it
+const CHAIN_FROM = -2.5;       // and where along it starts, out in the middle of the traverse // and one that needs two stacked: out of reach off one mate's shoulders, in reach off two
 const LIFT = 1000;             // how far over the challenge's place on the map the foot is
 const EDGE = 16;               // where the grass at the foot ends, and how far back the top goes
 const SIDE = HALF + 1.5;       // where the face turns back at its corners
@@ -52,7 +55,9 @@ export interface Ledge { y: number; s0: number; s1: number; o: number; d: number
 /** rest: a big jug you can hang off and get your grip back; boost: only in reach off a mate's
  *  shoulders, and two: off two mates stacked. */
 export interface Hold { s: number; y: number; boost: boolean; rest: boolean; two?: boolean }
-export interface Route { n: number; ledges: Ledge[]; holds: Hold[] }
+/** gap: with a team, the two holds either side of the traverse's gap, too far apart for anyone to
+ *  reach alone: a climber hangs across it as a bridge and the rest climb over them. */
+export interface Route { n: number; ledges: Ledge[]; holds: Hold[]; gap?: [number, number] }
 
 /** The crag over a place on the map whose ground is at ground. */
 export function roomOver(x: number, z: number, ground: number, name: string): Room {
@@ -138,6 +143,7 @@ export function routeFor(room: Room, seed: number, n: number): Route {
   ];
   const floors = [0, Y1, Y2, Y3, Y4, Y5, H];
   const holds: Hold[] = [];
+  let chain: [number, number] | undefined;
   const clampS = (s: number) => Math.max(-HALF + 0.6, Math.min(HALF - 0.6, s));
   for (let k = 0; k < 6; k++) {
     const pts: [number, number][] = k === 4
@@ -166,8 +172,28 @@ export function routeFor(room: Room, seed: number, n: number): Route {
       const last = main[main.length - 1];
       if (!last || Math.hypot(p.s - last.s, p.y - last.y) >= 0.45) main.push(p);
     });
-    // three or more: one gap under the bulge only a lunge will cross
     let gap: [number, number] | null = null;
+    // a team: the traverse has a gap past any lunge, though not past a body stretched across it
+    if (k === 2 && n >= 2) {
+      const mid = Math.max(1, main.findIndex((p) => p.s >= CHAIN_FROM));
+      for (const from of [mid, 1]) {
+        for (let i = from; i < main.length - 2 && !gap; i++) {
+          for (let j = i + 2; j < main.length - 1; j++) {
+            const d = Math.hypot(main[j].s - main[i].s, main[j].y - main[i].y);
+            if (d > CHAIN_GAP[1]) break;
+            if (d >= CHAIN_GAP[0]) { main.splice(i + 1, j - i - 1); gap = [i, i + 1]; break; }
+          }
+        }
+      }
+      // holds spaced so no pair falls in it: the far side drawn in to it
+      for (let j = mid + 2; !gap && j < main.length - 1; j++) {
+        const a = main[mid], b = main[j], d = Math.hypot(b.s - a.s, b.y - a.y), w = (CHAIN_GAP[0] + CHAIN_GAP[1]) / 2;
+        if (d < CHAIN_GAP[0]) continue;
+        main[j] = { s: a.s + ((b.s - a.s) * w) / d, y: a.y + ((b.y - a.y) * w) / d };
+        main.splice(mid + 1, j - mid - 1); gap = [mid, mid + 1];
+      }
+    }
+    // three or more: one gap under the bulge only a lunge will cross
     if (k === 3 && n >= 3) {
       for (let i = 1; i < main.length - 2 && !gap; i++) {
         for (let j = i + 2; j < main.length - 1; j++) {
@@ -189,6 +215,7 @@ export function routeFor(room: Room, seed: number, n: number): Route {
     }
     const lo = floors[k] + (boost[k] ? up(k) : 1.6), hi = floors[k + 1] - 0.6;
     const placed: { s: number; y: number }[] = [];
+    if (gap && k === 2) chain = [holds.length + gap[0], holds.length + gap[1]];
     main.forEach((p, i) => {
       const s = clampS(p.s);
       holds.push({ s, y: Y + p.y, boost: i === 0 && boost[k], rest: i === rest, ...(i === 0 && lift[k] === 2 ? { two: true } : {}) });
@@ -205,7 +232,7 @@ export function routeFor(room: Room, seed: number, n: number): Route {
       });
     }
   }
-  return { n, ledges, holds };
+  return chain ? { n, ledges, holds, gap: chain } : { n, ledges, holds };
 }
 
 /** Which stretches start blank, their first hold only in reach off a mate's shoulders (1) or two

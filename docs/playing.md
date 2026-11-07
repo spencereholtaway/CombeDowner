@@ -887,6 +887,12 @@ faster the more there are, so send them up one at a time. E (or C) lets go, and 
 anyone on it slides down to the ledge below and the rope lies in a heap there until someone up top
 holds it again. Alone the rope is tied off and holds on its own.
 
+The traverse: with a team there's a gap in its holds too wide for anyone to lunge across. Whoever
+gets to the hold before it can stretch across (E) as a bridge: the others reach for the bridge
+like a hold and climb over to the far side. The bridge's grip drains fast, so be quick. Once a
+mate is hanging on the far side, the bridge reaches their way (D or the stick) and is pulled
+across; E brings the bridge back to the near hold instead. Alone the traverse has no gap.
+
 ### The wardrobe
 
 Daft things to wear, earned round Bath and seen by everyone: a seagull on your head, a splattered
