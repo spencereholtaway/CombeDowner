@@ -179,7 +179,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and flashing while a gull's after it, and the ring is on the maps. The tourists point out gulls coming
   in, wave their arms at one after their lunch, duck, cheer a good shot and storm off in a huff,
   saying so. Each kind of gull has its own look, every wave comes in from one side under a banner
-  saying what's in it and from where, and before every wave each player gets an ammo pack.
+  saying what's in it and from where, and one of the three crates between waves is always a box of
+  rounds: the team picks ammo or an upgrade.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
   and it drops. A race

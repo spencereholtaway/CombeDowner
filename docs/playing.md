@@ -701,9 +701,10 @@ shoo, duck, shout for help if you're far off, cheer a good shot and storm off wh
 gone. Each wave comes in from one side, with a banner naming what's in it, and every kind looks
 different: white herring gulls, slate-winged hoverers in an amber ring (it goes green as you stare),
 a small dark gang coming in low and tight, brown walkers on foot, fat yellowish poopers trailing
-drips. Before every wave each player gets an ammo pack (about 30 to 90 rounds, more on the later
-waves and for a harder poster): enough if you aim, not if you hold the trigger down. Between waves,
-pick an upgrade crate (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings). Stars for how much sandwich is left, a daily twist (bank holiday, Chip
+drips. Between waves three crates go out and the team takes one. One is always a box of rounds,
+enough for everyone for the next two waves (more for a harder poster), so you choose ammo or an
+upgrade (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings): aim well and you
+can skip the rounds. Stars for how much sandwich is left, a daily twist (bank holiday, Chip
 Tuesday, a hen do, bin day), and Backspace for another go. Losing leaves no scar.
 
 ### The night out

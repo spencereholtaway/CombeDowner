@@ -35,13 +35,13 @@
 //   weak spot.
 //
 // A gull that grabs a bite flies off with it to a rooftop: shoot it before it gets there and the
-// bite's saved. A tourist whose sandwich is all gone storms off. Before every wave each player is
-// handed an ammo pack (PACK: enough for a decent shot, not for holding the trigger down), straight
-// into their pocket so nobody misses it grabbing a crate. And between waves three crates are put
-// out by the benches, each with an upgrade: a bucket of chips to throw down (gulls go for the chips
-// instead), a plastic owl to stand by a tourist (gulls keep away until a walker knocks it over), a
-// brolly that blocks one swoop, a megaphone for a bigger shout, or second helpings for everyone.
-// Whoever gets to one first takes it for the team.
+// bite's saved. A tourist whose sandwich is all gone storms off. Between waves three crates are put
+// out by the benches, and whoever gets to one first takes it for the team. One is always a box of
+// rounds, enough for every player for the next two waves (PACK), so ammo is something the team
+// chooses over an upgrade, not something handed out. The other two are upgrades: a bucket of chips
+// to throw down (gulls go for the chips instead), a plastic owl to stand by a tourist (gulls keep
+// away until a walker knocks it over), a brolly that blocks one swoop, a megaphone for a bigger
+// shout, or second helpings for everyone.
 //
 // Stars at the end for how much sandwich is left, and a score: gulls seen off, thieves shot in
 // flight, gulls stared out, and a bonus for a wave without a bite lost. Each day has its own twist
@@ -56,8 +56,8 @@
 // at gulls, shouts, stares, chips and crates go to the host as "qe" from whoever did them. Where
 // seagull muck lands goes round, and each player sees for themselves whether it got them. Where the
 // benches go comes from the poster alone, so lineup.ts puts everyone who entered in the middle of
-// them before the host has set them out. Each player tops up their own gun when the ammo pack comes
-// round (an effect older pages don't know, so they just don't). What's in a wave and where it's
+// them before the host has set them out. Each player tops up their own gun when the box of rounds
+// is taken (an effect older pages don't know, so they just don't). What's in a wave and where it's
 // from go round with the state, for the banner. The tourists' moods and lines are each screen's
 // own, from the state. A go of your own (Backspace afterwards) runs it all on your machine and
 // sends nothing.
@@ -119,14 +119,15 @@ const KIND_SAY: [string, string][] = [["herring gull", "herring gulls"], ["hover
 const B_ARRIVE = 0, B_PERCH = 1, B_RUN = 2, B_PASS = 3, B_BACK = 4, B_DIVE = 5, B_DEAD = 6;
 
 // the upgrades in the crates
-const CHIPS_UP = 0, OWL_UP = 1, BROLLY_UP = 2, LOUD_UP = 3, HELPING_UP = 4;
-const UP_NAME = ["Bucket of chips", "Plastic owl", "Brolly", "Megaphone", "Second helpings"];
-const UP_SAY = ["throw it down ({use}) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here"];
-/** Spare rounds each player is handed before every wave, by the wave (1 to 5), on a two-star
+const CHIPS_UP = 0, OWL_UP = 1, BROLLY_UP = 2, LOUD_UP = 3, HELPING_UP = 4, AMMO_UP = 5;
+const UP_NAME = ["Bucket of chips", "Plastic owl", "Brolly", "Megaphone", "Second helpings", "Box of rounds"];
+const UP_SAY = ["throw it down ({use}) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here", "rounds for everyone, enough for two waves"];
+/** Spare rounds a player needs for each wave, by the wave (1 to 5), on a two-star
  *  poster. A bot with a fair aim fired 14, 13, 35, 36 and 53 rounds in the five waves, and one
  *  holding the trigger down 140 to 160 a wave; a decent player (one hit in four or so) needs about
  *  25, 30, 40, 50 and 180. So with what you come with (150, as you spawn) a decent shot ends each
- *  wave with some left, and spraying runs dry by the second. */
+ *  wave with some left, and spraying runs dry by the second. The box of rounds holds the next two
+ *  waves' worth, so a team that takes it every other lull keeps up. */
 const PACK = [0, 30, 30, 45, 60, 90];
 
 // each day's twist
@@ -533,7 +534,6 @@ class Seagulls implements Job {
   private players = 1;
   private mod: number;
   private stats = { pooed: false, bossPoo: false };
-  private firstPack = false;
   // what everyone draws
   private root = new THREE.Group();
   private view = new Map<number, GullView>();
@@ -768,7 +768,6 @@ class Seagulls implements Job {
   private hostUpdate(dt: number) {
     const S = this.S;
     if (!this.ready) return;
-    if (S.ph === 0 && S.w === 0 && !this.firstPack) { this.firstPack = true; this.emit([FX_PACK, this.pack(1)]); }
     if (S.ph === 0) {
       S.t -= dt;
       if (S.t <= 0) this.startWave();
@@ -781,8 +780,11 @@ class Seagulls implements Job {
     if (S.ph !== 2 && S.tr.length && S.tr.every((t) => t.gone)) this.over(false);
   }
 
-  /** The ammo pack before wave w: more gulls on a harder poster, so more rounds. */
-  private pack(w: number) { return Math.round((PACK[w] * [0, 0.8, 1, 1.25][this.offer.stars]) / 5) * 5; }
+  /** The box of rounds taken before wave w: the next two waves' worth, more on a harder poster. */
+  private pack(w: number) {
+    const need = PACK[Math.min(w, WAVES)] + PACK[Math.min(w + 1, WAVES)];
+    return Math.round((need * [0, 0.8, 1, 1.25][this.offer.stars]) / 5) * 5;
+  }
 
   private startWave() {
     const S = this.S, r = this.r;
@@ -828,9 +830,8 @@ class Seagulls implements Job {
       if (S.clean) { S.sc += 50; this.emit([FX_CLEAN, S.w]); }
       if (S.w >= WAVES) { this.over(true); return; }
       S.ph = 0; S.t = LULL;
-      this.emit([FX_PACK, this.pack(S.w + 1)]);
-      // three crates to pick from
-      const r = this.r, all = this.mod === 2 ? [CHIPS_UP] : [];
+      // three crates to pick from, one always rounds
+      const r = this.r, all = this.mod === 2 ? [AMMO_UP, CHIPS_UP] : [AMMO_UP];
       const rest = [CHIPS_UP, OWL_UP, BROLLY_UP, LOUD_UP, HELPING_UP].filter((u) => !all.includes(u) && !(u === LOUD_UP && S.loud));
       while (all.length < 3 && rest.length) all.push(rest.splice(Math.floor(r() * rest.length), 1)[0]);
       S.up = all;
@@ -1064,6 +1065,7 @@ class Seagulls implements Job {
       else if (u === LOUD_UP) S.loud = true;
       else if (u === HELPING_UP) for (const t of S.tr) if (!t.gone) t.bites = Math.min(t.max, t.bites + 1);
       this.emit([FX_PICK, u, 0, 0, 0, from === this.w.selfId ? 1 : 0]);
+      if (u === AMMO_UP) this.emit([FX_PACK, this.pack(S.w + 1)]);
       S.t = Math.min(S.t, 6);
     } else if (d.k === "chips") {
       if (S.ch <= 0 || S.ph !== 1) return;
@@ -1187,7 +1189,7 @@ class Seagulls implements Job {
       case FX_PICK: if (near) this.w.toast(`${UP_NAME[x]}: ${UP_SAY[x]}`); SFX.pickup("ammo"); break;
       case FX_PACK:
         // everyone's gun is their own, so each tops up their own
-        if (me.alive && x > 0) { this.w.ammo?.(x); this.w.toast(`Ammo pack: +${x} rounds`); SFX.pickup("ammo"); }
+        if (me.alive && x > 0) { this.w.ammo?.(x); this.w.toast(`Box of rounds: +${x} each`); SFX.pickup("ammo"); }
         break;
     }
   }
