@@ -471,11 +471,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
   easel. The paintings go up in gilt frames with a card each, under wraps until the doors open, when
   each one plays back how it was painted, a time-lapse of about eight seconds on its own canvas, before
-  it settles. In come the critics and a crowd of
-  the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
-  Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
-  with a mark out of ten, in speech bubbles and out loud: a few sentences each, what struck them first,
-  something else they spotted, and what they think of it overall. They notice how much of the canvas you
+  it settles. First comes the judging: you're all stood together in front of each painting in turn
+  (look about as you like) while the critics step up to it one at a time, each one's remark typed out
+  on a card in the middle of the screen and their mark stamped on it, then a board of all their
+  marks. (At a show of four or more, with three critics, one of them keeps quiet at each painting in
+  turn, but still marks it.) Then the doors open to the public (a nan, a builder, an art student, a
+  seven-year-old, a Flag Lad, someone from the Council, a Roman re-enactor, a seagull...), who walk
+  round and say what they make of the paintings, with a mark out of ten, in speech bubbles and out
+  loud. Each remark is a few sentences: what struck them first, something else they spotted, and
+  what they think of it overall. They notice how much of the canvas you
   covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
   subject at all and how much effort went in. They also recognise what you drew: a sun, a bus,
   a cat, a face, gulls, houses, trees, a stick figure, writing (draw the subject's own thing and it
@@ -495,8 +499,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   careful painting of the subject that fills the canvas, ground first, with the time taken, gets 8s
   and 9s and a 10 from someone, a half-done or wrongly coloured one about 6, and a blob or a scribble
   2 to 4. They watch the time-lapse too, and a painting that started as a cat and ended as a bus, or
-  had something rude painted out, gets talked about. The critics' marks count double. Walk round while
-  they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
+  had something rude painted out, gets talked about. The critics' marks count double. Once the doors are
+  open, walk round while the public talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
   Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive
   (with a couple more for anything cheeky, none of them for restraint), and
   if the show averages enough it's a success and one of the strange objects turns up at the door. The

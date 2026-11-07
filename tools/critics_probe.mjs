@@ -361,10 +361,10 @@ for (const r of calRows) {
 console.log(`${calRows.length - calBad} of ${calRows.length} marked as meant`);
 for (const n of tapeNotes) console.log("time-lapse: " + n);
 if (opt.only) for (const r of calRows) { console.log(`  ${r.s.name}: ${r.traits.join(",")}`); if (process.env.FRAMES) r.frames.forEach((f, i) => { const g = K.see(f); console.log(`    frame ${i + 1}: ${[...Object.keys(g.things), ...Object.keys(g.rude)].join(",")}`); }); console.log("    " + Object.entries(r.byWho).map(([k, v]) => `${k.split(" ")[0]} ${(v.reduce((a, b) => a + b, 0) / v.length).toFixed(1)}`).join(", ")); for (const l of r.said) console.log("    " + l); }
-// whole evenings, one to eight painters, hung along two walls as in the gallery: how long the walk
-// round takes, and how long the remarks run (--said prints every one)
+// whole evenings, one to eight painters, hung along two walls as in the gallery: how long the evening
+// and its judging round take, and how long the remarks run (--said prints every one)
 if (!opt.only && CAL.length) {
-  console.log("\nevening      seconds  remarks  sentences (mean, most)");
+  console.log("\nevening      seconds  judging  remarks  sentences (mean, most)");
   for (const n of [1, 2, 4, 6, 8]) {
     const ps = Array.from({ length: n }, (_, i) => {
       const s = CAL[(i * 5 + n) % CAL.length], px = canvas();
@@ -374,7 +374,7 @@ if (!opt.only && CAL.length) {
     const theme = K.THEMES.find((t) => t.t === CAL[n % CAL.length].theme);
     const sh = K.stageShow(ps, theme, theme.t.replace("{pub}", "the Hadley Arms"), 777 + n, (p) => [(p % 4 - 1.5) * 4.5, p < 4 ? -5 : 5], [10, 0]);
     const ns = sh.remarks.map((r) => K.sentences(r.text));
-    console.log(`${pad(n + " painting" + (n > 1 ? "s" : ""), 12)} ${pad(sh.dur.toFixed(0), 8)} ${pad(sh.remarks.length, 8)} ${(ns.reduce((a, b) => a + b, 0) / ns.length).toFixed(1)}, ${Math.max(...ns)}`);
+    console.log(`${pad(n + " painting" + (n > 1 ? "s" : ""), 12)} ${pad(sh.dur.toFixed(0), 8)} ${pad((sh.j ?? 0).toFixed(0), 8)} ${pad(sh.remarks.length, 8)} ${(ns.reduce((a, b) => a + b, 0) / ns.length).toFixed(1)}, ${Math.max(...ns)}`);
     if ("said" in opt) for (const r of sh.remarks) console.log(`    ${K.visitor(r.v).name} on ${ps[r.p].name}'s (${r.mark}): ${r.text}`);
   }
 }

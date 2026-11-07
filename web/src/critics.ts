@@ -11,8 +11,8 @@
 // how it was painted; those become traits too, with more lines in critics-lines.ts. The painting's time-lapse is looked at as well, for one
 // that started as one thing and ended as another, or had something rude painted out. Paintings are
 // also set against each other, for the two that look alike and the odd one out. Two or three real
-// critics come to every show, and their marks count double; the rest are ordinary people with
-// opinions. Whatever their taste, everyone's mark leans towards the plain craft of it (the whole
+// critics come to every show, judge each painting in turn before the public are let in, and their
+// marks count double; the rest are ordinary people with opinions. Whatever their taste, everyone's mark leans towards the plain craft of it (the whole
 // canvas, plenty in it, the subject in its colours, time taken carefully), so a careful painting of
 // the subject gets 8s and 9s and a lazy one 2s to 4s; tools/critics_probe.mjs checks that.
 //
@@ -277,6 +277,8 @@ export interface Visitor {
   name: string;
   /** What the poster says they're like (critics only). */
   taste?: string;
+  /** What they are, on their card at the judging (critics only). */
+  role?: string;
   critic: boolean;
   dress: Dress;
   /** Their mark out of ten, before a little luck. */
@@ -343,7 +345,7 @@ const liking = (v: Visitor, f: Feat) => {
 /** The art critics: two come to every show, three to a big one. */
 export const CRITICS: Visitor[] = [
   {
-    name: "Sir Jeremy Plinth", critic: true, taste: "old school: wants detail, a likeness, and the subject actually painted",
+    name: "Sir Jeremy Plinth", critic: true, role: "art critic", taste: "old school: wants detail, a likeness, and the subject actually painted",
     dress: { coat: "#5a2a2a", hair: "#d9d9d9", wear: "specs", pitch: 0.75 },
     mark: (f) => has(f, "blank") ? 1 : 1.2 + 8.6 * (0.18 * f.cov + 0.3 * f.detail + 0.37 * f.theme + 0.15 * f.effort) - 2 * f.scrib,
     notice: ["blank", "scribble", "detailed", "onTheme", "offTheme", "flood", "sparse", "symmetric", "landscape", "rainbow", "lazy"],
@@ -366,7 +368,7 @@ export const CRITICS: Visitor[] = [
     },
   },
   {
-    name: "Octavia Vane", critic: true, taste: "conceptual: less is more, one bold idea; finds pretty pictures dreadfully suburban",
+    name: "Octavia Vane", critic: true, role: "conceptual critic", taste: "conceptual: less is more, one bold idea; finds pretty pictures dreadfully suburban",
     dress: { coat: "#141416", hair: "#141416", wear: "shades", woman: true, pitch: 1.05 },
     mark: (f) => has(f, "blank") ? 9.3 : has(f, "flood") ? 8.6 : has(f, "sparse") ? 8.2 : has(f, "mono") ? 7.6
       : 6.6 + 3 * f.l.big - 3.6 * f.detail - 1.6 * f.colourful - (has(f, "landscape") ? 1.6 : 0) + (has(f, "offTheme") ? 1 : 0) - (has(f, "onTheme") ? 0.8 : 0),
@@ -389,7 +391,7 @@ export const CRITICS: Visitor[] = [
     },
   },
   {
-    name: "Dr Rupert Varnish", critic: true, taste: "a colourist: wants bright, warm, brave colour; can't abide grey and gloom",
+    name: "Dr Rupert Varnish", critic: true, role: "colourist and critic", taste: "a colourist: wants bright, warm, brave colour; can't abide grey and gloom",
     dress: { coat: "#c25a1a", hair: "#6b4a2b", wear: "deer", pitch: 0.9 },
     mark: (f) => has(f, "blank") ? 1.5 : 2 + 5.5 * f.colourful + 1.8 * f.cov + 1.4 * Math.max(0, f.l.warm) - 3.2 * Math.max(0, f.l.dark - 0.35) - (has(f, "grey") ? 2.2 : 0),
     notice: ["blank", "rainbow", "grey", "dark", "flood", "mono", "warm", "cool", "detailed", "speckled"],
@@ -410,7 +412,7 @@ export const CRITICS: Visitor[] = [
     },
   },
   {
-    name: "Lady Fenella Gouache", critic: true, taste: "a collector: buys it if it's big, bold, tidy, and goes with the sofa",
+    name: "Lady Fenella Gouache", critic: true, role: "collector", taste: "a collector: buys it if it's big, bold, tidy, and goes with the sofa",
     dress: { coat: "#7a3f8a", hair: "#c9a45c", woman: true, pitch: 1.15 },
     mark: (f) => has(f, "blank") ? 2 : 1.8 + 3.8 * f.cov + 3 * f.l.big + 1.6 * f.l.sym + (has(f, "stone", "warm") ? 1 : 0) - 2.4 * f.scrib - 2 * Math.max(0, f.l.dark - 0.4),
     notice: ["blank", "scribble", "bold", "symmetric", "stone", "dark", "flood", "speckled", "corner", "rainbow"],
@@ -609,6 +611,11 @@ export interface Show {
   remarks: Remark[];
   /** Seconds the walk round takes. */
   dur: number;
+  /** When the judging round's over and the doors open to the public (0 for a show from an older
+   *  page, which has none). */
+  j: number;
+  /** The critics' marks for each painting, in the order they came, for the board after the judging. */
+  board: number[][];
   /** Each painting's marks before the room's vote: overall, from the critics, from the punters. */
   marks: number[]; critics: number[]; punters: number[];
   /** Each painting's marks from everyone, for the prizes. */
@@ -629,6 +636,17 @@ const fmt = (s: string, o: Record<string, string>) => {
 };
 const clamp = (v: number) => Math.max(1, Math.min(10, v));
 const WALK = 1.5;              // metres a second, strolling
+
+// The judging round, in seconds. Every screen times the cards from the same numbers.
+export const JUDGE_FROM = 5;   // the room settles, and the time-lapses play, before the first critic
+export const STEP = 1.4;       // a critic stepping up to the painting
+export const STAMP = 1.6;      // the mark stamped on the card, before the next one
+export const MOVE = 3;         // everyone moving along to the next painting
+export const BOARD = 8;        // the critics' marks for every painting, before the doors open
+/** How long a critic's card is up: the remark read, then the mark stamped on it. */
+export const cardSecs = (text: string) => speakFor(text) + STAMP;
+/** A critic as their card puts it: "Sir Jeremy Plinth, art critic". */
+export const criticTitle = (v: Visitor) => v.role ? `${v.name}, ${v.role}` : v.name;
 
 /** The evening worked out: who comes, who looks at what in which order, what they say, their marks.
  *  wallAt: where each painting hangs (to time the walking between them). */
@@ -666,45 +684,67 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
       craft: craftOf(l, t, fit, Math.min(1, byColour * 1.3) * Math.min(1, l.cover * 4), colourful, detail),
     };
   });
-  // who sees which paintings: every critic sees all of them; each painting gets a few punters, in turn
-  const seeing: number[][] = cast.map(() => []);
-  critics.forEach((_, k) => { seeing[k] = shuffled(r, paintings.map((_, i) => i)); });
-  const each = Math.min(punterCount, n === 1 ? 4 : 3);
-  let turn = Math.floor(r() * punterCount);
-  for (let p = 0; p < n; p++) for (let k = 0; k < each; k++) { seeing[critics.length + (turn % punterCount)].push(p); turn++; }
-  for (let k = critics.length; k < cast.length; k++) seeing[k] = shuffled(r, seeing[k]);
-
-  // a walk round: visitors in turn, each to their next painting, waiting for whoever's talking there
-  const busy = new Array(n).fill(2.5), free = cast.map((_, k) => 1.5 + k * 1.1), where = cast.map(() => door);
   const used = new Set<string>(), remarks: Remark[] = [];
   const marks: number[][] = paintings.map(() => []);
   const spread: number[][] = paintings.map(() => []);
   const critic: number[][] = paintings.map(() => []), punter: number[][] = paintings.map(() => []);
-  const left = seeing.map((s) => [...s]);
-  for (let guard = 0; guard < 400 && left.some((s) => s.length); guard++) {
-    let k = -1;
-    for (let j = 0; j < cast.length; j++) if (left[j].length && (k < 0 || free[j] < free[k])) k = j;
-    const p = left[k].shift()!;
-    const [wx, wz] = wallAt(p), [fx, fz] = where[k];
-    const arrive = free[k] + Math.hypot(wx - fx, wz - fz) / WALK;
+  const remark = (k: number, p: number, quiet = false) => {
     const v = ALL[cast[k]], f = feats[p], pr = rng(seed ^ (k * 7919 + p * 104729));
     const mark = Math.round(clamp(markOf(v, f) + (pr() - 0.5) * 1.2) * 2) / 2;
-    const text = say(v, f, mark, pr, used, {
+    const text = quiet ? "" : say(v, f, mark, pr, used, {
       name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second], thing: f.thing, item: f.item, other: f.other, seen: f.seen, was: f.was, became: f.became,
     });
-    const at = Math.max(arrive + 0.6, busy[p]), speak = speakFor(text);
-    busy[p] = at + speak - 0.4;
-    free[k] = at + speak + 0.4;
-    where[k] = [wx, wz];
-    remarks.push({ at, v: cast[k], p, text, mark });
     (v.critic ? critic : punter)[p].push(mark);
     marks[p].push(mark, ...(v.critic ? [mark] : []));
     spread[p].push(mark);
+    return { v: cast[k], p, text, mark };
+  };
+
+  // the judging: the critics alone, each in turn at each painting in order, while everyone watches.
+  // When three come (a show of four or more), one keeps quiet at each painting, in turn, so it doesn't
+  // drag on; their mark still counts, and goes up on the board.
+  let t = JUDGE_FROM;
+  const board = paintings.map(() => critics.map(() => 0));
+  for (let p = 0; p < n; p++) {
+    if (p) t += MOVE;
+    critics.forEach((_, k) => {
+      const quiet = critics.length >= 3 && k === p % critics.length;
+      const said = remark(k, p, quiet);
+      board[p][k] = said.mark;
+      if (quiet) return;
+      const at = t + STEP;
+      remarks.push({ at, ...said });
+      t = at + cardSecs(said.text);
+    });
+  }
+  const j = t + 0.5 + BOARD;
+
+  // then the doors open, and the public walk round: each painting gets a few of them, in turn
+  const seeing: number[][] = cast.map(() => []);
+  const each = Math.min(punterCount, n === 1 ? 4 : n <= 3 ? 3 : 2);
+  let turn = Math.floor(r() * punterCount);
+  for (let p = 0; p < n; p++) for (let k = 0; k < each; k++) { seeing[critics.length + (turn % punterCount)].push(p); turn++; }
+  for (let k = critics.length; k < cast.length; k++) seeing[k] = shuffled(r, seeing[k]);
+  // visitors in turn, each to their next painting, waiting for whoever's talking there
+  const busy = new Array(n).fill(j + 2.5), free = cast.map((_, k) => j + 1.5 + k * 1.1), where = cast.map(() => door);
+  const left = seeing.map((s) => [...s]);
+  for (let guard = 0; guard < 400 && left.some((s) => s.length); guard++) {
+    let k = -1;
+    for (let q = 0; q < cast.length; q++) if (left[q].length && (k < 0 || free[q] < free[k])) k = q;
+    const p = left[k].shift()!;
+    const [wx, wz] = wallAt(p), [fx, fz] = where[k];
+    const arrive = free[k] + Math.hypot(wx - fx, wz - fz) / WALK;
+    const said = remark(k, p);
+    const at = Math.max(arrive + 0.6, busy[p]), speak = speakFor(said.text);
+    busy[p] = at + speak - 0.4;
+    free[k] = at + speak + 0.4;
+    where[k] = [wx, wz];
+    remarks.push({ at, ...said });
   }
   remarks.sort((a, b) => a.at - b.at);
   const mean = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
-  const dur = Math.max(...free, ...busy) + 1.5;
-  return { cast, remarks, dur, marks: marks.map(mean), critics: critic.map(mean), punters: punter.map(mean), spread, rude: looks.map((l) => RUDE.filter((k) => l.s.rude[k])) };
+  const dur = Math.max(j, ...free, ...busy) + 1.5;
+  return { cast, remarks, dur, j, board, marks: marks.map(mean), critics: critic.map(mean), punters: punter.map(mean), spread, rude: looks.map((l) => RUDE.filter((k) => l.s.rude[k])) };
 }
 
 /** What the critics' eye was sure of counts as if the shape tests had found it too. */
