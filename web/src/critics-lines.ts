@@ -1,6 +1,7 @@
 // What the visitors at the Art Gallery's private view say about what they can make out in a painting
 // (sight.ts): the things in it, how it's laid out, its colours, its line, how it was painted, and
-// how it compares with the rest of the room. critics.ts adds these to each visitor's own lines.
+// how it compares with the rest of the room, and their last word on it (VERDICT). critics.ts adds
+// these to each visitor's own lines, and makes each remark from up to three of them.
 //
 // The rude doodles get seaside-postcard treatment, never more: nobody names anything, and every line
 // leaves room for it really having been a rocket, a mushroom or a marrow all along, because
@@ -500,4 +501,74 @@ export const SEEN: Record<string, string[]> = {
     "Skraw? (It eyes {seen}, in case {seen} is edible.)",
     "KEK. (It has seen {seen}. It is not impressed by {seen}.)",
   ],
+};
+
+/** Short last words for the end of a remark, what they think of it overall, by the mark they give:
+ *  love (7 and up), meh, hate (under 4.5). Added to each visitor's own. */
+export const VERDICT: Record<string, Record<"love" | "meh" | "hate", string[]>> = {
+  "Sir Jeremy Plinth": {
+    love: ["I shall mention it in my column, favourably, which will confuse everyone.", "Hang it somewhere with good light and a guard.", "Bravo. I mean it, which is rarer than it sounds.", "One leaves a little less disappointed than one arrived."],
+    meh: ["Neither here nor there, and I have been to both.", "It will do, in the way that Tuesdays do.", "Solid, in the sense that porridge is solid.", "I shall call it 'promising' and hope nobody asks of what."],
+    hate: ["I shall need a long walk and a short memory.", "Take it down before the light gets at it.", "My notes on this one simply read 'no'.", "I have judged worse, but only at school prize-givings."],
+  },
+  "Octavia Vane": {
+    love: ["I've stopped breathing, which is the highest form of criticism.", "Devastating. I'm devastated. Thank you.", "Finally, a painting that doesn't care what I think.", "I'll buy it ironically, then keep it sincerely."],
+    meh: ["It almost said something, then lost its nerve.", "It's a painting the way a beige car is a car.", "There's an idea in there somewhere, hiding from me.", "Inoffensive. The cruellest word I know."],
+    hate: ["Darling, no.", "It belongs in a dentist's waiting room, and it knows it.", "Decorative, sentimental and, worst of all, nice.", "I've seen more risk in a scatter cushion."],
+  },
+  "Dr Rupert Varnish": {
+    love: ["My retinas would like to thank {name} personally.", "Glorious. I'll see it every time I close my eyes.", "Colour like that ought to come with a warning.", "I'd frame the palette, never mind the painting."],
+    meh: ["Pleasant enough, like a magnolia hallway.", "The colours turned up, but nobody introduced them.", "Room temperature. Neither warm nor cool, just there.", "It wants a splash of something, and so do I."],
+    hate: ["Bleak. I need to go and look at a fruit bowl.", "The colour of a cancelled train.", "Somebody has drained this painting and kept the good bit.", "Not one colour in it I'd let in the house."],
+  },
+  "Lady Fenella Gouache": {
+    love: ["Sold. To me, obviously.", "Ring my driver, we'll need the big car.", "It'll go over the fireplace, and the other one can go in the loft.", "Divine. I'll pay whatever they ask, then haggle."],
+    meh: ["One might bid for it, if lunch were dull.", "It would do for the spare room, if we had fewer spare rooms.", "Nice for a godchild, perhaps. A minor one.", "I'll think about it, which means no, politely."],
+    hate: ["I wouldn't give it to the church tombola.", "Not even for the downstairs loo, and I've been generous with the downstairs loo.", "Do put a sheet over it before the guests arrive.", "I've seen better taste at a motorway services."],
+  },
+  "Pauline (a nan)": {
+    love: ["I'd have that on the mantelpiece, next to the grandkids.", "Ooh, it's made my day, that has.", "Beautiful, love. I'll tell them all at bingo.", "I could look at that all afternoon. With a biscuit."],
+    meh: ["It's nice, isn't it. Where's my handbag?", "Very nice, love, in its way.", "That'll be lovely when it's finished.", "It's not my cup of tea, but I'd drink it."],
+    hate: ["Well, they tried, and that's what counts. Mostly.", "I won't say anything. You know me.", "I've seen nicer on a tea towel, love.", "Oh dear. Never mind, there's always next year."],
+  },
+  "Dave (a builder)": {
+    love: ["Top job. I'd put my name to that.", "Spot on, that. Couldn't fault it.", "That's a proper bit of graft, that.", "I'd give them a card for the van."],
+    meh: ["Needs another coat, to be honest.", "It'll pass. Just about.", "Not bad. I've seen worse on a new build.", "Snagging list as long as my arm, mind."],
+    hate: ["I'd want my money back on that.", "Cowboys. Absolute cowboys.", "Knock it down and start again from the footings.", "I wouldn't put my name to that, mate."],
+  },
+  "Jasper (an art student)": {
+    love: ["Genuinely the only thing in here with a pulse.", "I'm obsessed. Like, actually obsessed.", "It's giving everything. All of it.", "Going on my mood board. Forever."],
+    meh: ["Bit safe, but, like, fine.", "Not for me, but I see what they're going for. Sort of.", "It's giving coursework. B minus.", "Mm. Very... painted."],
+    hate: ["This is the kind of thing my dad would like.", "It's giving office kitchen.", "Very gift shop. No.", "No notes. It hasn't earned any."],
+  },
+  "Gloria (on a coach trip)": {
+    love: ["Ron, get the camera out. RON.", "Best thing we've seen all trip, and we've done three cathedrals.", "I'm telling the whole coach about this one.", "I'd send that to our Sharon as a postcard."],
+    meh: ["Very nice. Is there a café?", "It's nice. I preferred the cathedral, mind.", "Ron would like it. Ron likes anything.", "Lovely, I'm sure. My feet are killing me."],
+    hate: ["I'm not getting off the coach for that next time.", "I'll not be buying the postcard.", "Three hours on a coach for this, Ron.", "Ooh, no. No, I don't think so, love."],
+  },
+  "Alfie (aged 7)": {
+    love: ["BEST ONE. Can we take it home?", "It's the best painting in the whole world.", "Ten out of ten. Eleven. A million.", "I'm going to do one like that when I get home."],
+    meh: ["It's okay. Is it nearly time to go?", "Mum, I'm bored now.", "S'alright. My dad could do it.", "Is there a shop with sweets?"],
+    hate: ["That's rubbish. Sorry. But it is.", "Yuck. I'm not looking any more.", "My little sister did a better one, and she ate the crayon.", "Boring. Boring boring boring."],
+  },
+  "Kyle (a Flag Lad)": {
+    love: ["Get in. GET IN.", "Proper, that. Would sing about it.", "That's going on a flag, and the flag's going on a pole.", "Absolute scenes. Ten."],
+    meh: ["It's alright, innit. Nothing to sing about.", "Wouldn't stop the bus for it.", "Seen worse on a roundabout.", "Needs a flag. Then we'll talk."],
+    hate: ["Shocking. Absolutely shocking.", "Wouldn't wipe my boots on it, mate.", "Booo. Get it off.", "That's a red card, that."],
+  },
+  "Gareth (from the Council)": {
+    love: ["Approved, without conditions, which has never happened.", "I'll be recommending it to committee. Warmly, for me.", "Exemplary. I may frame the application.", "No objections. Not one. I checked twice."],
+    meh: ["Deferred, pending further information.", "Acceptable, subject to a landscaping scheme.", "I'll put it on the agenda, under any other business.", "Neither approved nor refused. It's in the system."],
+    hate: ["Refused, on all grounds, including some new ones.", "Enforcement will be in touch.", "I'll be recommending demolition.", "It doesn't comply with any policy we've ever had."],
+  },
+  "Marcus (a Roman re-enactor)": {
+    love: ["Ave! Fit for the forum.", "Hang it in the baths. The Romans would have.", "Glorious. I'd carry it into battle.", "A triumph, in the proper Roman sense: with a parade."],
+    meh: ["Adequate. Like legion porridge.", "It'll do for the barracks.", "Not bad, for a barbarian.", "Decent. Not empire-building, but decent."],
+    hate: ["To the lions with it.", "Even the Visigoths wouldn't loot that.", "Vae victis, {name}. Woe to the vanquished.", "I'd decimate it, and I'd start with the brushes."],
+  },
+  "A seagull": {
+    love: ["SKRAAAW! (It stands guard over the painting.)", "Kek kek kek! (It brings the painting a chip.)", "(It bows. Gulls don't bow. It bows.)", "SKRAW! (It sits on the frame and won't be moved.)"],
+    meh: ["Skraw. (It preens.)", "Kek. (It looks at the door.)", "(It yawns. Gulls can, it turns out.)", "Skraw. (It looks round for a better painting, or a chip.)"],
+    hate: ["SKRAAAW! (It turns its back on the painting.)", "Kek. (It drops a chip on it, on purpose.)", "Skraw. (It flaps at the painting, shooing it off.)", "SKRAW. (It looks you in the eye, and says no more.)"],
+  },
 };

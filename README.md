@@ -474,7 +474,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   it settles. In come the critics and a crowd of
   the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
   Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
-  with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
+  with a mark out of ten, in speech bubbles and out loud: a few sentences each, what struck them first,
+  something else they spotted, and what they think of it overall. They notice how much of the canvas you
   covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
   subject at all and how much effort went in. They also recognise what you drew: a sun, a bus,
   a cat, a face, gulls, houses, trees, a stick figure, writing (draw the subject's own thing and it

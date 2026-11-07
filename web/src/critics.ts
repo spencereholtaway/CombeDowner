@@ -5,9 +5,10 @@
 // there, sky at the top and grass at the bottom, how many strokes went into it), that's boiled down
 // to a handful of traits (blank, a flood of one colour, a scribble, a rainbow, very detailed, a
 // landscape, on the subject or off it...) and each visitor has a taste for some of them and a bank
-// of lines for each. sight.ts looks closer, at the shapes (a sun, a bus, a cat, a rude doodle...),
-// the layout, the colour and the line, and the easel says how it was painted; those become traits
-// too, with more lines in critics-lines.ts. The painting's time-lapse is looked at as well, for one
+// of lines for each; a remark is up to three of those, about three sentences: what strikes them
+// first, something about another part of it, and their verdict. sight.ts looks closer, at the shapes
+// (a sun, a bus, a cat, a rude doodle...), the layout, the colour and the line, and the easel says
+// how it was painted; those become traits too, with more lines in critics-lines.ts. The painting's time-lapse is looked at as well, for one
 // that started as one thing and ended as another, or had something rude painted out. Paintings are
 // also set against each other, for the two that look alike and the odd one out. Two or three real
 // critics come to every show, and their marks count double; the rest are ordinary people with
@@ -17,8 +18,9 @@
 //
 // Who decides what: the host. Everything here is worked out on the host's screen from the
 // paintings and the show's seed, and the lines and marks go round as text (gallery.ts), so nobody's
-// rounding can make two screens disagree.
-import { MORE, SEEN } from "./critics-lines";
+// rounding can make two screens disagree. How long each remark stays up (speakFor) comes from its
+// text, so every screen times the walk round the same.
+import { MORE, SEEN, VERDICT } from "./critics-lines";
 import { C, COLOUR_NAMES, H, W, type How } from "./easel";
 import { rng, shuffled, type Rng } from "./quests";
 import type { Eye } from "./eye";
@@ -586,7 +588,7 @@ export const PUNTERS: Visitor[] = [
 ];
 
 const ALL = [...CRITICS, ...PUNTERS];
-for (const v of ALL) for (const [k, more] of Object.entries({ ...MORE[v.name], seen: SEEN[v.name] ?? [] })) {
+for (const v of ALL) for (const extra of [{ ...MORE[v.name], seen: SEEN[v.name] ?? [] }, VERDICT[v.name] ?? {}]) for (const [k, more] of Object.entries(extra)) {
   const key = k as keyof Visitor["lines"];
   v.lines[key] = [...(v.lines[key] ?? []), ...more];
 }
@@ -626,7 +628,6 @@ const fmt = (s: string, o: Record<string, string>) => {
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
 const clamp = (v: number) => Math.max(1, Math.min(10, v));
-const SPEAK = 4.6;             // seconds a remark stays up
 const WALK = 1.5;              // metres a second, strolling
 
 /** The evening worked out: who comes, who looks at what in which order, what they say, their marks.
@@ -686,15 +687,15 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
     const p = left[k].shift()!;
     const [wx, wz] = wallAt(p), [fx, fz] = where[k];
     const arrive = free[k] + Math.hypot(wx - fx, wz - fz) / WALK;
-    const at = Math.max(arrive + 0.6, busy[p]);
-    busy[p] = at + SPEAK - 0.4;
-    free[k] = at + SPEAK + 0.4;
-    where[k] = [wx, wz];
     const v = ALL[cast[k]], f = feats[p], pr = rng(seed ^ (k * 7919 + p * 104729));
     const mark = Math.round(clamp(markOf(v, f) + (pr() - 0.5) * 1.2) * 2) / 2;
     const text = say(v, f, mark, pr, used, {
       name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second], thing: f.thing, item: f.item, other: f.other, seen: f.seen, was: f.was, became: f.became,
     });
+    const at = Math.max(arrive + 0.6, busy[p]), speak = speakFor(text);
+    busy[p] = at + speak - 0.4;
+    free[k] = at + speak + 0.4;
+    where[k] = [wx, wz];
     remarks.push({ at, v: cast[k], p, text, mark });
     (v.critic ? critic : punter)[p].push(mark);
     marks[p].push(mark, ...(v.critic ? [mark] : []));
@@ -778,44 +779,121 @@ export function alike(pxs: Uint8Array[]): { twin: number[]; odd: number } {
   return { twin, odd };
 }
 
-/** What a visitor says about a painting: the first thing they'd notice that they've a line for and
- *  haven't said yet, else what they thought of it overall. */
+/** What part of a painting each remark is about, so the two observations in one remark are about
+ *  different things and can't contradict each other (slating the colour, then praising it). */
+const ASPECT: Partial<Record<Trait, string>> = {
+  penis: "rude", boobs: "rude", bum: "rude", finale: "rude", phallic: "rude", rudeWith: "rude",
+  changed: "turn", covered: "turn",
+  spotted: "brief", onTheme: "brief", offTheme: "brief",
+  sun: "thing", bus: "thing", cat: "thing", face: "thing", house: "thing", tree: "thing", birds: "thing", figure: "thing", writing: "thing", seen: "thing",
+  blank: "whole", sparse: "whole", corner: "whole", detailed: "whole",
+  thirds: "layout", centred: "layout", lopsided: "layout", space: "layout", horizon: "layout", subject: "layout", symmetric: "layout", landscape: "layout", bold: "layout",
+  complement: "colour", analogous: "colour", warmcool: "colour", contrast: "colour", flat: "colour", muddy: "colour", rainbow: "colour", mono: "colour",
+  flood: "colour", grey: "colour", dark: "colour", warm: "colour", cool: "colour", stone: "colour", flag: "colour",
+  outlined: "line", hatched: "line", ruled: "line", wobbly: "line", sure: "line", scribble: "line", speckled: "line",
+  slow: "how", quick: "how", fiddly: "how", nerve: "how", bigBrush: "how", fineBrush: "how", ground: "how", lazy: "how", busy: "how",
+  twin: "compare", oddOne: "compare",
+};
+
+/** A line's sentences, an ellipsis not counting as an ending. */
+const pieces = (s: string) => s.replace(/\.\.\.|…/g, ",").trim().split(/(?<=[.!?]+['"”’)]*)\s+/);
+export const sentences = (s: string) => pieces(s).length;
+/** How much a line says, in sentences, a quip of three words or fewer ("Proper.", "It is.") counting half. */
+const heft = (s: string) => pieces(s).reduce((n, p) => n + (p.split(/\s+/).length <= 3 ? 0.5 : 1), 0);
+
+/** Seconds a remark stays up: long enough to read, from a one-liner to a full three sentences. */
+export const speakFor = (text: string) => Math.min(9.5, Math.max(4.6, 2.2 + 1.3 * sentences(text) + text.length / 50));
+
+/** Which way each visitor's own line about a thing leans, where LIKES doesn't already say: praise
+ *  first, then scorn. A remark that opens one way and ends with a mark the other has to turn on a
+ *  "still", or it reads as two people talking. */
+const TONE: Record<string, [string, string]> = {
+  "Sir Jeremy Plinth": ["detailed onTheme symmetric landscape ground", "blank sparse corner scribble offTheme flood lazy lopsided flat bigBrush nerve"],
+  "Octavia Vane": ["blank sparse flood mono bold offTheme scribble contrast nerve", "detailed landscape onTheme rainbow house sun tree cat birds complement outlined"],
+  "Dr Rupert Varnish": ["rainbow warm cool detailed sun bus hatched bigBrush ground", "blank grey dark mono"],
+  "Lady Fenella Gouache": ["bold symmetric stone house cat sun centred subject space analogous flat slow oddOne", "blank scribble dark speckled rainbow lopsided muddy twin"],
+  "Pauline (a nan)": ["rainbow scribble cat face sun house slow", "dark lazy muddy"],
+  "Dave (a builder)": ["flood detailed symmetric stone onTheme house ruled sure fineBrush ground", "scribble offTheme speckled wobbly muddy quick"],
+  "Jasper (an art student)": ["dark scribble blank mono wobbly quick oddOne", "landscape onTheme rainbow symmetric outlined hatched ruled slow centred"],
+  "Gloria (on a coach trip)": ["landscape onTheme detailed house sun", "blank offTheme dark"],
+  "Alfie (aged 7)": ["rainbow detailed cat bus figure", "blank scribble grey flood muddy"],
+  "Kyle (a Flag Lad)": ["flag bold flood bus", "blank rainbow complement"],
+  "Gareth (from the Council)": ["stone blank grey symmetric ruled centred muddy horizon", "rainbow bold scribble wobbly lopsided complement writing"],
+  "Marcus (a Roman re-enactor)": ["symmetric warm stone detailed ruled centred", "cool scribble"],
+};
+const leaning = (v: Visitor, t: Trait) => {
+  const [up, down] = TONE[v.name] ?? ["", ""], word = new RegExp(`(^| )${t}( |$)`);
+  if (word.test(up)) return 1;
+  if (word.test(down)) return -1;
+  const l = LIKES[v.name]?.[t] ?? 0;
+  return l >= 0.5 ? 1 : l <= -0.5 ? -1 : 0;
+};
+/** Never longer than this, so it fits its bubble and is read in under ten seconds. */
+const MOST_SENTENCES = 4, MOST_CHARS = 230;
+
+/** What a visitor says about a painting, in up to three parts and about three sentences: the first
+ *  thing they'd notice (a rude doodle always, a change of mind often, else high on their list), then
+ *  something about another part of it, then what they think of it overall. Every line is said once a
+ *  night by each visitor, and each kind of remark once, so a long evening thins out rather than repeats. */
 function say(v: Visitor, f: Feat, mark: number, r: Rng, used: Set<string>, o: Record<string, string>): string {
-  const pickFrom = (key: string, list: string[] | undefined) => {
-    if (!list?.length) return null;
-    const fresh = list.filter((s) => !used.has(`${v.name}:${s}`));
-    if (!fresh.length) return null;
-    const s = fresh[Math.floor(r() * fresh.length)];
+  let said = 0, count = 0, chars = 0;
+  const fresh = (list: string[] | undefined, most: number, room: number) => (list ?? []).filter((s) =>
+    !used.has(`${v.name}:${s}`) && heft(s) <= most && (!count || sentences(s) <= MOST_SENTENCES - count) && fmt(s, o).length <= room);
+  const pickFrom = (key: string, list: string[] | undefined, most = 99, room = 999) => {
+    const can = fresh(list, most, room);
+    if (!can.length) return null;
+    const s = can[Math.floor(r() * can.length)];
     used.add(`${v.name}:${s}`);
     used.add(`${v.name}#${key}`);
     return fmt(s, o);
   };
+  const mood = mark >= 7 ? "love" : mark >= 4.5 ? "meh" : "hate";
+  const rank = (t: Trait) => { const i = v.notice.indexOf(t); return i >= 0 ? i : 20 + [...f.t].indexOf(t); };
+  /** One of the first few things they'd notice that they've a line for, and haven't said that kind of thing yet. */
+  const observe = (ok: (t: Trait) => boolean, most: number, room: number): [Trait, string] | null => {
+    const can = [...f.t].filter((t) => !RUDE.includes(t as Rude) && ok(t) && fresh(v.lines[t], most, room).length && !used.has(`${v.name}#${t}`)).sort((a, b) => rank(a) - rank(b));
+    if (!can.length) return null;
+    const t = can[Math.floor(r() ** 1.5 * Math.min(3, can.length))];
+    return [t, pickFrom(t, v.lines[t], most, room)!];
+  };
+  const parts: string[] = [];
+  const add = (s: string) => { parts.push(s); said += heft(s); count += sentences(s); chars += s.length + 1; };
+
+  // the lead is a whole line, however long: the lines were written to be said whole
+  let lead: [Trait, string] | null = null;
   // a rude doodle always gets a reaction, whatever else they'd have said
-  const rude = [...RUDE, "rudeWith" as Trait].filter((t) => f.t.has(t) && v.lines[t]?.some((s) => !used.has(`${v.name}:${s}`)));
+  const rude = [...RUDE, "rudeWith" as Trait].filter((t) => f.t.has(t) && fresh(v.lines[t], 99, 999).length);
   if (rude.length) {
     const k = rude[Math.floor(r() * Math.min(2, rude.length))];
-    const s = pickFrom(k, v.lines[k]);
-    if (s) return s;
+    lead = [k, pickFrom(k, v.lines[k])!];
   }
   // a painting that changed its mind is the talk of the room, for those who caught it
-  const turn = (["changed", "covered"] as Trait[]).find((t) => f.t.has(t) && v.lines[t]?.some((s) => !used.has(`${v.name}:${s}`)));
-  if (turn && r() < 0.55) {
-    const s = pickFrom(turn, v.lines[turn]);
-    if (s) return s;
+  const turn = (["changed", "covered"] as Trait[]).find((t) => f.t.has(t) && fresh(v.lines[t], 99, 999).length);
+  if (!lead && turn && r() < 0.55) lead = [turn, pickFrom(turn, v.lines[turn])!];
+  if (!lead) lead = observe(() => true, 99, 999);
+  if (lead) { said = heft(lead[1]); count = sentences(lead[1]); chars = lead[1].length; parts.push(lead[1]); }
+
+  // a short lead gets something about another part of the painting, never one that argues with the
+  // mark they're about to give; then the mark itself, unless the lead was a whole remark already
+  const aspect = lead ? ASPECT[lead[0]] ?? lead[0] : "";
+  const facing = mood === "love" ? 1 : mood === "hate" ? -1 : 0;
+  const against = !!lead && leaning(v, lead[0]) * facing < 0;
+  if (said < 2 && !against) {
+    const second = observe((t) => (ASPECT[t] ?? t) !== aspect && !(aspect === "rude" && t === "spotted") && leaning(v, t) * facing >= 0,
+      lead ? 1 : 2, MOST_CHARS - chars - 45);
+    if (second) add(second[1]);
   }
-  // otherwise one of the first few things they'd notice, and never the same kind of remark twice
-  if (r() > 0.15) {
-    const rank = (t: Trait) => { const i = v.notice.indexOf(t); return i >= 0 ? i : 20 + [...f.t].indexOf(t); };
-    const can = [...f.t].filter((t) => !RUDE.includes(t as Rude) && v.lines[t] && !used.has(`${v.name}#${t}`)).sort((a, b) => rank(a) - rank(b));
-    for (let tries = 0; tries < 3 && can.length; tries++) {
-      const i = Math.floor(r() ** 1.5 * Math.min(3, can.length)), t = can.splice(i, 1)[0];
-      const s = pickFrom(t, v.lines[t]);
-      if (s) return s;
-    }
+  if (said < 3) {
+    // the gull's verdicts are stage directions, which can't take a "still"
+    const turns = against && !v.dress.gull;
+    const verdict = pickFrom(mood, v.lines[mood], Math.max(1, 3.5 - said), MOST_CHARS - chars - (turns ? 8 : 0));
+    if (verdict) add(turns ? `Still, ${keepCaps.test(verdict) ? verdict : verdict.charAt(0).toLowerCase() + verdict.slice(1)}` : verdict);
   }
-  const mood = mark >= 7 ? "love" : mark >= 4.5 ? "meh" : "hate";
-  return pickFrom(mood, v.lines[mood]) ?? pickFrom("meh", v.lines.meh) ?? fmt(v.lines[mood]?.[0] ?? "Hmm.", o);
+  if (!parts.length) parts.push(pickFrom("meh", v.lines.meh) ?? fmt(v.lines[mood]?.[0] ?? "Hmm.", o));
+  return parts.join(" ");
 }
+/** Words that keep their capital after "Still,": I, names, and shouting. */
+const keepCaps = /^(I\b|Ron\b|Mum\b|Ave\b|Vae\b|[A-Z]{2,}\b)/;
 
 // ---- the verdict --------------------------------------------------------------------------------
 

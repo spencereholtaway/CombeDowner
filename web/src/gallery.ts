@@ -43,7 +43,7 @@ import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { ctlText } from "./controls";
-import { CRITICS, THEMES, TRIUMPH, criticsFor, earlyFrom, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
+import { CRITICS, THEMES, TRIUMPH, criticsFor, earlyFrom, speakFor, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
 import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
 import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
@@ -62,7 +62,6 @@ const MAX_PAINTERS = 8;
 const HX = 11, HZ = 6.5, RH = 5.2;   // the room's half length and half width, and its height
 const GO_IN = 6;                     // how close to the curator to go in
 const CHUNK = 9000;
-const SPEAK = 4.6;
 const BEAT_MS = 3200;                // the critics confer before the verdict's read out
 const CLOSE_MS = 90000;
 const EYE_WAIT_MS = 20000;           // how long the show waits for the critics' eye before going on without it              // and the gallery closes this long after it
@@ -571,16 +570,23 @@ function setUV(g: THREE.BufferGeometry, u0: number, v0: number, u1: number, v1: 
 interface Goer {
   v: number; body: Avatar | null; gull: ReturnType<typeof gullFigure> | null;
   bubble: THREE.Sprite; canvas: HTMLCanvasElement; tex: THREE.CanvasTexture;
-  stops: { p: number; at: number; text: string; mark: number }[];
+  stops: { p: number; at: number; secs: number; text: string; mark: number }[];
   said: number; k: number;
 }
 
+/** A speech bubble, drawn at the foot of its canvas so its tail stays put however many lines it has.
+ *  A remark too long for it at full size steps the type down rather than run off the bubble. */
 function bubbleDraw(c: HTMLCanvasElement, who: string, text: string, mark: number) {
   const x = c.getContext("2d")!;
   x.clearRect(0, 0, c.width, c.height);
-  x.font = "600 25px Georgia, serif";
-  const lines = wrapText(x, text, 440).slice(0, 5);
-  const h = 54 + lines.length * 29;
+  let size = 25, gap = 29, lines: string[] = [];
+  for (; size >= 19; size -= 2, gap -= 2) {
+    x.font = `600 ${size}px Georgia, serif`;
+    lines = wrapText(x, text, 440);
+    if (lines.length * gap <= c.height - 90) break;
+  }
+  lines = lines.slice(0, Math.floor((c.height - 90) / gap));
+  const h = 60 + lines.length * gap;
   const top = c.height - h - 26;
   x.fillStyle = "rgba(255,253,246,.96)"; x.strokeStyle = "#222"; x.lineWidth = 3;
   x.beginPath(); x.roundRect(6, top, 500, h, 18); x.fill(); x.stroke();
@@ -588,8 +594,8 @@ function bubbleDraw(c: HTMLCanvasElement, who: string, text: string, mark: numbe
   x.beginPath(); x.moveTo(230, top + h); x.lineTo(256, c.height - 4); x.lineTo(270, top + h); x.stroke();
   x.fillStyle = "#8a1c3a"; x.font = "italic 700 19px Georgia, serif"; x.textAlign = "left";
   x.fillText(who, 22, top + 28);
-  x.fillStyle = "#111"; x.font = "600 25px Georgia, serif";
-  lines.forEach((l, k) => x.fillText(l, 22, top + 58 + k * 29));
+  x.fillStyle = "#111"; x.font = `600 ${size}px Georgia, serif`;
+  lines.forEach((l, k) => x.fillText(l, 22, top + 64 + k * gap));
   x.fillStyle = mark >= 7 ? "#1f6a33" : mark >= 4.5 ? "#8a6a10" : "#a3201c";
   x.beginPath(); x.arc(470, top + 24, 22, 0, 7); x.fill();
   x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 18px Georgia, serif";
@@ -892,15 +898,16 @@ registerChallenge({
           room.root.add(body.root);
         }
         const canvas = document.createElement("canvas");
-        canvas.width = 512; canvas.height = 256;
+        canvas.width = 512; canvas.height = 336;
         const tex = new THREE.CanvasTexture(canvas);
         tex.colorSpace = THREE.SRGBColorSpace;
         const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false }));
-        bubble.scale.set(3.2, 1.6, 1);
+        bubble.scale.set(3.2, 2.1, 1);
+        bubble.center.set(0.5, 0);
         bubble.renderOrder = 20;
         bubble.visible = false;
         room.root.add(bubble);
-        const stops = show!.remarks.filter((r) => r.v === v).map((r) => ({ p: r.p, at: r.at, text: r.text, mark: r.mark }));
+        const stops = show!.remarks.filter((r) => r.v === v).map((r) => ({ p: r.p, at: r.at, secs: speakFor(r.text), text: r.text, mark: r.mark }));
         return { v, body, gull, bubble, canvas, tex, stops, said: -1, k };
       });
     }
@@ -931,8 +938,9 @@ registerChallenge({
           const u = (t - ft) / Math.max(0.01, arrive - ft);
           return { x: fx + (sx - fx) * u, z: fz + (sz - fz) * u, yaw: Math.atan2(-(sx - fx), -(sz - fz)), talking: -1 };
         }
-        if (t < st.at + SPEAK) return { x: sx, z: sz, yaw: sy, talking: t >= st.at ? i : -1 };
-        fx = sx; fz = sz; ft = st.at + SPEAK; yaw = sy;
+        const end = st.at + st.secs;
+        if (t < end) return { x: sx, z: sz, yaw: sy, talking: t >= st.at ? i : -1 };
+        fx = sx; fz = sz; ft = end; yaw = sy;
       }
       // done: wander back towards the middle and look about
       const [mx, mz] = [(g.k % 4 - 1.5) * 2.2, ((g.k >> 2) % 2 - 0.5) * 2];
@@ -956,7 +964,7 @@ registerChallenge({
           g.gull.wl.rotation.z = flap; g.gull.wr.rotation.z = -flap;
         }
         const tall = visitor(g.v).dress.small ? 2.1 : g.gull ? 1.7 : 2.8;
-        g.bubble.position.set(at.x, tall, at.z);
+        g.bubble.position.set(at.x, tall - 0.8, at.z);
         if (at.talking >= 0 && at.talking !== g.said) {
           g.said = at.talking;
           const st = g.stops[at.talking], vis = visitor(g.v);

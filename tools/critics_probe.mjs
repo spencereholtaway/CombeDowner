@@ -3,13 +3,15 @@
 // several angles, near-misses such as a rocket and a mushroom, a random scribble...), each looked at
 // as the host would, and what it was read as printed next to what it was meant to be.
 //
-//   node tools/critics_probe.mjs [--out dir] [--only name] [--table marks.json]
+//   node tools/critics_probe.mjs [--out dir] [--only name] [--table marks.json] [--said]
 //
 // Then whole paintings (tools/critics_scenes.mjs), careful, middling and lazy, each shown to ten
 // different evenings' crowds, with the marks they got set against what they ought to get; --table
 // writes those marks out, to set one run against another. --eye subject.json gives the whole
 // paintings the critics' eye's subject scores (by number, from tools/critics_eye_probe.mjs on the
-// cal-*.png pictures), to see the marks as a host with the eye would give them.
+// cal-*.png pictures), to see the marks as a host with the eye would give them. Last, whole evenings
+// of one to eight painters: how long the walk round takes and how long the remarks run (--said
+// prints every remark).
 //
 // With --out it also writes each painting as a PNG at four times size, in the easel's own colours,
 // and an index.html with a caption under each. Exits 1 if anything meant to be seen wasn't, or
@@ -359,6 +361,23 @@ for (const r of calRows) {
 console.log(`${calRows.length - calBad} of ${calRows.length} marked as meant`);
 for (const n of tapeNotes) console.log("time-lapse: " + n);
 if (opt.only) for (const r of calRows) { console.log(`  ${r.s.name}: ${r.traits.join(",")}`); if (process.env.FRAMES) r.frames.forEach((f, i) => { const g = K.see(f); console.log(`    frame ${i + 1}: ${[...Object.keys(g.things), ...Object.keys(g.rude)].join(",")}`); }); console.log("    " + Object.entries(r.byWho).map(([k, v]) => `${k.split(" ")[0]} ${(v.reduce((a, b) => a + b, 0) / v.length).toFixed(1)}`).join(", ")); for (const l of r.said) console.log("    " + l); }
+// whole evenings, one to eight painters, hung along two walls as in the gallery: how long the walk
+// round takes, and how long the remarks run (--said prints every one)
+if (!opt.only && CAL.length) {
+  console.log("\nevening      seconds  remarks  sentences (mean, most)");
+  for (const n of [1, 2, 4, 6, 8]) {
+    const ps = Array.from({ length: n }, (_, i) => {
+      const s = CAL[(i * 5 + n) % CAL.length], px = canvas();
+      for (const layer of s.layers) layer(px);
+      return { id: "p" + i, name: ["Ada", "Bert", "Cleo", "Dan", "Eve", "Fay", "Gus", "Hal"][i], px, strokes: s.strokes, ...(s.how ? { how: s.how } : {}) };
+    });
+    const theme = K.THEMES.find((t) => t.t === CAL[n % CAL.length].theme);
+    const sh = K.stageShow(ps, theme, theme.t.replace("{pub}", "the Hadley Arms"), 777 + n, (p) => [(p % 4 - 1.5) * 4.5, p < 4 ? -5 : 5], [10, 0]);
+    const ns = sh.remarks.map((r) => K.sentences(r.text));
+    console.log(`${pad(n + " painting" + (n > 1 ? "s" : ""), 12)} ${pad(sh.dur.toFixed(0), 8)} ${pad(sh.remarks.length, 8)} ${(ns.reduce((a, b) => a + b, 0) / ns.length).toFixed(1)}, ${Math.max(...ns)}`);
+    if ("said" in opt) for (const r of sh.remarks) console.log(`    ${K.visitor(r.v).name} on ${ps[r.p].name}'s (${r.mark}): ${r.text}`);
+  }
+}
 if (opt.table) fs.writeFileSync(opt.table, JSON.stringify(calRows.map((r) => ({ name: r.s.name, tier: r.s.tier, mean: +r.mean.toFixed(2), lo: r.lo, hi: r.hi, critic: r.critic.mark, critic_who: r.critic.who, top: r.top, low: r.low })), null, 1));
 
 // ---- pictures ----------------------------------------------------------------------------------------
