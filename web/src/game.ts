@@ -724,7 +724,7 @@ export class Game {
     this.oddments.onGot = () => this.tookOddment();
     this.oddments.leave = (ride, x, z) => { if (isRide(ride as Kind)) { this.pickups.place(x, z, ride as RideKind, LEFT_LIFE); this.net.send("pk", this.pickups.snapshot()); } };
     this.oddments.onOpen = () => this.quests?.repost();
-    this.reveal = new Reveal(map, () => this.freeMode);
+    this.reveal = new Reveal(map, world, () => this.freeMode);
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);

@@ -319,7 +319,7 @@ function brief(at: "board" | "recall", b: Brief, touch = false) {
   el.hidden = false;
 }
 function revealCard(s: Shot) {
-  const r = new Reveal(null as never, () => false) as any;
+  const r = new Reveal(null as never, null as never, () => false) as any;
   r.card(s);
   document.getElementById("reveal")?.classList.add("shown");
 }

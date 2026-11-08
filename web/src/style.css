@@ -179,10 +179,10 @@ kbd {
   background: radial-gradient(ellipse at center, #2a2d30, var(--black) 75%); transition: opacity 0.35s ease-out;
 }
 #arrive.lifting { opacity: 0; }
-#arrive .why { margin: 0; font: 700 clamp(15px, 4vw, 19px)/1.2 var(--f-hud); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); text-align: center; }
+#arrive .why, #reveal .rvveil .why { margin: 0; font: 700 clamp(15px, 4vw, 19px)/1.2 var(--f-hud); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); text-align: center; }
 #arrive .where { margin: 0; max-width: min(560px, 100%); padding: 12px 22px 10px; text-align: center; font-size: clamp(20px, 6vw, 32px); line-height: 1.1; overflow-wrap: anywhere; }
 #arrive .where:empty { display: none; }
-#arrive i { width: min(220px, 60vw); height: 9px; border-block: 3px solid var(--lines); transform-origin: left; animation: lines 1.1s ease-in-out infinite; }
+#arrive i, #reveal .rvveil i { width: min(220px, 60vw); height: 9px; border-block: 3px solid var(--lines); transform-origin: left; animation: lines 1.1s ease-in-out infinite; }
 @keyframes lines { from { transform: scaleX(0); } 60% { transform: scaleX(1); opacity: 1; } to { transform: scaleX(1); opacity: 0; } }
 .music { display: flex; gap: 10px; align-items: center; }
 /* the wardrobe, over the pause menu (wardrobe.ts) */
@@ -1172,6 +1172,11 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
 }
 #reveal .rvconfetti { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 #reveal .rvcard { z-index: 2; }
+/* the fly-over's cover while the squares it will show are built, the arrival cover's slate (reveal.ts sets how far it's over) */
+#reveal .rvveil { position: absolute; inset: 0; z-index: 1; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: radial-gradient(ellipse at center, #2a2d30, var(--black) 75%); }
+#reveal.rvback { pointer-events: none; }
+#reveal.rvback > :not(.rvveil), #reveal.rvback::before, #reveal.rvback::after { display: none; }
 #reveal .rvskip { z-index: 3; }
 #reveal .rvflash { position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0;
   background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.5), rgba(255, 226, 140, 0.18) 50%, rgba(255, 190, 70, 0.55) 100%); }

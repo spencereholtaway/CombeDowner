@@ -1,6 +1,7 @@
 // The full-detail squares round the detailed map (built by tools/prep_tiles.py into
 // public/maps/<id>/<ti>_<tj>.json, and downloaded packed: pack.ts): the rest of Bath at the same detail as Combe Down, about a
-// kilometre a side. Only the squares near the player are loaded. Each is fetched, given a GameMap
+// kilometre a side. Only the squares near the player are loaded (while a fly-over plays, those it
+// will show instead: reveal.ts). Each is fetched, given a GameMap
 // of its own (its ground, walls, roofs and trees, which the main map hands questions to) that is
 // set up a slice at a time, and its scenery is built a few milliseconds a frame (world.ts), so the
 // game never stalls as you go; squares left far behind are dropped, except those held where
@@ -105,6 +106,9 @@ export class Tiles {
   /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
    *  other's): where everyone starts, so a respawn always lands on real ground. */
   private pinned = new Set<number>();
+  /** While a fly-over plays (reveal.ts), the squares built in full are just those it will see,
+   *  each with how long it will be seen for, so the longest seen are built first. */
+  private also = new Map<number, number>();
   /** Build in bigger slices a frame, while nobody can see the frame rate (arrive.ts's cover is up). */
   rush = false;
   /** Goes up whenever a square's scenery comes or goes, so the backdrop knows to look again. */
@@ -157,6 +161,30 @@ export class Tiles {
     return n;
   }
 
+  /** Build just the squares within r of these spots (scene x, z, evenly spaced in time) in full,
+   *  instead of those round us, until called again with none; then the usual reach takes over and
+   *  lets go of the rest, as of any other. */
+  alsoBuild(spots: { x: number; z: number }[], r: number) {
+    const I = this.core.tileIndex!, S = I.cells * I.dx;
+    this.also.clear();
+    for (const p of spots) {
+      const u = p.x - I.x0, v = -p.z - I.y0;
+      for (let ti = Math.floor((u - r) / S); ti <= Math.floor((u + r) / S); ti++)
+        for (let tj = Math.floor((v - r) / S); tj <= Math.floor((v + r) / S); tj++) {
+          const k = tileKey(ti, tj);
+          if (this.exists.has(k) && Math.hypot(Math.max(0, ti * S - u, u - (ti + 1) * S), Math.max(0, tj * S - v, v - (tj + 1) * S)) <= r) this.also.set(k, (this.also.get(k) ?? 0) + 1);
+        }
+    }
+    this.wait = 0;
+  }
+
+  /** How many of alsoBuild's squares aren't loaded and built yet (leaving out any that wouldn't load). */
+  alsoUnbuilt(): number {
+    let n = 0;
+    for (const k of this.also.keys()) { const t = this.live.get(k); if (!t?.failed && !t?.world) n++; }
+    return n;
+  }
+
   /** Look for the squares round us on the next update rather than at the next of its regular looks:
    *  after a jump, so the ones there start loading straight away. */
   look() { this.wait = 0; }
@@ -169,7 +197,9 @@ export class Tiles {
       return Math.hypot(Math.max(0, ti * S - u, u - (ti + 1) * S), Math.max(0, tj * S - v, v - (tj + 1) * S));
     };
     const fromOthers = (ti: number, tj: number) => others.reduce((m, o) => Math.min(m, far(ti, tj, o.x, o.z)), Infinity);
-    const first = (t: Tile) => Math.min(t.d, t.od);
+    // (a fly-over's squares the longest in view first, so a slow machine that can't wait for them
+    // all is left missing only what it passes quickest)
+    const first = (t: Tile) => Math.min(t.d, t.od) - (this.also.get(tileKey(t.ti, t.tj)) ?? 0) * 1e6;
     this.wait -= dt;
     if (this.wait <= 0) {
       this.wait = 0.3;
@@ -183,7 +213,9 @@ export class Tiles {
           }
         return new Set(found.sort((a, b) => a[1] - b[1]).slice(0, most).map(([k]) => k));
       };
-      const near = nearest(view.load, SQUARES), keep = nearest(view.drop, SQUARES + SPARE);
+      // (while a fly-over plays, no square it won't wait for starts building, to go up in front of it)
+      const near = this.also.size ? new Set(this.also.keys()) : nearest(view.load, SQUARES), keep = nearest(view.drop, SQUARES + SPARE);
+      for (const k of this.also.keys()) keep.add(k);
       for (const [k, t] of this.live) {
         t.d = far(t.ti, t.tj, px, pz); t.od = fromOthers(t.ti, t.tj); t.near = near.has(k);
         if (!keep.has(k) && t.od > FAR_OTHERS && !this.pinned.has(k)) { this.drop(t); this.live.delete(k); }

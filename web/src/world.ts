@@ -155,6 +155,11 @@ export interface World {
   unbuilt(x: number, z: number, r: number): number;
   /** Start on the squares round wherever we are now, straight away: after a jump. */
   look(): void;
+  /** Build just the squares within r of these spots (scene x, z) in full, instead of those round
+   *  the player, until called again with none: everywhere a fly-over will see (reveal.ts). */
+  alsoBuild(spots: { x: number; z: number }[], r: number): void;
+  /** How many of those are still to load and build. */
+  alsoUnbuilt(): number;
   /** Build the squares in bigger slices a frame, while the view is covered (arrive.ts). */
   rush: boolean;
   /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
@@ -3008,6 +3013,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
     unbuilt: (x, z, r) => tiles?.unbuiltNear(x, z, r) ?? 0,
     look: () => tiles?.look(),
+    alsoBuild: (spots, r) => tiles?.alsoBuild(spots, r),
+    alsoUnbuilt: () => tiles?.alsoUnbuilt() ?? 0,
     get rush() { return tiles?.rush ?? false; },
     set rush(on: boolean) { if (tiles) tiles.rush = on; },
     get tunnel() { return dark; },
