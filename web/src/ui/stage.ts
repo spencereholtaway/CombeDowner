@@ -246,7 +246,7 @@ const DRAW: Record<string, Record<string, () => void>> = {
   },
   result: {
     "Job done, with rewards": () => MS.missionResult({ result: "won", label: "Seagull Attack", title: "Seagulls seen off!", lead: "340", medal: "★★☆", lines: ["7 of 9 bites saved"], colour: "#8fd0f0", rewards, sound: null }),
-    "Job failed": () => MS.missionResult({ result: "lost", label: "Push the Bus", title: "It got away from you", lines: ["Back down Horsecombe Vale and smashed into a car"], colour: "#f2c318", sound: null }),
+    "Job failed": () => MS.missionResult({ result: "lost", label: "Push the Bus", title: "It got away from you", lines: ["Back down Horsecombe Vale and smashed into a car"], colour: "#f2c318", sound: null, retry: () => {} }),
     "Called off": () => MS.missionResult({ result: "lost", label: "The Lock Run", title: "Job called off", lines: ["Ann called it off"], colour: "#3a8fd8", sound: null }),
     "Race: gold": () => MS.missionResult({ result: "won", kind: "race", label: "BMX climb to Moorlands Recreation Playground", title: "Winner!", place: 1, lead: "1:18.6", medal: "Gold medal", lines: ["1.4 s inside gold"], best: "NEW BEST! 2.1 s quicker",
       stats: [{ k: "Top speed", v: "31 mph" }, { k: "Boosts", v: "3" }], rows: [{ name: "You", time: "1:18.6", me: true }, { name: "Ann", time: "1:22.0" }, { name: "Bo", time: "–", dnf: true }],

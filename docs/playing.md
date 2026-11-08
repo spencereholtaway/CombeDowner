@@ -558,6 +558,15 @@ four seconds, clear of that card and of the prompts under the crosshair, and any
 to call out waits till it's gone. Everyone gets the same noticeboards that day,
 and a job you've done stays ticked off till the next. Call off a job from the pause menu.
 
+Lose a job or a team challenge and its result card has **Retry** and **Abort** in place of Continue.
+Retry (R or Enter, □ on a pad, or tap it) takes it again in the same place, just as if from its
+noticeboard: the entries open, and everyone who's in is put back at its start for the countdown.
+Anyone else who was in it and still has the card up is entered too; Abort (Esc, Options on a pad,
+or tap it, or just let the card go) leaves it, and you're asked to join like anyone else. If two of
+you press Retry at once it starts the once, with you both in it. A lost pub takeover's card has
+Retry too: the Flag Lads take the pub again straight away. A lost job still leaves its scar and its
+line in the paper. Races keep their own Again and time trials instead.
+
 **Today's jobs**: when you join, the front page of the Bath Chronicle shows three little missions
 for the day (shoot some flags down, win a pub back, ride a couple of kilometres, land a combo, have
 a pint...) and, as the lead story, how the Flag Lads are doing. Hold Tab to see it again. They're the same three for everyone, new each midnight.

@@ -18,8 +18,9 @@
 //                    chosen by the kind of mission, the mode's own title and words, a results table,
 //                    what you won listed on it, Continue (and Again where there is one) with the
 //                    same keys and 8 s timer for everything, the one end sound, and confetti for a
-//                    win. The driving test's report, the night out's front page and the gallery's
-//                    verdict are variants of it (missionSheet, missionNight, a body of its own).
+//                    win; a loss that can be had another go at has Retry and Abort instead. The
+//                    driving test's report, the night out's front page and the gallery's verdict
+//                    are variants of it (missionSheet, missionNight, a body of its own).
 //   missionPaper     a cutting held up low in the middle while something's read out, with nothing to
 //                    press (the gallery's critics, one card each, then their marks), its words typed
 //                    out and a stamp (stampHtml, the one the verdict card wears too) coming down on it.
@@ -561,6 +562,10 @@ export interface MissionResult {
   colour?: string;
   /** The Again button's go, if there is one. */
   again?: () => void;
+  /** A loss that can be had another go at: Retry and Abort take Continue's place. retry starts it
+   *  again; abort is the card put away any other way (Abort, Esc, a click off it, its timer). */
+  retry?: () => void;
+  abort?: () => void;
   /** The end sound: left out, the job's win or loss; null for none. */
   sound?: (() => void) | null;
   /** A variant's own body (html, already escaped) after the title: a report, a front page, a verdict. */
@@ -608,6 +613,7 @@ export function missionResult(o: MissionResult): ResultHandle {
   const leadRow = o.place || o.lead || o.medal
     ? `<div class="lead">${o.place ? `<span class="place">${nth(o.place)}</span>` : ""}${o.lead ? `<span class="time">${esc(o.lead)}</span>` : ""}${o.medal ? `<span class="medal">${esc(o.medal)}</span>` : ""}</div>` : "";
   const ok = ctl("jump"), more = o.again ? ctl("again") : "";
+  const hint = (k: string) => (k ? ` <small>(${esc(k)})</small>` : "");
   band.innerHTML = flag
     + (o.label ? `<div class="kind">${esc(o.label)}</div>` : "")
     + `<div class="title">${esc(o.title)}</div>`
@@ -617,7 +623,8 @@ export function missionResult(o: MissionResult): ResultHandle {
     + `<div class="table"></div>`
     + (o.stats?.length ? `<div class="stats">${o.stats.map((x) => `${esc(x.k)} <b>${esc(x.v)}</b>`).join(" &nbsp;·&nbsp; ")}</div>` : "")
     + `<ul class="rewards"></ul>`
-    + `<div class="go">${o.again ? `<button type="button" class="again">Again <small>(${esc(more)})</small></button>` : ""}<button type="button" class="main">Continue <small>(${esc(ok)})</small><span class="fill"></span></button></div>`;
+    + `<div class="go">${o.retry ? `<button type="button" class="again">Retry${hint(ctl("card.retry"))}</button><button type="button" class="main">Abort${hint(ctl("card.abort"))}<span class="fill"></span></button>`
+      : `${o.again ? `<button type="button" class="again">Again <small>(${esc(more)})</small></button>` : ""}<button type="button" class="main">Continue <small>(${esc(ok)})</small><span class="fill"></span></button>`}</div>`;
   el.appendChild(band);
   layer().appendChild(el);
   const table = band.querySelector<HTMLElement>(".table")!, list = band.querySelector<HTMLElement>(".rewards")!;
@@ -636,31 +643,34 @@ export function missionResult(o: MissionResult): ResultHandle {
     list.appendChild(li);
     if (pic) void Promise.resolve(pic).then((url) => { if (url) { const img = document.createElement("img"); img.className = "pic"; img.alt = ""; img.src = url; li.prepend(img); li.classList.add("haspic"); } }, () => {});
   };
-  const remove = () => {
+  const remove = (retrying = false) => {
     if (gone) return;
     gone = true;
+    if (!retrying) o.abort?.();
     clearTimeout(timer);
     removeEventListener("keydown", onKey, true);
     el.classList.add("out");
     window.setTimeout(() => el.remove(), 500);
     if (ending === handle) ending = null;
   };
-  const handle: ResultHandle = { rows, reward, remove };
+  const handle: ResultHandle = { rows, reward, remove: () => remove() };
   ending = handle;
   rows(o.rows ?? []);
   for (const r of o.rewards ?? []) if (r) reward(r);
-  // jump (Space, Enter, ✕) carries on; use (E, □) or Backspace goes again. Taken here so the press
-  // doesn't jump or get in a car too.
+  const retry = () => { remove(true); o.retry?.(); };
+  // jump (Space, Enter, ✕) carries on; use (E, □) or Backspace goes again; on a loss, retry (R, Enter,
+  // □) has another go. Taken here so the press doesn't jump, reload or get in a car too.
   const onKey = (k: KeyboardEvent) => {
     if (k.repeat) return;
-    if (k.code === "Space" || k.code === "Enter") { k.preventDefault(); k.stopImmediatePropagation(); remove(); }
+    if (o.retry && isKey(k.code, "card.retry")) { k.preventDefault(); k.stopImmediatePropagation(); retry(); }
+    else if (k.code === "Space" || k.code === "Enter") { k.preventDefault(); k.stopImmediatePropagation(); remove(); }
     else if (o.again && (k.code === "Backspace" || isKey(k.code, "use"))) { k.preventDefault(); k.stopImmediatePropagation(); remove(); o.again(); }
   };
   addEventListener("keydown", onKey, true);
   band.querySelector<HTMLButtonElement>("button.main")!.addEventListener("click", () => { remove(); modalClicked(); });
-  band.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { remove(); o.again?.(); modalClicked(); });
-  modal(el, () => band, remove);
-  const timer = window.setTimeout(remove, secs * 1000);
+  band.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { if (o.retry) retry(); else { remove(); o.again?.(); } modalClicked(); });
+  modal(el, () => band, () => remove());
+  const timer = window.setTimeout(() => remove(), secs * 1000);
   if (o.sound !== null) (o.sound ?? (() => { if (o.result !== "over") SFX.jobDone(won); }))();
 
   const burst = () => {

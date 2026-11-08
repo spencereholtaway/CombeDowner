@@ -173,6 +173,9 @@ export const PLACES: Record<string, Control[]> = {
   // a big card over the game (a mission's end, a race's results, a bounty's poster: modal.ts)
   card: [
     { id: "card.close", name: "close", keys: ["Escape"], pad: B.options, touch: "×" },
+    // a job or challenge lost: its card offers another go or leaving it there; on a touch screen the buttons are tapped
+    { id: "card.retry", name: "retry", keys: ["KeyR", "Enter"], pad: B.square, touch: "" },
+    { id: "card.abort", name: "abort", keys: ["Escape"], pad: B.options, touch: "" },
   ],
   // the bells' ringing chamber: the note highway's four lanes, laid out as the keys and the face
   // buttons sit, left to right (a chord is two at once); use looks to before the ringing

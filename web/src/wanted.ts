@@ -410,16 +410,16 @@ class Wanted implements Job {
   private who(id: string, you = "You") { return id === this.w.selfId ? you : this.w.nameOf(id); }
   private feedWho(id: string) { return `${named(this.who(id), this.w.colourOf(id))}`; }
 
-  /** The results card: how it ended, how long it took. */
+  /** The results card: how it ended, how long it took. A loss's goes up from quests.ts, with its Retry. */
   private results(won: boolean, by: string) {
-    missionResult({
-      result: won ? "won" : "lost", kind: "wanted", label: `Wanted · ${this.d.title}`, title: won ? "Cuffed!" : "He got away", lead: clock((Date.now() - this.started) / 1000),
+    return {
+      kind: "wanted" as const, label: `Wanted · ${this.d.title}`, title: won ? "Cuffed!" : "He got away", lead: clock((Date.now() - this.started) / 1000),
       medal: won ? "Caught" : "Escaped",
       lines: [won ? `${this.who(by)} cuffed him${this.goes ? ` after he'd got away ${this.goes === 1 ? "once" : "twice"}` : " first go"}` : "He slipped away for good"],
       stats: [{ k: "Goes left", v: `${GOES - this.goes}/${GOES}` }, { k: "Stars", v: "★".repeat(this.offer.stars) }],
       rewards: won ? [this.offer.reward] : [],
       colour: COLOUR,
-    });
+    };
   }
 
   event(d: any, from: string) {
@@ -462,13 +462,12 @@ class Wanted implements Job {
         this.done = { won: true, screen: true, text: `${this.who(by)} cuffed ${this.d.title}. Bounty collected!`, x, z, wear: ["deer"], grade: this.grade() };
         this.w.feed(`${this.feedWho(by)} cuffed ${named(this.d.title, COLOUR)}`);
         if (host) for (let k = 0; k <= this.offer.stars; k++) this.w.prize(x + 2.5 * Math.cos(k * 1.7), z + 2.5 * Math.sin(k * 1.7), k === 0);
-        this.results(true, by);
+        missionResult({ result: "won", ...this.results(true, by) });
         this.collect();
         break;
       }
       case "away":
-        this.done = { won: false, screen: true, text: `${this.d.title} got away` };
-        this.results(false, "");
+        this.done = { won: false, text: `${this.d.title} got away`, title: "He got away", card: this.results(false, "") };
         break;
     }
   }

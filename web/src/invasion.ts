@@ -88,7 +88,8 @@
 // away go round on their own as "fg". Cuffing him is asked of the host ("gcf"). Whoever shoots a flag
 // down tells everyone at once ("down", with the cluster and the flag), so it drops on every screen;
 // the host counts it, and clears the street when its last flag is down. The games list (gameslist.ts)
-// can have the host call a takeover at a pub of its choosing, there and then.
+// can have the host call a takeover at a pub of its choosing, there and then, and so can Retry on a
+// lost takeover's card ("again", with the pub, to the host; older pages ignore it).
 // The night out (nightout.ts) listens in: it is told, on every screen, when a pub is won or lost and
 // when the Gaffer is caught or gets away, and it can ask the host which street the lads are eyeing
 // next (which is then where their next cluster goes) and to send a ladder crew somewhere. Nothing of
@@ -1225,11 +1226,22 @@ export class Invasion {
     this.onMessage(msg, this.w.selfId);
   }
 
+  /** Retry on a lost takeover's card: the host has the lads take the pub again (once, however many ask). */
+  private retake(name: string) {
+    const d = { k: "again", n: name };
+    this.w.send(d);
+    this.onMessage(d, this.w.selfId);
+  }
+
   onMessage(d: any, from: string) {
     if (!d || typeof d !== "object" || !this.on) return;
     if (d.k === "busy") {
       if (from === this.w.selfId) return;
       if (d.b) this.busyAt.set(from, performance.now()); else this.busyAt.delete(from);
+      return;
+    }
+    if (d.k === "again") {
+      if (this.w.isHost && typeof d.n === "string") this.takeNow(d.n);
       return;
     }
     if (d.k === "s") {
@@ -1291,7 +1303,7 @@ export class Invasion {
         else this.w.toast(line);
         this.w.feed(`${named(name, GREEN)} won back from the Flag Lads`);
       } else {
-        if (there) missionResult({ result: "lost", label: "Pub takeover", title: "Too slow", colour: PURPLE, sound: null, lines: [`The Flag Lads keep ${d.name}, and the streets round it fill up with flags`] });
+        if (there) missionResult({ result: "lost", label: "Pub takeover", title: "Too slow", colour: PURPLE, sound: null, lines: [`The Flag Lads keep ${d.name}, and the streets round it fill up with flags`], retry: () => this.retake(name) });
         else this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`);
         this.w.feed(`The Flag Lads kept ${named(name, PURPLE)}`);
       }

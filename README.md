@@ -144,7 +144,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   poster's red.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, race across town and fight off Seagull Attack. Win one and it's done for
-  the day; lose and you can have another go straight away, team challenges too.
+  the day. Lose one (a team challenge, Seagull Attack, a Wanted man, a pub takeover) and its card
+  offers Retry (R or Enter, □ on a pad, or tap it) or Abort (Esc): Retry starts it again in the same
+  place for everyone who was in it and didn't abort, through the usual entries and countdown. A race
+  keeps its own Again.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
   says last one to the next pub buys (a race from his door); the Gaffer cuffed, and his phone gives
   away the street the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
