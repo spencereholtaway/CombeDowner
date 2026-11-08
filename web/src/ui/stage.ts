@@ -334,10 +334,10 @@ function revealLoading() {
     if (t < LOAD) {
       veil.classList.remove("rvhit"); el.classList.remove("shown");
       // in fits and starts, as squares come in
-      loadingLook(veil, Math.floor((t / LOAD) * 7) / 7, t > 500);
+      loadingLook(veil, Math.floor((t / LOAD) * 7) / 7);
       veil.style.opacity = "1";
     } else {
-      if (hit !== round) { hit = round; loadingLook(veil, 1, true); loadingHit(veil); }
+      if (hit !== round) { hit = round; loadingLook(veil, 1); loadingHit(veil); }
       veil.style.opacity = String(Math.max(0, 1 - (t - LOAD) / LIFT));
       el.classList.toggle("shown", t > LOAD + LIFT);
     }

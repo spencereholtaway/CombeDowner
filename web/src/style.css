@@ -180,7 +180,7 @@ kbd {
 }
 #arrive.lifting { opacity: 0; }
 #arrive .why, #reveal .rvveil .why { margin: 0; font: 700 clamp(15px, 4vw, 19px)/1.2 var(--f-hud); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); text-align: center; }
-#arrive .where, #reveal .rvveil .where { margin: 0; max-width: min(560px, 100%); padding: 12px 22px 10px; text-align: center; font-size: clamp(20px, 6vw, 32px); line-height: 1.1; overflow-wrap: anywhere; }
+#arrive .where { margin: 0; max-width: min(560px, 100%); padding: 12px 22px 10px; text-align: center; font-size: clamp(20px, 6vw, 32px); line-height: 1.1; overflow-wrap: anywhere; }
 #arrive .where:empty { display: none; }
 #arrive i, #reveal .rvveil i { width: min(220px, 60vw); height: 9px; border-block: 3px solid var(--lines); transform-origin: left; animation: lines 1.1s ease-in-out infinite; }
 @keyframes lines { from { transform: scaleX(0); } 60% { transform: scaleX(1); opacity: 1; } to { transform: scaleX(1); opacity: 0; } }
@@ -1175,12 +1175,10 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
 /* the fly-over's cover while the squares it will show are built, the arrival cover's slate (reveal.ts sets how far it's over) */
 #reveal .rvveil { position: absolute; inset: 0; z-index: 1; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   background: radial-gradient(ellipse at center, #2a2d30, var(--black) 75%); }
-/* its little loading screen: a snare drum with the sticks rolling, the bars filling as the squares come in, then the new part's name */
+/* its little loading screen: a snare drum with the sticks rolling and the bars filling as the squares come in; the name waits for the reveal */
 #reveal .rvveil .why span { display: inline-block; animation: rvdots 1.4s steps(4, jump-none) infinite; }
 @keyframes rvdots { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 #reveal .rvveil i { animation: none; transform: scaleX(0); transition: transform 0.25s ease-out; }
-#reveal .rvveil .where { opacity: 0; transform: translateY(6px); transition: opacity 0.5s, transform 0.5s; }
-#reveal .rvveil.named .where { opacity: 1; transform: none; }
 #reveal .rvdrum { width: min(132px, 24vh); height: auto; overflow: visible; }
 #reveal .rvdrum .rvshell { fill: #b3262f; stroke: #2a1a14; stroke-width: 2.5; }
 #reveal .rvdrum .rvlugs { fill: none; stroke: #e8d9a8; stroke-width: 2; stroke-linejoin: round; }
@@ -1193,7 +1191,7 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
 #reveal .rvveil.rvhit .rvstick { animation: none; transform: rotate(var(--up, -16deg)); }
 #reveal .rvveil.rvhit .rvdrum { animation: rvthump 0.35s ease-out; }
 @keyframes rvthump { from { transform: scale(1.18) rotate(-3deg); } to { transform: none; } }
-@media (max-height: 460px) { #reveal .rvveil { gap: 8px; } #reveal .rvveil .where { padding-block: 4px; } }
+@media (max-height: 460px) { #reveal .rvveil { gap: 8px; } }
 #reveal.rvback { pointer-events: none; }
 #reveal.rvback > :not(.rvveil), #reveal.rvback::before, #reveal.rvback::after { display: none; }
 #reveal .rvskip { z-index: 3; }

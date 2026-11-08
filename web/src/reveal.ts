@@ -5,8 +5,9 @@
 // widening circle over the middle of the map. The paths are worked out from the spot and the
 // map's own size, so they work on any map.
 // The cover is a little loading screen of its own: "Something's happening", a snare drum rolling
-// (drawn in the page, its roll synthesised in audio.ts), bars that fill as the squares come in and
-// the new part's name; the roll swells as they fill and ends on a cymbal as the cover lifts.
+// (drawn in the page, its roll synthesised in audio.ts) and bars that fill as the squares come in;
+// the roll swells as they fill and ends on a cymbal as the cover lifts. Where's opened stays a
+// surprise till the card on the fly-over.
 // It has to play smoothly, so it doesn't set off until it can: under the cover, every square of
 // the map the camera will see (and those round you, to come back to) is loaded and built, and
 // then the whole way is drawn once, out of sight, so everything is on the graphics card. That
@@ -120,10 +121,9 @@ class Confetti {
 }
 
 /** The loading screen under the cover (drawn on the HUD page too, ui/stage.ts): the bars filled
- *  to p (0 to 1), and the new part's name up once named. */
-export function loadingLook(veil: HTMLElement, p: number, named: boolean) {
+ *  to p (0 to 1). */
+export function loadingLook(veil: HTMLElement, p: number) {
   veil.querySelector<HTMLElement>("i")!.style.transform = `scaleX(${Math.min(1, Math.max(0, p)).toFixed(3)})`;
-  veil.classList.toggle("named", named);
 }
 /** The cymbal: the drum jumps and the sticks stop, as the cover lifts. */
 export function loadingHit(veil: HTMLElement) { veil.classList.add("rvhit"); }
@@ -273,12 +273,12 @@ export class Reveal {
   }
 
   /** Under the cover: the bars and the roll follow how far the loading's got (the last tenth is
-   *  the rehearsal), and the new part's name comes up once the cover's over. */
+   *  the rehearsal). */
   private loading() {
     const built = 1 - Math.min(1, this.world.alsoUnbuilt() / this.toLoad);
     const p = this.stage === "rehearse" ? 0.9 + 0.1 * Math.min(1, this.frames / (REHEARSE * 2)) : 0.9 * built;
     this.roll?.level(p);
-    if (this.veil) loadingLook(this.veil, p, this.stage !== "dim");
+    if (this.veil) loadingLook(this.veil, p);
   }
 
   private frames = 0;
@@ -314,9 +314,8 @@ export class Reveal {
     el.id = "reveal";
     const skip = this.touch() ? "Tap to skip" : `${ctl("use")} to skip`;
     el.className = s.kind === "map" ? "rvbig" : "";
-    el.innerHTML = `<canvas class="rvconfetti"></canvas><div class="rvflash"></div><div class="rvveil">${DRUM}<p class="why">Something's happening<span>...</span></p><i></i><p class="where"></p></div><div class="rvcard"><small></small><h2></h2><p></p></div><button type="button" class="rvskip"></button>`;
+    el.innerHTML = `<canvas class="rvconfetti"></canvas><div class="rvflash"></div><div class="rvveil">${DRUM}<p class="why">Something's happening<span>...</span></p><i></i></div><div class="rvcard"><small></small><h2></h2><p></p></div><button type="button" class="rvskip"></button>`;
     el.querySelector(".rvcard small")!.textContent = s.kicker;
-    el.querySelector(".rvveil .where")!.textContent = s.title;
     el.querySelector(".rvcard h2")!.textContent = s.title;
     el.querySelector(".rvcard p")!.textContent = s.sub ?? "";
     for (const line of s.lines ?? []) {
