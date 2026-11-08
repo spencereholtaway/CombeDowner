@@ -1435,6 +1435,18 @@ export class Game {
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
   /** The zones' wall down on this screen, or back up (gameslist.ts). */
   liftZones(on: boolean) { this.zones.lift(on); }
+  /** The zones' names in the order they open (gameslist.ts's area openings). */
+  zoneNames(): string[] { return this.zones.list.map((z) => z.name); }
+  /** Zone k's opening fly-over (k at the count: the last zone's, over the whole map) on this screen
+   *  alone, for the games list: nothing opens, nothing is saved and nothing is sent. */
+  playOpening(k: number): boolean {
+    if (this.reveal.on) return false;
+    const p = this.player.pos;
+    this.reveal.play(this.oddments.shotFor(k), this.camera, { x: p.x, z: p.z });
+    return true;
+  }
+  /** A fly-over is playing, or its cover still lifting. */
+  get flying() { return this.reveal.busy; }
 
   /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
   get knownIds(): string[] { return [...this.known]; }

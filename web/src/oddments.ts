@@ -517,20 +517,24 @@ export class Oddments {
       if (after >= this.zones.count) earn("crown");
     }
     if (this.zones.free || after <= before) return;
-    for (let k = before; k < after; k++) {
-      const zn = this.zones.list[k], ch = challengesOn(this.map).filter((p) => p.zone === k);
-      const look = ch[0]?.spots[0] ?? zn.home ?? zn;
-      this.shots.push({
-        kind: "spot", x: look.x, z: look.z, kicker: "A new part of the map is open", title: zn.name,
-        sub: ch.length ? `New challenge: ${ch.map((p) => p.c.name).join(" and ")}` : "",
-        lines: this.zones.news(k),
-      });
-    }
-    if (after >= this.zones.count) {
-      const last = this.structs[this.structs.length - 1] ?? { x: this.zones.list[0].x, z: this.zones.list[0].z };
-      this.shots.push({ kind: "map", x: last.x, z: last.z, kicker: "Every zone is open", title: "The whole map is yours", sub: "Every challenge here is yours to take on" });
-    }
+    for (let k = before; k < after; k++) this.shots.push(this.shotFor(k));
+    if (after >= this.zones.count) this.shots.push(this.shotFor(this.zones.count));
     this.onOpen();
+  }
+
+  /** The fly-over for zone k opening; k at the count of zones, the last one's, over the whole map. */
+  shotFor(k: number): Shot {
+    if (k >= this.zones.count) {
+      const last = this.structs[this.structs.length - 1] ?? { x: this.zones.list[0].x, z: this.zones.list[0].z };
+      return { kind: "map", x: last.x, z: last.z, kicker: "Every zone is open", title: "The whole map is yours", sub: "Every challenge here is yours to take on" };
+    }
+    const zn = this.zones.list[k], ch = challengesOn(this.map).filter((p) => p.zone === k);
+    const look = ch[0]?.spots[0] ?? zn.home ?? zn;
+    return {
+      kind: "spot", x: look.x, z: look.z, kicker: "A new part of the map is open", title: zn.name,
+      sub: ch.length ? `New challenge: ${ch.map((p) => p.c.name).join(" and ")}` : "",
+      lines: this.zones.news(k),
+    };
   }
 
   private save(d: OddState) {

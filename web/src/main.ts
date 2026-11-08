@@ -904,9 +904,37 @@ let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
 const told = new Set<string>();
 let inputWas = "";
+// ?frames=1: a recording tool (tools/flyover_video.mjs) holds the game still and moves it on a
+// sixtieth of a second at a time itself (window.__frames), so every frame of a recording is there
+const STEPPED = new URLSearchParams(location.search).has("frames");
+let held = false;
+if (STEPPED) (window as any).__frames = {
+  hold(on: boolean) { held = on; },
+  step() { tick(last + 1000 / 60); },
+  /** The fly-over's drum roll as it went, a level a sixtieth of a second, then the cymbal, rendered
+   *  silently to 16-bit stereo at 48 kHz (base64), for the recording's sound. */
+  async roll(levels: number[], big: boolean, tail = 3) {
+    const T = levels.length / 60, b = await SFX.renderOffline(() => {
+      const r = SFX.drumRoll();
+      levels.forEach((p, k) => r.level(p, k / 60));
+      r.hit(big, T);
+    }, T + tail);
+    const n = b.length, pcm = new Int16Array(n * 2), L = b.getChannelData(0), R = b.getChannelData(1);
+    for (let k = 0; k < n; k++) { pcm[2 * k] = Math.max(-1, Math.min(1, L[k])) * 32767; pcm[2 * k + 1] = Math.max(-1, Math.min(1, R[k])) * 32767; }
+    let s = ""; const u = new Uint8Array(pcm.buffer);
+    for (let k = 0; k < u.length; k += 0x8000) s += String.fromCharCode(...u.subarray(k, k + 0x8000));
+    return btoa(s);
+  },
+};
+
 function frame(now: number) {
   // booked first, so something going wrong in one frame can't stop every frame after it
   requestAnimationFrame(frame);
+  if (held) { last = now; return; }
+  tick(now);
+}
+
+function tick(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   const js0 = performance.now();

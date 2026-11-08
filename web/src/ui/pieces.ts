@@ -96,6 +96,8 @@ export const ELEMENTS: Piece[] = [
   { id: "chron", group: "world", wide: true, name: "The Chronicle, and the league table", src: "daily.ts Daily.draw() into #scoreboard; game.ts renderScores()", used: "on joining, Tab (with the league table as the top of its page), the pause menu, noticeboards", states: ["On joining", "Tab: league table"] },
   { id: "reveal", group: "world", wide: true, name: "Zone opening card", src: "reveal.ts Reveal.card() (#reveal)", used: "a zone opening; the whole map", event: true,
     note: "The big celebration: its own letterbox look on purpose.", states: ["New zone", "Whole map"] },
+  { id: "revealload", group: "world", wide: true, name: "Zone opening: loading screen", src: "reveal.ts Reveal.card(), loadingLook(), loadingHit() (#reveal .rvveil)", used: "under the cover while a zone opening's squares load, before its fly-over", event: true,
+    note: "Something's happening, with a snare drum rolling and the bars filling; the drum roll swells as they fill and the cymbal lands as the cover lifts into the flight. Here the loading is pretend, on a loop, and silent.", states: ["Loading, on a loop"] },
   // ---- frames and slots
   { id: "slots", group: "frame", wide: true, name: "Slot map", src: "style.css (the status panel slots), drawn all at once with each slot outlined",
     used: "the whole HUD", note: "Try the phone size: the touch layout puts the top-left slot in the left column, clear of the buttons.", states: ["Desktop", "Touch"] },

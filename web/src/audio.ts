@@ -2571,6 +2571,55 @@ export function unlockFanfare(big = false): Playing {
   };
 }
 
+/** A soft snare roll that goes on as long as it's fed, then a cymbal to end it. */
+export interface Roll extends Playing {
+  /** Once a frame while it rolls: how far the loading has got, 0 to 1; it swells towards the end.
+   *  at: the sound's clock now (a recording renders it ahead of time). */
+  level(p: number, at?: number): void;
+  /** The cymbal, now (or at), and the roll stops. */
+  hit(big?: boolean, at?: number): void;
+}
+
+/**
+ * The drum roll under the fly-over's cover while the new part of the map loads (reveal.ts). Its
+ * strokes are laid out a moment ahead of the sound's clock each frame, so a slow frame never
+ * leaves a gap, and stop() fades out the few already laid out, leaving nothing hanging.
+ */
+export function drumRoll(): Roll {
+  if (!ctx) return { level() {}, hit() {}, stop() {} };
+  const c = ctx, d = out(1, 0, 0, 0.2);
+  let next = now(), k = 0, rolling = true, p = 0;
+  const stroke = (t: number) => {
+    // alternate hands, one a little heavier, and faster and louder as it nears done
+    const v = (0.09 + 0.13 * p * p) * (k % 2 ? 0.8 : 1) * vary(0.1);
+    burst(d, t, 0.07, v, 3400 * vary(0.08), { q: 0.6 });
+    if (k % 2 === 0) tone(d, t, 0.05, v * 0.6, 220, 175, "triangle");
+  };
+  return {
+    level(to, at = c.currentTime) {
+      if (!rolling) return;
+      p = Math.max(p, Math.min(1, to));
+      const until = at + 0.12;
+      if (next < at) next = at + 0.005;
+      while (next < until) { stroke(next); next += 0.062 - 0.016 * p; k++; }
+    },
+    hit(big = false, at?: number) {
+      if (!rolling) return;
+      rolling = false;
+      const t = at ?? now(), v = big ? 1.3 : 1;
+      burst(d, t, big ? 2.4 : 1.7, 0.2 * v, 8000, { type: "highpass", attack: 0.003 });
+      burst(d, t, 0.8, 0.1 * v, 4200, { q: 0.7 });
+      tone(d, t, 0.35, 0.22 * v, 110, 62);
+      for (const f of [3150, 4420, 5970]) tone(d, t, 1.2, 0.01 * v, f, f * 0.99, "square");
+    },
+    stop() {
+      rolling = false;
+      d.gain.cancelScheduledValues(c.currentTime);
+      d.gain.setTargetAtTime(0, c.currentTime, 0.02);
+    },
+  };
+}
+
 /** A fly-over to something new (reveal.ts): a slow, slightly wrong chord swelling up. */
 export function revealSwell(big = false) {
   if (!ctx) return;

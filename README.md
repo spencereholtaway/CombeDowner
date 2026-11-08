@@ -289,7 +289,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   (in Bath, the city centre from Bath Spa up to the Royal Crescent) are always the last zone, and the
   rest open in a sweep round them; where a map starts you in its centre, you start just outside it instead. Each zone has its own structure and a challenge or two, each marked on both maps
   with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
-  sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
+  sockets and the wall moves out to take in the next zone (a drum roll while it loads, then a cymbal), with a fly-over of it, its name, its
   challenge and any new way to get about, its card landing with a fanfare, a cheer and a shower of
   confetti (a bigger one still when the last zone opens). Buses, bus routes, canal boats, balloons,
   trains and the cable car open up with the zone they're in, from the second on (before then a bus

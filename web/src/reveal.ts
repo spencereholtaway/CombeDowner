@@ -4,12 +4,16 @@
 // cover comes back over and lifts off your own view. When the last zone opens, it's a long, high,
 // widening circle over the middle of the map. The paths are worked out from the spot and the
 // map's own size, so they work on any map.
+// The cover is a little loading screen of its own: "Something's happening", a snare drum rolling
+// (drawn in the page, its roll synthesised in audio.ts), bars that fill as the squares come in and
+// the new part's name; the roll swells as they fill and ends on a cymbal as the cover lifts.
 // It has to play smoothly, so it doesn't set off until it can: under the cover, every square of
 // the map the camera will see (and those round you, to come back to) is loaded and built, and
 // then the whole way is drawn once, out of sight, so everything is on the graphics card. That
 // takes a second or a few; WAIT_MAX is only for a machine that can't manage it. Its detail (trees,
 // grass, lamps) is centred on the spot the whole time, so none of it changes as the camera goes
 // round. Once it's over, the squares round you take over again and the rest are let go.
+// The games list (gameslist.ts) plays any zone's opening on its own, without opening anything.
 // E, Space, Enter, a click or a tap skips it, and so do the card's × and Esc. While it plays, you
 // stand still and the HUD is out of the way.
 // The card lands with a flash, a fanfare and a shower of confetti (more for the last zone), drawn
@@ -42,7 +46,17 @@ const WAIT_MAX = 20;  // seconds held for the squares on its way before it sets 
 const STEP = 0.1;     // seconds between the spots on its way whose squares it waits for
 const REHEARSE = 24;
 const HOLD = 0.3;     // seconds the cover stays over your own view as it comes back, while the detail round you returns  // steps of the way drawn once behind the cover before it plays
+const LOAD_MIN = 0.9;  // seconds of the roll at the least, so a quick load isn't cut off
 type Stage = "dim" | "load" | "rehearse" | "fly";
+
+/** A snare drum and its sticks, the sticks rolling on it (style.css moves them, which costs the
+ *  graphics card next to nothing). */
+const DRUM = `<svg class="rvdrum" viewBox="0 0 120 92" aria-hidden="true">
+<g class="rvstick rvl"><line x1="14" y1="6" x2="50" y2="42"/><circle cx="50" cy="42" r="3"/></g>
+<g class="rvstick rvr"><line x1="106" y1="6" x2="70" y2="42"/><circle cx="70" cy="42" r="3"/></g>
+<ellipse class="rvshell" cx="60" cy="76" rx="44" ry="11"/><rect class="rvshell" x="16" y="46" width="88" height="30"/>
+<polyline class="rvlugs" points="16,50 27,72 38,50 49,72 60,50 71,72 82,50 93,72 104,50"/>
+<ellipse class="rvhead" cx="60" cy="46" rx="44" ry="11"/></svg>`;
 const ease = (t: number) => t * t * (3 - 2 * t);
 const COLOURS = ["#ff4f6d", "#ffd23f", "#3ec1ff", "#5be37d", "#c77dff", "#ff9f1c", "#ffffff"];
 
@@ -105,6 +119,15 @@ class Confetti {
   clear() { this.bits.length = 0; }
 }
 
+/** The loading screen under the cover (drawn on the HUD page too, ui/stage.ts): the bars filled
+ *  to p (0 to 1), and the new part's name up once named. */
+export function loadingLook(veil: HTMLElement, p: number, named: boolean) {
+  veil.querySelector<HTMLElement>("i")!.style.transform = `scaleX(${Math.min(1, Math.max(0, p)).toFixed(3)})`;
+  veil.classList.toggle("named", named);
+}
+/** The cymbal: the drum jumps and the sticks stop, as the cover lifts. */
+export function loadingHit(veil: HTMLElement) { veil.classList.add("rvhit"); }
+
 export class Reveal {
   private shot: Shot | null = null;
   private stage: Stage = "dim";
@@ -124,10 +147,15 @@ export class Reveal {
   private calm = new Calm(6, 150);
   /** Seconds left of the cover lifting off your own view once it's over. */
   private lifting = 0;
+  private roll: SFX.Roll | null = null;
+  /** How many squares it had to wait for when it started, for how far the loading's got. */
+  private toLoad = 1;
 
   constructor(private map: GameMap, private world: World, private touch: () => boolean) {}
 
   get on() { return !!this.shot; }
+  /** On, or its cover still lifting off your view. */
+  get busy() { return !!this.shot || this.lifting > 0; }
 
   /** Start a fly-over: the view's covered first, from where the camera is now. */
   play(s: Shot, camera: THREE.Camera, me: { x: number; z: number }) {
@@ -140,8 +168,10 @@ export class Reveal {
     this.world.alsoBuild([{ x: camera.position.x, z: camera.position.z }, ...this.way()], view.fogFar);
     this.world.look();
     this.world.rush = true;
+    this.toLoad = Math.max(1, this.world.alsoUnbuilt());
     this.calm.reset();
     this.card(s);
+    this.roll = SFX.drumRoll();
   }
 
   skip() {
@@ -202,6 +232,7 @@ export class Reveal {
       return false;
     }
     this.t += dt;
+    if (this.stage !== "fly") this.loading();
     if (this.stage === "dim") {
       this.cover(this.t / VEIL);
       if (this.t < VEIL) return true;
@@ -210,7 +241,7 @@ export class Reveal {
       this.next("load");
     }
     if (this.stage === "load") {
-      if (!this.calm.still(this.world.alsoUnbuilt()) && this.t < WAIT_MAX) return true;
+      if (!this.calm.still(this.world.alsoUnbuilt()) && this.t < WAIT_MAX || this.t < LOAD_MIN) return true;
       this.next("rehearse");
     }
     if (this.stage === "rehearse") {
@@ -219,6 +250,8 @@ export class Reveal {
       const k = Math.floor(this.frames++ / 2);
       if (k < REHEARSE) { this.place(camera, (k / REHEARSE) * this.secs()); return true; }
       this.world.rush = false;
+      this.roll?.hit(s.kind === "map"); this.roll = null;
+      if (this.veil) loadingHit(this.veil);
       SFX.revealSwell(s.kind === "map");
       this.next("fly");
     }
@@ -239,11 +272,23 @@ export class Reveal {
     return true;
   }
 
+  /** Under the cover: the bars and the roll follow how far the loading's got (the last tenth is
+   *  the rehearsal), and the new part's name comes up once the cover's over. */
+  private loading() {
+    const built = 1 - Math.min(1, this.world.alsoUnbuilt() / this.toLoad);
+    const p = this.stage === "rehearse" ? 0.9 + 0.1 * Math.min(1, this.frames / (REHEARSE * 2)) : 0.9 * built;
+    this.roll?.level(p);
+    if (this.veil) loadingLook(this.veil, p, this.stage !== "dim");
+  }
+
   private frames = 0;
   private next(stage: Stage) { this.stage = stage; this.t = 0; this.frames = 0; }
 
   private cover(v: number) {
-    if (this.veil) this.veil.style.opacity = String(Math.min(1, Math.max(0, v)));
+    if (!this.veil) return;
+    this.veil.style.opacity = String(Math.min(1, Math.max(0, v)));
+    // (and the drum stops being drawn while the view's clear)
+    this.veil.style.visibility = v > 0 ? "" : "hidden";
   }
 
   /** The card's arrival: the fanfare, the flash and a burst of confetti, with more to follow. */
@@ -269,9 +314,9 @@ export class Reveal {
     el.id = "reveal";
     const skip = this.touch() ? "Tap to skip" : `${ctl("use")} to skip`;
     el.className = s.kind === "map" ? "rvbig" : "";
-    el.innerHTML = `<canvas class="rvconfetti"></canvas><div class="rvflash"></div><div class="rvveil"><p class="why"></p><i></i></div><div class="rvcard"><small></small><h2></h2><p></p></div><button type="button" class="rvskip"></button>`;
+    el.innerHTML = `<canvas class="rvconfetti"></canvas><div class="rvflash"></div><div class="rvveil">${DRUM}<p class="why">Something's happening<span>...</span></p><i></i><p class="where"></p></div><div class="rvcard"><small></small><h2></h2><p></p></div><button type="button" class="rvskip"></button>`;
     el.querySelector(".rvcard small")!.textContent = s.kicker;
-    el.querySelector(".why")!.textContent = s.kicker;
+    el.querySelector(".rvveil .where")!.textContent = s.title;
     el.querySelector(".rvcard h2")!.textContent = s.title;
     el.querySelector(".rvcard p")!.textContent = s.sub ?? "";
     for (const line of s.lines ?? []) {
@@ -300,6 +345,7 @@ export class Reveal {
     this.world.look();
     this.world.rush = false;
     this.shot = null;
+    this.roll?.stop(); this.roll = null;
     this.fanfare?.stop(); this.fanfare = null;
     this.confetti?.clear(); this.confetti = null;
     this.kick = 0;

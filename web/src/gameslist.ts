@@ -1,7 +1,8 @@
 // The games list: every team challenge on this map and every kind of job, on a page of their own,
 // for trying the minigames out one after another without getting to each first. Pick one and you,
 // and everyone in your room, are put at its start, wherever its zone is and whether or not it's been
-// done today, and it starts the way it always does (lineup.ts). When it's over the list comes back.
+// done today, and it starts the way it always does (lineup.ts). Or watch any zone's opening fly-over.
+// When it's over the list comes back.
 //
 // It isn't for players, so it stays out of sight until it's unlocked on a device with ?games= and
 // the right word (only its SHA-256 is here), which is remembered there; ?games=0 forgets it. With
@@ -12,6 +13,8 @@
 // the list, so every screen takes the zones' wall down for it till it's over. The pub takeover isn't
 // a job: picking it sends "gl" with the pub, every screen with "u" set (the sender has the list)
 // puts its player outside that pub, and the host has the Flag Lads take it. Older pages ignore "gl".
+// An area opening picked here is only a fly-over (reveal.ts) on this screen: nothing is sent, no
+// zone opens and nothing is saved.
 import type { Game } from "./game";
 import { allChallenges, challengeOffer, challengesOn } from "./challenges";
 import { clearSpot } from "./haunts";
@@ -64,7 +67,7 @@ export function useGames(h: Hooks) {
   setInterval(tick, 500);
 }
 
-interface Entry { id: string; name: string; kind: "challenge" | "job" | "pub"; note?: string }
+interface Entry { id: string; name: string; kind: "challenge" | "job" | "pub" | "opening"; note?: string }
 
 function entries(g: Game): { head: string; list: Entry[] }[] {
   const map = g.quests.world.map, placed = challengesOn(map);
@@ -75,7 +78,9 @@ function entries(g: Game): { head: string; list: Entry[] }[] {
   }));
   const jobs = jobKinds().filter((k) => !k.challenge).map((k): Entry => ({ id: k.id, name: k.label, kind: "job" }));
   jobs.push({ id: "takeover", name: "Pub takeover", kind: "pub", note: g.invasion.on ? undefined : "no Flag Lads on this map" });
-  return [{ head: "Team challenges", list: challenges }, { head: "Jobs", list: jobs }];
+  const names = g.zoneNames(), openings = names.map((n, k): Entry => ({ id: `zone:${k}`, name: n, kind: "opening" }));
+  if (names.length) openings.push({ id: `zone:${names.length}`, name: "The whole map (the last zone)", kind: "opening" });
+  return [{ head: "Team challenges", list: challenges }, { head: "Jobs", list: jobs }, { head: "Area openings", list: openings }];
 }
 
 // ---- the page ----------------------------------------------------------------------------------------
@@ -97,7 +102,7 @@ export function openGames() {
   page.innerHTML = `<div class="card tt gamescard">
     ${ttBar(PAGE.games)}${ttTitle("Games")}
     <div class="gameslist">${sections}</div>
-    <div class="pubbar"><p class="hint">Everyone in the game comes too</p><button type="button" class="gamesback">Back</button></div>
+    <div class="pubbar"><p class="hint">Everyone in the game comes too (area openings are just for you)</p><button type="button" class="gamesback">Back</button></div>
   </div>`;
   document.body.appendChild(page);
   const card = page.querySelector<HTMLElement>(".gamescard")!;
@@ -132,7 +137,7 @@ function shut() {
 // ---- picking one --------------------------------------------------------------------------------------
 
 /** Who to wait for: the job (by its seed) or the takeover (by its pub) we were put at. */
-let watch: { seed?: number; pub?: string; seen: boolean; t: number; endT?: number } | null = null;
+let watch: { seed?: number; pub?: string; fly?: boolean; seen: boolean; t: number; endT?: number } | null = null;
 
 const until = async (ok: () => boolean, ms: number) => {
   const t = performance.now();
@@ -153,6 +158,10 @@ async function pick(e: Entry) {
   shut();
   hooks!.play();
   const q = g.quests, w = q.world;
+  if (e.kind === "opening") {
+    if (g.playOpening(Number(e.id.slice(5)))) watch = { fly: true, seen: true, t: performance.now() };
+    return;
+  }
   g.liftZones(true);
   if (e.kind === "pub") { takePub(g); return; }
   await until(() => q.isReady, START_WAIT);
@@ -203,13 +212,14 @@ function tick() {
   if (g && page) g.active = false;
   if (!g || !watch) return;
   const now = performance.now();
-  const on = watch.pub !== undefined ? g.invasion.takenOver(watch.pub) : g.quests.taken?.seed === watch.seed;
+  const on = watch.fly ? g.flying : watch.pub !== undefined ? g.invasion.takenOver(watch.pub) : g.quests.taken?.seed === watch.seed;
   if (on) { watch.seen = true; return; }
   if (!watch.seen && now - watch.t < START_WAIT) return;
   watch.endT ??= now + (watch.pub !== undefined && watch.seen ? AFTER_PUB : 0);
   // a result card still up has its moment first
   if (now < watch.endT || (modalUp() && now < watch.endT + 10000)) return;
+  const fly = watch.fly;
   watch = null;
-  g.liftZones(false);
+  if (!fly) g.liftZones(false);
   openGames();
 }
