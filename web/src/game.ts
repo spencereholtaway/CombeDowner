@@ -124,7 +124,7 @@ import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { IDKFA } from "./cheats";
-import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target } from "./naughtyboys";
+import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target, look } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { gamesFollow, gamesHeard } from "./gameslist";
 import { NightOut } from "./nightout";
@@ -218,11 +218,17 @@ const SEND_HZ = 20;
 const NAUGHTY_HZ = 10;
 /** Who hit you, when it was a naughty boy, the rugby team or the cricket team: by kind (see naughtyboys.ts). */
 const GANG = ["naughtyBoy", "rugby", "cricket", "society", "ladder", "chair", "naughtyGirl"];
+/** The Flag Lads' bosses by their kit: the Gaffer, his right-hand man and his cousin, so nobody's taken for the Gaffer. */
+const BOSS_GANG = ["chair", "deputy", "cousin"];
+const BOSS_DECKED = ["the Gaffer", "the Gaffer's right-hand man", "the Gaffer's cousin"];
+/** Which of GANG (or the bosses) a naughty boy in this look is. */
+const gangOf = (lk: number) => (lk >> 4 === CHAIR ? BOSS_GANG[lk & 7] ?? "chair" : GANG[lk >> 4] ?? GANG[NAUGHTY]);
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { naughtyBoy: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Flag Lad", ladder: "A ladder lad", chair: "The Gaffer", naughtyGirl: "A naughty girl" };
-const GANG_HOW: Record<string, string> = { naughtyBoy: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "flagged", ladder: "laddered", chair: "cable-tied", naughtyGirl: "handbagged" };
-/** Who you decked, by kind. */
+const GANG_NAME: Record<string, string> = { naughtyBoy: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Flag Lad", ladder: "A ladder lad", chair: "The Gaffer", deputy: "The Gaffer's right-hand man", cousin: "The Gaffer's cousin", naughtyGirl: "A naughty girl" };
+const GANG_HOW: Record<string, string> = { naughtyBoy: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "flagged", ladder: "laddered", chair: "cable-tied", deputy: "cable-tied", cousin: "cable-tied", naughtyGirl: "handbagged" };
+/** Who you decked, by kind (the bosses by their kit: BOSS_DECKED). */
 const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Flag Lad", "a ladder lad", "the Gaffer", "a naughty girl"];
+const deckedOf = (lk: number) => (lk >> 4 === CHAIR ? BOSS_DECKED[lk & 7] ?? DECKED[CHAIR] : DECKED[lk >> 4] ?? DECKED[NAUGHTY]);
 /** How a shot naughty boy (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
 const NAUGHTY_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
@@ -2122,11 +2128,13 @@ export class Game {
         if (d.k === "ckill") this.bodyPool(c.x, c.z, c.yaw, -1, paintOf(d.by));
       }
       if (d.k === "ckill") {
+        // the host says who he was, as his slot may be someone else's by the time this screen looks
+        const lk = Number.isFinite(d.lk) ? +d.lk : c && c.gen === d.g ? c.look : look(NAUGHTY, 0);
         this.naughtyBoys.killed(d.c, d.g);
-        const them = DECKED[c?.kind ?? NAUGHTY] ?? DECKED[NAUGHTY];
+        const them = deckedOf(lk);
         const how = d.w === RUN ? "ran over" : d.w === BLAST ? "sent flying" : d.m ? "decked" : gore() ? anyOf(NAUGHTY_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(true, c?.kind); this.news(`You ${how} ${them}`); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
+        if (d.by === me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(true, lk >> 4); this.news(`You ${how} ${them}`); if (lk >> 4 === NAUGHTY) noteDaily("naughty"); }
       }
     }
     if (d.k === "kdmg" || d.k === "kkill") {
@@ -2442,7 +2450,7 @@ export class Game {
     const target = this.entry(id);
     if (!target.alive || target.life !== life) return;
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
-    if (GANG.includes(by) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
+    if ((GANG.includes(by) || BOSS_GANG.includes(by)) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
     if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
     if (id === this.net.selfId ? this.sheltered() : this.remotes.get(id)?.waiting) return;   // out of a race watching the others finish, or arriving
     target.hp = Math.max(0, target.hp - amount);
@@ -2467,7 +2475,8 @@ export class Game {
     const res = this.naughtyBoys.damage(d.c, d.g, this.hitDamage(d), away);
     if (!res) return;
     if (at && !this.passive) this.naughtyBoys.aggro(d.c, from, at.x, at.z);
-    this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w });
+    const lk = this.naughtyBoys.at(d.c)?.look;
+    this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w, ...(res === "kill" && lk !== undefined ? { lk: Math.floor(lk) } : {}) });
     if (res === "kill") {
       shooter.c = (shooter.c ?? 0) + 1;
       this.sendScores();
@@ -4584,7 +4593,7 @@ export class Game {
     }
     if (this.isHost) { this.vhT -= dt; if (this.vhT <= 0) this.sendVehicles(); }
     const host = this.isHost;
-    if (host) this.naughtyBoys.simulate(dt, this.targets(), (i, id, damage) => this.hurt(id, damage, GANG[this.naughtyBoys.at(i)?.kind ?? NAUGHTY], false, this.entry(id).life));
+    if (host) this.naughtyBoys.simulate(dt, this.targets(), (i, id, damage) => this.hurt(id, damage, gangOf(this.naughtyBoys.at(i)?.look ?? 0), false, this.entry(id).life));
     this.naughtyBoys.update(dt, host);
     this.chT -= dt;
     if (host && this.chT <= 0) { this.chT = 1 / NAUGHTY_HZ; this.net.send("ch", this.naughtyBoys.snapshot()); }
@@ -4768,7 +4777,7 @@ export class Game {
       for (const c of this.naughtyBoys.living()) {
         const at = this.naughtyBoys.at(c.i);
         if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
-        if (at.kind === CHAIR && !this.invasion.inFight(c.i, at.gen, at.x, at.z)) continue;
+        if (at.kind === CHAIR && !this.invasion.inFight(c.i, at.gen, at.x, at.z, at.kit)) continue;
         bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
         bossFill = (100 * at.hp) / Math.max(1, at.top);
         bossOff = false;

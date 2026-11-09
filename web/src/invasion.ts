@@ -47,7 +47,11 @@
 // he is the next game day's Wanted poster (wanted.ts), kept by the host like the day's scars.
 // A pub won back flies the welcome banner, leaves a ride and the odd free round out, and no flags go
 // up near it for the rest of the day; any of the crew still standing, his right-hand man too, leg it.
-// A boss's bar only shows while he's still to be beaten, so not for a Gaffer stood about in cuffs. Shoot the last flag on the map and a card says the place (by
+// A boss's bar only shows while he's still to be beaten: once the Gaffer has run he's out of his
+// pub's fight, so cuffed, put down or got away there's no bar for him while the lads are cleared.
+// The lads that count are the ones at the pub's front: one who's wandered off (after a chase, say)
+// and is after nobody is called back at a run, and if he's not back in 25 seconds (stuck the far side
+// of a wall, or lost) he legs it, so the win never waits on a lad nobody can find. Shoot the last flag on the map and a card says the place (by
 // the map's own name) is safe from the Flag Lads, and none go up for QUIET_DAYS days. Each day (a
 // "season" in the code, from midnight GMT) the Flag Lads start again with a few new clusters.
 //
@@ -80,7 +84,7 @@
 // that the host runs it (new clusters, the takeovers, the crews and the ladders, the Gaffer and the
 // pubs won back, through naughtyboys.ts) and sends everyone the clusters as "bv" every few seconds:
 // each as [id, road, metres along its street, flags, seed, a bit for each flag down, the pub], with
-// the takeovers (with how many lads are left and how far the banner has got and how fast it is
+// the takeovers (with how many lads are left, whether his right-hand man is, how far the banner has got and how fast it is
 // filling, which everyone draws climbing in between), the Gaffer, the chase if he is on the run (so
 // a new host carries on from it), the pubs won back, and the season the Flag Lads come back in if
 // the map's been made safe ("qt", kept on every device too, so it holds over a reload or a new
@@ -181,6 +185,9 @@ const FIGHT_REACH = 200;           // metres from a takeover's pub its bosses st
 const KNOCK_BACK = 0.25;           // a lad shot off the ladder sets the banner back this much
 const LADDER_AGAIN = 15;           // seconds before another lad goes up the ladder
 const CUFF_REACH = 3;              // close enough to cuff the Gaffer
+const MUSTER = 20;                 // metres from the pub's front: a lad further off than that, and after nobody, has wandered off
+const CALL_BACK = 3;               // seconds wandered off before he's called back to the front, at a run
+const STRAY_FOR = 25;              // and not back by then, he's had enough and legs it
 const CAUGHT_PRIZES = 4;           // for the Gaffer caught: this many on the ground, two of the better sort
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -210,7 +217,9 @@ interface Call {
   onAt: number;                    // when they turned up (ms): clear it quickly for a bonus
   vice: boolean;                   // the second takeover at once, run by the Gaffer's cousin
   gazebo: { x: number; z: number } | null;
-  crew: { i: number; gen: number }[]; chair: { i: number; gen: number } | null; deputy: { i: number; gen: number } | null;
+  crew: Lad[]; chair: { i: number; gen: number } | null; deputy: Lad | null;
+  dep: boolean;                    // his right-hand man is still up (with the Gaffer or not)
+  front?: Front;                   // host: where the fight is
   awayT: number; megaT: number;
   left: number;                    // lads still up, not counting the bosses (-1: not known yet)
   boss: number;                    // 0 the Gaffer's down, 1 he's up, 2 he's up and his right-hand man too
@@ -220,8 +229,16 @@ interface Call {
   fled: boolean;                   // the Gaffer has run for it (gaffer.ts)
 }
 
+/** One of a takeover's crew, host only: out is how long he's been wandered off from the front. */
+interface Lad { i: number; gen: number; out?: number }
+type Front = { x: number; z: number; ux: number; uz: number; face: number };
+
 /** Where the Gaffer is on the run, as everyone is told: who, how he's travelling and whether he has his hands up. */
 interface Runner { i: number; gen: number; how: number; up: boolean; name: string; pub: string }
+
+/** A takeover as the host sends it round. dp (his right-hand man up, Gaffer or no Gaffer) is new: older pages ignore it. */
+const packCall = (c: Call) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0,
+  gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, dp: c.dep ? 1 : 0, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 });
 
 /** Seconds the banner takes to go up, with this many in the room. */
 const bannerSecs = (room: number) => Math.max(BANNER_FLOOR, BANNER_SECS / (1 + BANNER_FASTER * (room - 1)));
@@ -834,7 +851,7 @@ export class Invasion {
   private addCall(p: { name: string; x: number; z: number; d: number }, vice: boolean) {
     this.calls.push({
       id: ++this.callN + Math.floor(Math.random() * 1e6) * 100, name: p.name, x: p.x, z: p.z,
-      until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 30, left: -1, boss: 0,
+      until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, dep: false, awayT: 0, megaT: 30, left: -1, boss: 0,
       bar: 0, rate: 0, lads: [], ladT: 0, fled: false,
     });
     this.dirty = true;
@@ -879,7 +896,12 @@ export class Invasion {
     if (chair && !c.vice && this.chair.traits.includes("megaphone") && (c.megaT -= dt) <= 0) {
       c.megaT = 40;
       const at = clearSpot(this.w.map, c.x + (Math.random() - 0.5) * 50, c.z + (Math.random() - 0.5) * 50, 10);
-      if (at) c.crew.push(...ch.bring(at[0], at[1], look(SOCIETY, Math.floor(Math.random() * 4)), 2, this.w.players(), undefined, 3));
+      if (at) for (const g of ch.bring(at[0], at[1], look(SOCIETY, Math.floor(Math.random() * 4)), 2, this.w.players(), undefined, 3)) {
+        // they come running to the front, rather than hang about wherever they turned up, out of sight round the back
+        c.crew.push(g);
+        const f = c.front ??= this.frontOf(c), side = (Math.random() - 0.5) * 12, out = 1 + Math.random() * 3;
+        ch.sendTo(g.i, g.gen, f.x + f.uz * side + f.ux * out, f.z - f.ux * side + f.uz * out, true);
+      }
       this.news("mega", { x: Math.round(chair.x), z: Math.round(chair.z), n: this.chair.name });
     }
     this.hostBanner(c, dt, room);
@@ -887,11 +909,34 @@ export class Invasion {
     // half his health gone and the Gaffer runs for it, leaving the lads to it
     if (chair && c.chair && !c.vice && !c.fled && !this.chase && chair.hp <= chair.top * RUNS_AT) this.startChase(c, c.chair);
     // the fight: the Gaffer down (or off) and the crew all but done wins it back; everyone wandering off loses it
-    const lads = c.crew.filter((g) => ch.get(g.i, g.gen)).length, left = lads + (deputy ? 1 : 0), boss = chair ? (deputy ? 2 : 1) : 0;
-    if (lads !== c.left || boss !== c.boss) { c.left = lads; c.boss = boss; this.dirty = true; }
+    this.muster(c, dt);
+    const dep = !!(c.deputy && ch.get(c.deputy.i, c.deputy.gen));
+    const lads = c.crew.length, left = lads + (dep ? 1 : 0), boss = chair ? (dep ? 2 : 1) : 0;
+    if (lads !== c.left || boss !== c.boss || dep !== c.dep) { c.left = lads; c.boss = boss; c.dep = dep; this.dirty = true; }
     if (!chair && left <= 1) { this.endCall(c, true); return; }
     c.awayT = near > 400 ? c.awayT + dt : 0;
     if (c.awayT > 60) this.endCall(c, false);
+  }
+
+  /** Host: the crew and the right-hand man belong at the pub's front, and only the ones you can find
+   *  there count. One who's wandered off and is after nobody (back from chasing someone down the
+   *  streets, say) is called back at a run; one who isn't back in STRAY_FOR seconds (stuck the far
+   *  side of a wall, or lost) has had enough and legs it, so the win never waits on a lad nobody can see. */
+  private muster(c: Call, dt: number) {
+    const ch = this.w.naughtyBoys, f = c.front ??= this.frontOf(c);
+    for (const g of [...c.crew, ...(c.deputy ? [c.deputy] : [])]) {
+      const b = ch.get(g.i, g.gen);
+      if (!b) continue;
+      if (b.target || Math.hypot(b.x - f.x, b.z - f.z) < MUSTER) { g.out = 0; continue; }
+      const was = g.out ?? 0;
+      g.out = was + dt;
+      if (was < CALL_BACK && g.out >= CALL_BACK) {
+        const side = (Math.random() - 0.5) * 12, out = 1 + Math.random() * 3;
+        ch.sendTo(g.i, g.gen, f.x + f.uz * side + f.ux * out, f.z - f.ux * side + f.uz * out, true);
+      }
+      if (g.out > STRAY_FOR) { ch.rout(g.i, g.gen, f); ch.release(g.i, g.gen); }
+    }
+    c.crew = c.crew.filter((g) => ch.get(g.i, g.gen));
   }
 
   /** Host: the lads on the ladder hang the banner while any of them is up; a lad shot off sets it back. */
@@ -910,7 +955,7 @@ export class Invasion {
   private ladderLads(room: number) { return Math.min(3, 1 + Math.floor((room - 1) / 2)); }
 
   /** Where the front of a pub is: the spot on the pavement outside, and the way out from the door. */
-  private frontOf(c: Pick<Call, "name" | "x" | "z">) {
+  private frontOf(c: Pick<Call, "name" | "x" | "z">): Front {
     const pub: { yaw?: number } = this.w.pubs().find((p) => p.name === c.name) ?? {};
     let ux = 0, uz = 1, d = 4;
     if (pub.yaw !== undefined) { ux = Math.sin(pub.yaw); uz = Math.cos(pub.yaw); }
@@ -1001,7 +1046,7 @@ export class Invasion {
     const n = Math.min(12, 1 + 2 * room + Math.round(3 * m) + (traits.includes("quorum") ? 3 : 0));
     const hp = Math.round((250 + 400 * m) * (0.6 + 0.4 * Math.min(room, 6)) * (1 + 0.25 * chair.wins) * (c.vice ? 0.6 : 1));
     // the fight is at the pub's front: the lads stood out on the pavement facing the street, the Gaffer among them
-    const f = this.frontOf(c), at: [number, number] = [f.x, f.z];
+    const f = c.front = this.frontOf(c), at: [number, number] = [f.x, f.z];
     c.crew = [];
     for (let k = 0; k < n; k++) {
       const side = (k - (n - 1) / 2) * 1.9 + (Math.random() - 0.5), out = 1 + Math.random() * 3.5;
@@ -1209,7 +1254,7 @@ export class Invasion {
   // ---- the network ----------------------------------------------------------------------------
 
   private state() {
-    const cs = this.calls.map((c) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 }));
+    const cs = this.calls.map(packCall);
     const g = this.runner;
     return {
       k: "s", pa: this.paused ? 1 : 0, se: this.season, sv: this.saved ? 1 : 0, qt: this.quietTill,
@@ -1308,7 +1353,7 @@ export class Invasion {
         this.w.feed(`The Flag Lads kept ${named(name, PURPLE)}`);
       }
       if (d.line) setTimeout(() => this.w.feed(esc(String(d.line))), 1500);
-      if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map((c) => ({ id: c.id, n: c.name, x: c.x, z: c.z, u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 })));
+      if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map(packCall));
       return;
     }
     if (d.k === "fg") { this.gaffers.onMessage(d, from, this.w.selfId); return; }
@@ -1400,7 +1445,7 @@ export class Invasion {
       out.push({
         id: +c.id, name: String(c.n), x: +c.x, z: +c.z, until: +c.u, on: !!c.on, onAt: +c.a || 0, vice: !!c.v,
         gazebo: Array.isArray(c.gz) ? { x: +c.gz[0], z: +c.gz[1] } : null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 0,
-        left: c.l === undefined ? -1 : +c.l, boss: +c.b || 0,
+        left: c.l === undefined ? -1 : +c.l, boss: +c.b || 0, dep: c.dp === undefined ? +c.b === 2 : !!c.dp,
         bar: Math.max(0, Math.min(1, (+c.bn || 0) / 1000)), rate: (+c.br || 0) / 100000, lads: [], ladT: 0, fled: !!c.fl,
       });
     }
@@ -1450,12 +1495,15 @@ export class Invasion {
     this.gaffers.joined(id);
   }
 
-  /** Whether one of the Flag Lads' bosses is still to be beaten (a takeover on round him, or the
-   *  Gaffer on the run), for his bar: once he's caught or it's over he may stand about a while. */
-  inFight(i: number, gen: number, x: number, z: number) {
+  /** Whether one of the Flag Lads' bosses (by kit, as in bossName) is still to be beaten, for his bar:
+   *  the Gaffer on the run, or a boss at a takeover on round him. Once the Gaffer has run, he's out of
+   *  his pub's fight for good, so cuffed, put down or got away he may stand about with no bar while the
+   *  lads are still being cleared. Only what every screen is told goes into it (the runner, and each
+   *  takeover's fled and second-takeover marks). */
+  inFight(i: number, gen: number, x: number, z: number, kit: number) {
     const g = this.runner;
     if (g && g.i === i && g.gen === gen) return true;
-    return this.calls.some((c) => c.on && Math.hypot(c.x - x, c.z - z) < FIGHT_REACH);
+    return this.calls.some((c) => c.on && Math.hypot(c.x - x, c.z - z) < FIGHT_REACH && (kit === 2 ? c.vice : !c.vice && (kit === 1 || !c.fled)));
   }
 
   /** The name on the boss bar for one of the Flag Lads' bosses, by their kit (0 the Gaffer, 1 his right-hand man, 2 his cousin). */
@@ -1580,7 +1628,8 @@ export class Invasion {
       if (c.on) {
         const boss = c.vice ? "his cousin" : "the Gaffer";
         const lads = c.left < 0 ? "" : c.left === 1 ? "1 lad left" : `${c.left} lads left`;
-        const then = c.boss === 2 ? `his right-hand man first, then ${boss}` : c.boss === 1 ? (lads ? `then ${boss}` : boss) : lads ? "" : "nearly there";
+        const then = c.boss ? (c.dep ? `his right-hand man first, then ${boss}` : lads ? `then ${boss}` : boss)
+          : c.dep ? (lads ? "and his right-hand man" : "his right-hand man") : lads ? "" : "nearly there";
         call = `Clear out ${pub}: ${[lads, then].filter(Boolean).join(", ")}${d > 60 ? ` · ${far(d)}` : ""}${bonus > 0 && c.onAt ? ` · bonus ${bonus}s` : ""}`;
       } else {
         const left = Math.max(0, Math.round((c.until - Date.now()) / 1000));

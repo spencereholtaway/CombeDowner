@@ -24,7 +24,7 @@
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
 // boss with a megaphone, built heavier and dressed his own way (as are his right-hand man and his cousin). Jobs (quests.ts) can also
 // bring a gang of their own anywhere, and a man a job runs can be made to give up with his hands in the air instead of going
-// down, to be cuffed and led off. A ringleader can also wear one loud thing (a
+// down, stood still to be cuffed and led off. A ringleader can also wear one loud thing (a
 // rosette, a hi-vis tabard, a big hat), which only the characters page uses now. The Gaffer on the
 // run is drawn on a mobility scooter or in his van, which also rides on his look.
 //
@@ -783,7 +783,7 @@ export class NaughtyBoys {
       const hx = c.homeX - c.x, hz = c.homeZ - c.z, hd = Math.hypot(hx, hz);
       if (c.rush && hd < 2) c.rush = false;
       if (hd > (c.kind === LADDER || c.rush ? 0.8 : c.crowd ? 2 : HOME_RANGE)) { dirX = hx / hd; dirZ = hz / hd; spd = c.rush ? c.team.run * c.pace : STROLL * (hd > 15 ? 1.6 : 1); }   // back to his spot
-      else if (c.kind === LADDER) { /* up the ladder */ }
+      else if (c.kind === LADDER || c.meek) { /* up the ladder, or stood with his hands up where he can be cuffed */ }
       else {
         if (c.wanderT <= 0) { c.wanderT = 2 + Math.random() * 4; c.wanderGo = Math.random() < (c.crowd ? 0.12 : 0.35); c.wanderYaw = Math.random() * Math.PI * 2; }
         if (c.wanderGo) { dirX = -Math.sin(c.wanderYaw); dirZ = -Math.cos(c.wanderYaw); spd = STROLL; }
