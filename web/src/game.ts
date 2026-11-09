@@ -696,6 +696,7 @@ export class Game {
     });
     this.drone = new Drone({
       map, player: this.player, camera: this.camera, scene: this.world.scene, mapId: this.mapId,
+      meets: (ox, oy, oz, dx, dy, dz, max) => { const d = this.balloons.ray(ox, oy, oz, dx, dy, dz, max); return d === null ? null : { dist: d, what: "balloon" }; },
       why: () => !this.alive ? "Not while you're dead"
         : this.ride || this.riding || this.basket || this.balloons.aboard >= 0 || this.world.canal?.helmOf(this.net.selfId) ? "Get off what you're on first"
         : null,

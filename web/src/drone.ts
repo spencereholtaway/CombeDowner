@@ -23,7 +23,8 @@
 // mouse looks round more slowly the further in you are.
 //
 // Depth of field (with it on in Settings: post.ts draws it): the drone focuses on whatever's under
-// the crosshair, racking from one thing to the next as a real camera does, and [ and ] open the
+// the crosshair (a hot air balloon going over too, not just the map), racking from one thing to the
+// next as a real camera does, and [ and ] open the
 // aperture wider (a shallower focus, more blur either side of it) or close it down (L3 on a
 // controller goes round them). The aperture and the focus distance show on the drone's screen.
 //
@@ -97,7 +98,7 @@ export interface Snap {
   at: string;             // the camera, as ?at= takes it: east, north, bearing, tilt, height off the ground
   aim: string;            // the point under the crosshair: east, north, height off the ground there, then how far
   square: string;         // the square of Bath it's in, ti,tj ("" off the squares)
-  hit: string;            // what the game's solid ray hit there: building, barrier, tree, ground, or sky
+  hit: string;            // what the game's solid ray hit there: building, barrier, tree, ground, vehicle, balloon, or sky
   look: string;           // the drone's view it was taken in, if not the normal one
   seen: string;           // what "what's what" named under the crosshair, if that was the view
   note: string;
@@ -113,6 +114,9 @@ export interface DroneHooks {
   mapId: string;
   /** Can you take off just now (on your feet, alive, not in a vehicle or on a ride)? A reason if not. */
   why(): string | null;
+  /** Anything that moves about on its own and isn't in the map's ray (a balloon): how far along the
+   *  ray it is, and what to call it, or null. */
+  meets?(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, max: number): { dist: number; what: string } | null;
   /** The drone went up or came down: let everyone know, and put you on your feet. */
   changed(on: boolean): void;
 }
@@ -297,7 +301,7 @@ export class Drone {
     cam.rotation.set(p.pitch, p.yaw, this.roll, "YXZ");
     if ((this.rangeT -= dt) <= 0) {
       this.rangeT = 0.2;
-      const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion), hit = m.raycast(this.eye.x, this.eye.y, this.eye.z, d.x, d.y, d.z, RAY);
+      const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion), hit = this.aim(this.eye, d);
       this.range = hit ? hit.dist : null;
     }
     // the focus racks over to what's under the crosshair (the far distance, if that's the sky)
@@ -318,6 +322,15 @@ export class Drone {
     this.trig = down;
   }
 
+  /** What's under the crosshair, along d from e: the nearest of the map (ground, buildings, trees,
+   *  vehicles) and whatever else is about (a balloon), and how far off. */
+  private aim(e: THREE.Vector3, d: THREE.Vector3): { dist: number; what: string } | null {
+    const hit = this.h.map.raycast(e.x, e.y, e.z, d.x, d.y, d.z, RAY);
+    const near = hit ? { dist: hit.dist, what: hit.mover ? "vehicle" : hit.kind } : null;
+    const other = this.h.meets?.(e.x, e.y, e.z, d.x, d.y, d.z, near ? near.dist : RAY) ?? null;
+    return other && (!near || other.dist < near.dist) ? other : near;
+  }
+
   /** Take a snap: what's where now, and the picture once this frame's drawn (framed). */
   private snap() {
     if (this.wanted) return;
@@ -326,7 +339,7 @@ export class Drone {
     const bearing = ((deg(-p.yaw) % 360) + 360) % 360;
     const at = `${e.x.toFixed(1)},${(-e.z).toFixed(1)},${bearing},${deg(p.pitch)},${(e.y - m.ground(e.x, e.z)).toFixed(1)}`;
     const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-    const hit = m.raycast(e.x, e.y, e.z, d.x, d.y, d.z, RAY);
+    const hit = this.aim(e, d);
     let aim = "", square = "", what = "sky";
     const sq = (x: number, z: number) => {
       const I = m.tileIndex;
@@ -338,7 +351,7 @@ export class Drone {
       const hx = e.x + d.x * hit.dist, hy = e.y + d.y * hit.dist, hz = e.z + d.z * hit.dist;
       aim = `${hx.toFixed(1)},${(-hz).toFixed(1)},${(hy - m.ground(hx, hz)).toFixed(1)} (${Math.round(hit.dist)} m)`;
       square = sq(hx, hz);
-      what = hit.mover ? "vehicle" : hit.kind;
+      what = hit.what;
     } else square = sq(e.x, e.z);
     const t = timeOfDay() * 24, hh = Math.floor(t), mm = Math.floor((t - hh) * 60);
     const look = (this.looks.id === "normal" ? "" : this.looks.name) + (this.zoom === 1 ? "" : `${this.looks.id === "normal" ? "" : ", "}zoomed ${this.zoom}x`);

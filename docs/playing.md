@@ -1091,7 +1091,7 @@ A line starting with `/` is a command, for trying things out:
   1x to 8x (the D-pad's left and right, or a tap on the zoom at the top). A snap says which view
   it was in, and how far zoomed.
   With Depth of field ticked in Settings (Video; it's off to start with), the drone's camera focuses
-  on whatever's under the crosshair, racking from one thing to the next, and blurs what's nearer and
+  on whatever's under the crosshair (a hot air balloon going over too), racking from one thing to the next, and blurs what's nearer and
   further; `[` and `]` close the aperture down or open it up (F/16 to F/1, deeper or shallower; L3 on a
   controller goes round them), and the screen shows the aperture and the focus distance. The
   cinematic camera uses it too, focused on you.

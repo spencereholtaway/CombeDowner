@@ -159,11 +159,16 @@ const kitMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const flameMat = new THREE.MeshBasicMaterial({ color: "#ffb347", transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
 const flameGeo = new THREE.ConeGeometry(0.32, 2.2, 10, 1, true).translate(0, 1.1, 0);
 
+const _c = new THREE.Vector3();
+const _ray = new THREE.Ray();
+const _caster = new THREE.Raycaster();
+
 /** One balloon as drawn: basket, burner, envelope and flame. */
 export class View {
   readonly root = new THREE.Group();
   private pivot = new THREE.Group();
   private env: THREE.Mesh;
+  private basket: THREE.Mesh;
   private flame: THREE.Mesh;
   private mat: THREE.MeshLambertMaterial;
   private glow = 0;
@@ -174,7 +179,7 @@ export class View {
     this.env = new THREE.Mesh(envelope(DESIGNS[design % DESIGNS.length]), this.mat);
     this.env.castShadow = true;
     this.pivot.add(this.env);
-    const basket = new THREE.Mesh(basketKit(), kitMat);
+    const basket = (this.basket = new THREE.Mesh(basketKit(), kitMat));
     basket.castShadow = true;
     this.flame = new THREE.Mesh(flameGeo, flameMat);
     this.flame.position.y = BURNER + 0.2;
@@ -205,6 +210,23 @@ export class View {
   }
 
   hide() { this.root.visible = false; this.standing = false; }
+
+  /** How far along a ray (scene coords, d of length 1) it meets this balloon's envelope or basket, or null. */
+  ray(ray: THREE.Ray, max: number): number | null {
+    if (!this.root.visible) return null;
+    // a quick look first: is it anywhere near the line at all? (25 m takes in one lying on the grass)
+    if (ray.distanceSqToPoint(this.root.position) > 25 * 25 || _c.copy(this.root.position).sub(ray.origin).dot(ray.direction) < -25) return null;
+    _caster.ray.copy(ray);
+    _caster.far = max;
+    this.root.updateWorldMatrix(true, true);
+    let best: number | null = null;
+    for (const m of [this.env, this.basket]) {
+      if (!m.visible) continue;
+      const h = _caster.intersectObject(m, false)[0];
+      if (h && (best === null || h.distance < best)) best = h.distance;
+    }
+    return best;
+  }
 
   dispose() {
     this.root.removeFromParent();
@@ -508,6 +530,19 @@ export class Balloons {
     for (const v of [...this.list.filter((b) => b.i !== this.aboard).map((b) => b.view), ...this.flights.map((f) => f.view)])
       if (v.standing && v.root.visible) out.push(v.root.position.clone().setY(v.root.position.y + RISE + ENV_R * 1.2));
     return out;
+  }
+
+  /** How far along a ray (scene coords, d of length 1) it meets the nearest balloon, or null: for the
+   *  drone's crosshair, so it can focus on one (drone.ts). Your own you're in isn't counted. */
+  ray(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, max: number): number | null {
+    _ray.origin.set(ox, oy, oz);
+    _ray.direction.set(dx, dy, dz);
+    let best: number | null = null;
+    for (const v of [...this.list.filter((b) => b.i !== this.aboard).map((b) => b.view), ...this.flights.map((f) => f.view)]) {
+      const d = v.ray(_ray, best ?? max);
+      if (d !== null && (best === null || d < best)) best = d;
+    }
+    return best;
   }
 
   /** What the gauges say, for the panel: how high you are over the ground (m), how fast you're
