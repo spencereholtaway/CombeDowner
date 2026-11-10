@@ -18,8 +18,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # One job, not a build and a publish: each job is billed rounded up to a whole minute.
   build:
     runs-on: ubuntu-24.04
+    # Pages only publishes from main; a run on another branch just checks the build.
+    environment: ${{ github.ref == 'refs/heads/main' && 'github-pages' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -32,6 +35,15 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
+      # Packing all the map files takes most of the build, so keep the packs from the last run and
+      # let the packer remake only those whose map file or format has changed.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            web/public/maps/**/*.pack.gz
+            web/public/maps/.packs.json
+          key: map-packs-${{ hashFiles('web/src/pack.ts', 'web/public/maps/**/*.json') }}
+          restore-keys: map-packs-
       - run: npm run build
         working-directory: web
         env:
@@ -41,15 +53,26 @@ jobs:
           VITE_TURN_CREDENTIAL: ${{ secrets.TURN_CREDENTIAL }}
           # Optional anonymous play counts (web/src/telemetry.ts): the repo variable TELEMETRY_URL overrides where they go.
           VITE_TELEMETRY_URL: ${{ vars.TELEMETRY_URL || 'https://telemetry.combedowner.com/e' }}
-      - uses: actions/upload-pages-artifact@v5
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
-  deploy:
-    needs: build
-    runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
+      - if: github.ref == 'refs/heads/main'
         uses: actions/deploy-pages@v5
+      # The same build goes to Cloudflare Pages too, ready for combedowner.com to move there. Only
+      # Spencer's repo holds the token, so a fork's run skips these.
+      - if: github.ref == 'refs/heads/main' && github.repository == 'spencereholtaway/CombeDowner'
+        name: Make sure the Cloudflare Pages project is there
+        continue-on-error: true   # it fails once the project exists, which is fine
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create combedowner --production-branch=main
+      - if: github.ref == 'refs/heads/main' && github.repository == 'spencereholtaway/CombeDowner'
+        name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/dist --project-name=combedowner --branch=main --commit-dirty=true
