@@ -25,7 +25,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
   and more. Every other church has its tower where it really has one, as tall as the lidar
   saw it, with battlements, and pinnacles and a spire where the lidar shows those too (St Stephen's
-  on Lansdown, St Mary's Bathwick, St Michael's on Broad Street, St John's on South Parade). Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
+  on Lansdown, St Mary's Bathwick, St Michael's on Broad Street, St John's on South Parade), and
+  every church on every map has stained glass in tall pointed windows, with a rose window in its
+  gable where there's room: cats as angels, haloed and winged with their paws together, glowing in
+  their colours after dark. Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar

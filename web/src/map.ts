@@ -33,6 +33,10 @@ export interface Building {
   rm?: RoofMesh;                                  // the roof as the lidar shows it, in place of rr, rp and hp
   wc?: string; rk?: string;                       // the wall's and the roof's colour where the map data gives one ("#rrggbb")
 }
+/** A church or chapel, by what the map tools made of the data (tools/buildings.py's "church" kind):
+ *  not a mosque, synagogue, temple or Kingdom Hall that the data files under the same heading. */
+const NOT_A_CHURCH = /\b(masji?e?d|mosque|jamia?|synagogue|shul|temple|mandir|gurdwara|kingdom hall)\b/i;
+export const isChurch = (b: Building) => b.c === "church" && !NOT_A_CHURCH.test(b.n ?? "");
 /** ?roofs=simple: every roof the shape it was before the lidar's faces (flat, gabled or hipped), to
  *  compare, or for a machine that can't spare the triangles. */
 const SIMPLE_ROOFS = new URLSearchParams(location.search).get("roofs") === "simple";

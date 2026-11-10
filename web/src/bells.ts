@@ -46,7 +46,7 @@ import { dayNumber } from "./daylight";
 import { control, isKey } from "./controls";
 import { padTake } from "./gamepad";
 import { AHEAD, Highway, type Gem } from "./bellhighway";
-import type { GameMap } from "./map";
+import { isChurch, type GameMap } from "./map";
 import { openGround } from "./oddments";
 import { speak } from "./posh";
 import { Avatar } from "./avatar";
@@ -165,7 +165,7 @@ function place(map: GameMap): ChallengeSpot[] | null {
   const sp = D.spawn?.length ? D.spawn : [[0, 0]];
   const hx = sp.reduce((s, p) => s + p[0], 0) / sp.length, hy = sp.reduce((s, p) => s + p[1], 0) / sp.length;
   const home = openGround(map);
-  const churches = [...(D.bl ?? []), ...(W?.bl ?? [])].filter((b) => b.c === "church" && b.r[0]?.length >= 3).map((b) => {
+  const churches = [...(D.bl ?? []), ...(W?.bl ?? [])].filter((b) => isChurch(b) && b.r[0]?.length >= 3).map((b) => {
     const r = b.r[0], cx = r.reduce((s, q) => s + q[0], 0) / r.length, cy = r.reduce((s, q) => s + q[1], 0) / r.length;
     return { b, r, cx, cy, a: ringArea(r) };
   }).filter((c) => c.a >= 150 && Math.hypot(c.cx - hx, c.cy - hy) < 3500 && map.fieldEdge(c.cx, -c.cy) > 60

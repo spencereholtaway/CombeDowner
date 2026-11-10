@@ -7,8 +7,9 @@ import { LAMP_COLOUR, LAMP_DECAY, LAMP_POWER, LampPools, lampLit } from "./lampp
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
 import { breakable, holed } from "./gaps";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags, isChurch } from "./map";
 import * as TX from "./textures";
+import { LANCETS, churchGlass } from "./stainedglass";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { setLatitude, sky as skyNow } from "./daylight";
 import { buildLandmarks, landmarkLamps } from "./landmarks";
@@ -38,6 +39,9 @@ const CHUNK = 320;
 
 /** Accumulates non-indexed triangles with normals, UVs and colours, straight into the typed arrays
  *  the graphics card takes (growing as it goes), so a square of Bath builds without stalling. */
+/** What Geo.windowed marks each wall face with (out of 255), and anyWalls' shader reads back. */
+const WIN_MARK = { win: 255, glass: 128, rose: 40 };
+
 export class Geo {
   private n = 0;   // vertices so far
   private P = new Float32Array(3 * 1024); private N = new Int8Array(3 * 1024);
@@ -74,10 +78,11 @@ export class Geo {
     g.computeBoundingSphere();
     return freeOnUpload(g);
   }
-  /** Walls with windows and plain walls as one model (drawn in one go by litWindows' material),
-   *  each vertex marked 1 if its face has windows, 0 if plain. */
-  static windowed(win: Geo | undefined, plain: Geo | undefined): THREE.BufferGeometry | null {
-    const parts = [win, plain].filter((q): q is Geo => !!q && q.n > 0);
+  /** Walls with windows and plain walls as one model (drawn in one go by anyWalls' material),
+   *  each vertex marked by its face: WIN_MARK.win with windows, .glass with a church's stained glass,
+   *  .rose with a rose window, 0 if plain. */
+  static windowed(win: Geo | undefined, plain: Geo | undefined, glass?: Geo, rose?: Geo): THREE.BufferGeometry | null {
+    const parts = [win, plain, glass, rose].filter((q): q is Geo => !!q && q.n > 0);
     const n = parts.reduce((a, q) => a + q.n, 0);
     if (!n) return null;
     const P = new Float32Array(3 * n), N = new Int8Array(3 * n), U = new Float32Array(2 * n), C = new Uint8ClampedArray(3 * n), W = new Uint8Array(n);
@@ -85,7 +90,8 @@ export class Geo {
     for (const q of parts) {
       P.set(q.P.subarray(0, 3 * q.n), 3 * at); N.set(q.N.subarray(0, 3 * q.n), 3 * at);
       U.set(q.U.subarray(0, 2 * q.n), 2 * at); C.set(q.C.subarray(0, 3 * q.n), 3 * at);
-      if (q === win) W.fill(255, at, at + q.n);
+      const mark = q === win ? WIN_MARK.win : q === glass ? WIN_MARK.glass : q === rose ? WIN_MARK.rose : 0;
+      if (mark) W.fill(mark, at, at + q.n);
       at += q.n;
     }
     const g = new THREE.BufferGeometry();
@@ -318,7 +324,7 @@ function placeShown(o: THREE.Object3D, force: boolean, all = force) {
 function buildingModels(c: Map<string, Geo>): [string, THREE.BufferGeometry][] {
   const out: [string, THREE.BufferGeometry][] = [];
   for (const key of new Set([...c.keys()].map((k) => (k === "roof" ? k : k[0])))) {
-    const g = key === "roof" ? c.get(key)!.build() : Geo.windowed(c.get(key + "w"), c.get(key + "p"));
+    const g = key === "roof" ? c.get(key)!.build() : Geo.windowed(c.get(key + "w"), c.get(key + "p"), c.get(key + "g"), c.get(key + "o"));
     if (g) out.push([key, g]);
   }
   return out;
@@ -374,20 +380,45 @@ function litWindows(mat: THREE.MeshLambertMaterial, kind: TX.WallKind) {
   return mat;
 }
 
-/** One material for a kind of wall, windowed and plain alike (Geo.windowed marks which faces have
- *  windows), so a square's walls of that kind are drawn in one go instead of two. */
+/** One material for a kind of wall, windowed, plain and a church's alike (Geo.windowed marks which
+ *  faces have which), so a square's walls of that kind are drawn in one go. A church's glass is in its
+ *  own colours, not the wall's, and every pane of it lights up after dark. */
 function anyWalls(kind: TX.WallKind) {
   const mat = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
   const plainMap = TX.wall(kind, false), lit = mat.onBeforeCompile;
+  const slots = (LANCETS + 1).toFixed(1), lancets = LANCETS.toFixed(1);
   mat.onBeforeCompile = (sh, r) => {
     lit(sh, r);
     sh.uniforms.plainMap = { value: plainMap };
+    sh.uniforms.glassMap = { value: churchGlass() };
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float win;\nvarying float vWin;")
       .replace("#include <uv_vertex>", "#include <uv_vertex>\nvWin = win;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D plainMap;\nvarying float vWin;")
-      .replace("#include <map_fragment>", `float isWin = step(0.5, vWin);
-      diffuseColor *= mix(texture2D(plainMap, vMapUv), texture2D(map, vMapUv), isWin);`)
-      .replace("totalEmissiveRadiance *= step(", "totalEmissiveRadiance *= isWin * step(");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D plainMap;\nuniform sampler2D glassMap;\nvarying float vWin;")
+      .replace("#include <map_fragment>", `float isWin = step(0.75, vWin);
+      vec4 wallTex = mix(texture2D(plainMap, vMapUv), texture2D(map, vMapUv), isWin);
+      vec4 glass = vec4(0.0);
+      // (the gradients of the unbroken uv, so the jump from one window's slot to the next doesn't
+      // drop to the smallest mipmap along every bay's edge)
+      vec2 gdx = dFdx(vMapUv) * vec2(1.0 / ${slots}, 1.0), gdy = dFdy(vMapUv) * vec2(1.0 / ${slots}, 1.0);
+      if (vWin > 0.08 && vWin < 0.75) {
+        if (vWin > 0.33) {
+          // each bay its own lancet, so a row of windows isn't all the one picture
+          float pickL = mod(floor(vMapUv.x), ${lancets});
+          glass = textureGrad(glassMap, vec2((pickL + fract(vMapUv.x)) / ${slots}, fract(vMapUv.y)), gdx, gdy);
+          // (a row's own band only: above and below it is plain wall)
+          glass.a *= step(0.0, vMapUv.y) * step(vMapUv.y, 1.0);
+        } else {
+          vec2 ru = clamp(vMapUv, 0.0, 1.0);
+          glass = textureGrad(glassMap, vec2((${lancets} + ru.x) / ${slots}, ru.y), gdx, gdy);
+          glass.a *= step(abs(vMapUv.x - 0.5), 0.5) * step(abs(vMapUv.y - 0.5), 0.5);
+        }
+      }
+      float surround = smoothstep(0.2, 0.45, glass.a), glassA = smoothstep(0.6, 0.85, glass.a);
+      wallTex.rgb = mix(wallTex.rgb, glass.rgb, surround);
+      diffuseColor *= wallTex;`)
+      .replace("#include <color_fragment>", "#include <color_fragment>\n      diffuseColor.rgb = mix(diffuseColor.rgb, glass.rgb, glassA);")
+      .replace("totalEmissiveRadiance *= step(", "totalEmissiveRadiance *= isWin * step(")
+      .replace("#include <lights_fragment_begin>", "totalEmissiveRadiance += glassA * emissive * glass.rgb * vec3(1.3, 1.1, 0.85);\n#include <lights_fragment_begin>");
   };
   mat.customProgramCacheKey = () => "anyWalls";
   return lampLit(mat);
@@ -2315,14 +2346,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const [x, y] of outerRing) { cx += x; cy += y; }
     cx /= outerRing.length; cy /= outerRing.length;
     const surf = ((b.m as Surf) in WALL_TINTS ? b.m : WALL_USUAL) as Surf;
-    const walls = geoFor(cx, cy, surf + (b.w ? "w" : "p"));
+    const church = isChurch(b);
+    const walls = geoFor(cx, cy, surf + (b.w ? (church ? "g" : "w") : "p"));
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eaveAll = ground + b.h, base = ground - 0.6;
     // (stock brick's texture has its colour already: mappers' "brown" for it would turn it to mud)
     const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc, surf === "y" ? 0.25 : 0.5);
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
-    const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
+    const big = b.c === "institution" || b.c === "flats", floor = big ? 3.5 : 2.9;
+    // a church's lancets are all one size, bigger on a bigger church, with plenty of wall between
+    const lancet = Math.min(1.5, Math.max(0.7, (b.h - (b.dz ?? 0)) / 6.5)), bay = church ? 4.2 * lancet : big ? 4.6 : 3.4;
     const roofCol = tinted(pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2)), b.rk);
     // windows sit at the same height on every storey, the top row just under the eaves. On a
     // slope the walls start from the lowest ground, but storeys are counted from the ground
@@ -2347,7 +2381,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const n = door ? door.n : Math.round(len / bay);
         const sp = door ? len / n : n > 0 ? Math.min(1.25 * bay, Math.max(0.8 * bay, len / n)) : bay;
         const u0 = n / 2 - len / sp / 2, u1 = n / 2 + len / sp / 2;
-        const v0 = (base - ground - lift) / storey;
+        // under a roof from the lidar the wall rises to the roof over it: windows up to the lower
+        // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
+        const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
+        const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
+        const org = ground + lift, sto = storey;
+        const v0 = (base - org) / sto;
         const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
         const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
           facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out, [ua, va], [ub, va], [ub, vb], [ua, vb], wallCol);
@@ -2358,17 +2397,62 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (let k = Math.ceil(ua - 0.72); k <= Math.floor(ub - 0.28); k++) { ua = Math.min(ua, k); ub = Math.max(ub, k + 1); }
           blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
         }
-        // under a roof from the lidar the wall rises to the roof over it: windows up to the lower
-        // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
-        const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
-        const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
-        const v1 = (eave - ground - lift) / storey;
+        const v1 = (eave - org) / sto;
         if (za !== undefined && zb !== undefined && Math.max(za, zb) - Z0 > eave + 0.02) {
-          const vt = (h: number) => (h - ground - lift) / storey;
-          facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
+          const vt = (h: number) => (h - org) / sto;
+          const ha = za - Z0, hb = zb - Z0, rise = Math.max(ha, hb) - eave;
+          // half a church's gable, rising from the eaves to the ridge: a rose window centred on the
+          // ridge, so the two halves make one (sized in steps so a gable a little lopsided still meets)
+          const inR = rise * len / (len + Math.hypot(len, rise)), d = Math.round(Math.min(6, 1.7 * inR) * 2) / 2;
+          // (only where the wall runs on straight past the ridge and falls again: a real gable, not
+          // the side of a step up to a higher roof)
+          const j = ha > hb ? (i + ring.length - 1) % ring.length : (i + 1) % ring.length;
+          const n0 = ring[j], n1 = ring[(j + 1) % ring.length], nl = Math.hypot(n1[0] - n0[0], n1[1] - n0[1]);
+          const zj = b.rm!.z[ri]?.[2 * j + (ha > hb ? 0 : 1)];
+          const gable = nl > 1 && ((n1[0] - n0[0]) * ex + (n1[1] - n0[1]) * ey) / (nl * len) > 0.98 && zj !== undefined && zj - Z0 - eave < 0.6;
+          if (church && b.w && ri === 0 && gable && rise > 2.5 && Math.min(ha, hb) - eave < 0.6 && d >= 1.8) {
+            const ch = Math.round((eave + inR) * 4) / 4, sa = ha > hb ? 0 : -len, sb = sa + len;
+            const ruv = (s: number, h: number) => [s / d + 0.5, (h - ch) / d + 0.5];
+            facing(geoFor(cx, cy, surf + "o"), P(u0, eave), P(u1, eave), P(u1, hb), P(u0, ha), out, ruv(sa, eave), ruv(sb, eave), ruv(sb, hb), ruv(sa, ha), wallCol);
+          } else facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
         }
-        const top = Math.min(eave, ground + lift + storey);
-        if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
+        const top = Math.min(eave, org + sto);
+        if (church && n > 0) {
+          // one row of lancets along the wall, sills well up from the highest ground along it (none
+          // buried on a slope) and clear of the eaves; a tall, long wall has a second, smaller
+          // row high up, as a clerestory, and a tower one window near the top. Each row's quad maps a
+          // lancet's slot (stainedglass.ts: the glass from a tenth to nine tenths of it) on to just the
+          // band it sits in, and a wall too low for a whole window has none
+          let foot = ground;
+          for (const f of [0, 0.5, 1]) { const g = drawnGround(a[0] + ex * f, -(a[1] + ey * f)); if (Number.isFinite(g)) foot = Math.max(foot, g); }
+          const LH = 3.2 * lancet, gap = 0.6 * lancet, low = foot + 1.2 * lancet, H = eave - foot;
+          const tower = len < 8 && H > 10;
+          const bands: [number, number, number][] = [];   // bottom and top of a row's glass, and its scale across
+          // (a wall a little short for the church's lancets has them a little shorter, not none)
+          const fit = Math.min(LH, eave - gap - low);
+          if (tower) bands.push([eave - gap - LH, eave - gap, 1]);
+          else if (fit >= 0.75 * LH) {
+            bands.push([low, low + fit, 1]);
+            if (H >= 11 && len >= 10 && low + LH + gap + 0.7 * LH <= eave - gap) bands.push([eave - gap - 0.7 * LH, eave - gap, 1 / 0.7]);
+          }
+          const doors = blank.sort((x, y) => x[0] - y[0]);
+          // the wall split at heights between the rows, each piece mapped to its own row
+          const cuts = [base, ...bands.slice(1).map((r, k) => (bands[k][1] + r[0]) / 2), eave];
+          for (let k = 0; k < cuts.length - 1; k++) {
+            const [g0, g1, wide] = bands[k] ?? [0, 1, 1];
+            const s = (g1 - g0) / 0.8, o = g0 - 0.1 * s, ha = cuts[k], hb = cuts[k + 1];
+            const piece = (g: Geo, ua: number, ub: number) => facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out,
+              [ua * wide, (ha - o) / s], [ub * wide, (ha - o) / s], [ub * wide, (hb - o) / s], [ua * wide, (hb - o) / s], wallCol);
+            if (!bands.length) { quad(plain, u0, u1, base, eave, v0, v1); continue; }
+            let u = u0;
+            for (const [ua, ub] of k === 0 ? doors : []) {
+              if (ua > u) piece(walls, u, ua);
+              if (ub > Math.max(u, ua)) piece(plain, Math.max(u, ua), ub);
+              u = Math.max(u, ub);
+            }
+            if (u < u1) piece(walls, u, u1);
+          }
+        } else if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
         else if (!blank.length || top <= base) quad(walls, u0, u1, base, eave, v0, v1);
         else {
           blank.sort((x, y) => x[0] - y[0]);
@@ -2425,7 +2509,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         } else {
           // gable end: a wall triangle over the end wall
           const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + rp / storey], wallCol);
+          const outward = [u[0] * end, 0, -u[1] * end];
+          // a church's gable has a rose window, as big as fits in it with a margin of wall round it
+          const inR = (Wd * rp / 2) / ((Wd + 2 * Math.hypot(Wd / 2, rp)) / 2), d = Math.min(6, 1.7 * inR);
+          if (church && b.w && d >= 1.8) {
+            const ch = eave + inR, ruv = (s: number, h: number) => [s / d + 0.5, (h - ch) / d + 0.5];
+            facingTri(geoFor(cx, cy, surf + "o"), g0, g1, top, outward, ruv(-Wd / 2, eave), ruv(Wd / 2, eave), ruv(0, ridge), wallCol);
+          } else facingTri(plain, g0, g1, top, outward, [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + rp / storey], wallCol);
         }
       }
       // chimney stacks on the ridge, each with two pots

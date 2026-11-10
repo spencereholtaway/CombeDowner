@@ -30,7 +30,7 @@ const TOWER = { x0: -35, x1: -25, h: 5, top: 30 };
 export function stGeorges(): THREE.Object3D {
   const k = new Kit();
   const S = stone("#a99c88"), S2 = stone("#8f8270"), cope = stone("#c4b9a4");
-  const roof = slate(), glass = gothicGlass(false, false, 3), glass5 = gothicGlass(false, false, 5);
+  const roof = slate(), glass = gothicGlass(false, false, 3, true), glass5 = gothicGlass(false, false, 5, true);
   const dark = plain("#2a241f"), louvre = plain("#3b3631"), door = plain("#4a2f1f"), gold = plain("#c9a443");
 
   /** A pointed window w by h, its sill at y, in the wall facing +z turned ry. */

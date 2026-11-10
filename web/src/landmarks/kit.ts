@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as TX from "../textures";
+import { paintLight } from "../stainedglass";
 import { nightNow } from "../daylight";
 import { kindOf } from "../kinds";
 
@@ -339,15 +340,17 @@ export const plain = (color: string, extra: THREE.MeshLambertMaterialParameters 
 export function slate() { return lam({ map: once("slate", () => TX.roofTiles()), color: "#6a6f78" }); }
 
 /** Gothic tracery windows: outside (dark glass with stone mullions, lit warm after dark) and
- *  inside (stained glass, glowing with the day). square: square-headed, like the Abbey's east window. */
-export function gothicGlass(inside: boolean, square = false, lights = 5) {
-  const k = `${inside ? "in" : "out"}${square ? "sq" : "pt"}${lights}`;
-  const map = once(k, () => gothicTex(inside, square, lights, false));
-  const em = once(k + "g", () => gothicTex(inside, square, lights, true));
+ *  inside (stained glass, glowing with the day). square: square-headed, like the Abbey's east window.
+ *  stained: a church's, seen from outside: cat angels in each light (stainedglass.ts), glowing in
+ *  their own colours after dark. */
+export function gothicGlass(inside: boolean, square = false, lights = 5, stained = false) {
+  const k = `${inside ? "in" : stained ? "sg" : "out"}${square ? "sq" : "pt"}${lights}`;
+  const map = once(k, () => gothicTex(inside, square, lights, false, stained));
+  const em = once(k + "g", () => gothicTex(inside, square, lights, true, stained));
   return lam({ map, emissiveMap: em, emissive: "#ffffff", emissiveIntensity: 0, alphaTest: 0.5 });
 }
 
-function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolean): THREE.Texture {
+function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolean, stained = false): THREE.Texture {
   const W = 128, H = 256, [c, g] = TX.canvas(W, H), r = TX.rng(lights * 7 + (square ? 3 : 0) + (inside ? 11 : 0));
   // the opening: a pointed arch over a tall rectangle, or square-headed
   const outline = (inset: number) => {
@@ -371,7 +374,15 @@ function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolea
   g.fillStyle = lit ? "#000" : "#cdb688"; g.fill();
   // the glass
   outline(9);
-  if (lit) {
+  if (stained) {
+    // drawn big, so the cats survive the shrink to the game's texels
+    const S = 4, [bc, bg] = TX.canvas(W * S, H * S);
+    bg.scale(S, S);
+    for (let k = 0; k < lights; k++) paintLight(bg, 9 + ((W - 18) * k) / lights, 0, (W - 18) / lights, H, k + lights);
+    g.save(); g.clip(); g.drawImage(bc, 0, 0, W, H);
+    if (!lit) { g.fillStyle = "rgba(20,24,40,0.25)"; g.fillRect(0, 0, W, H); }
+    g.restore();
+  } else if (lit) {
     const grd = g.createLinearGradient(0, 0, 0, H);
     grd.addColorStop(0, inside ? "#fff" : "#ffd79a"); grd.addColorStop(1, inside ? "#fff" : "#e09a4a");
     g.fillStyle = grd; g.fill();
@@ -408,7 +419,7 @@ function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolea
   g.fillStyle = lit ? "#000" : inside ? "#3b3326" : "#c9b285";
   const top = square ? 9 : W * 0.7;
   for (let k = 1; k < lights; k++) g.fillRect(9 + ((W - 18) * k) / lights - 2, top - (square ? 0 : W * 0.35), 4, H);
-  for (const f of [0.55, 0.78]) g.fillRect(0, H * f, W, 4);
+  if (!stained) for (const f of [0.55, 0.78]) g.fillRect(0, H * f, W, 4);
   if (!square) {
     // tracery: the mullions curve up into the head, and a row of little cusped heads under it
     g.lineWidth = 4; g.strokeStyle = g.fillStyle;
@@ -423,7 +434,7 @@ function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolea
     g.beginPath(); g.arc((x0 + x1) / 2, 30, (x1 - x0) / 2, Math.PI, 0); g.stroke();
   }
   g.restore();
-  const t = TX.pixelTex(c, 64, 128, inside && !lit ? 40 : 24, 31, true);
+  const t = stained ? TX.pixelTex(c, W, H, 32, 31, true) : TX.pixelTex(c, 64, 128, inside && !lit ? 40 : 24, 31, true);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   return t;
 }

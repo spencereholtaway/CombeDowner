@@ -29,6 +29,7 @@ import { nightNow } from "./daylight";
 import { type Follow, follow } from "./weapon";
 import { bake, dropBaked } from "./bake";
 import { tag } from "./kinds";
+import { COATS } from "./catcoats";
 
 const MAX = 32;
 const HP = 40;                              // a rifle round does 22, 55 to the head
@@ -66,19 +67,6 @@ export interface CatState { s: number[]; t: string[] }
 const TABBY = 0, TUXEDO = 2, SIAMESE = 3, CALICO = 4, COON = 5, SPHYNX = 6, PERSIAN = 7, BENGAL = 8;
 /** How common each breed is. */
 const BREED_ODDS = [5, 5, 3, 1.5, 2.5, 1.5, 0.7, 1.2, 1, 0.4];
-/** For each breed: [coat, markings] pairs. */
-const COATS: [string, string][][] = [
-  [["#8a6a48", "#3e2c1c"], ["#a3a3a0", "#3b3b3d"], ["#d98a3c", "#9b4e1c"], ["#b89a74", "#5d4630"]],
-  [["#1a1a1c", "#1a1a1c"], ["#f2f0ea", "#f2f0ea"], ["#7d8590", "#7d8590"], ["#d9883a", "#d9883a"], ["#cdb89a", "#cdb89a"], ["#5a4a42", "#5a4a42"]],
-  [["#1a1a1c", "#f4f3ef"], ["#5a5d63", "#f4f3ef"], ["#d9883a", "#f4f3ef"]],
-  [["#ece0c8", "#4a3326"], ["#eee8dc", "#6a6f7c"]],
-  [["#f4f1ea", "#d9883a"], ["#2a2220", "#c9772f"], ["#d9883a", "#1d1d1f"]],
-  [["#7a5a3a", "#2f2216"], ["#1d1d1f", "#1d1d1f"], ["#c06a2a", "#7d3d14"], ["#9c9690", "#4a4744"]],
-  [["#e6b6a6", "#c99486"], ["#9a8a88", "#7a6a68"]],
-  [["#f6f4f0", "#e6e0d6"], ["#9aa0a8", "#868c94"], ["#e9d4b0", "#d4b88c"], ["#2a2a2c", "#2a2a2c"]],
-  [["#d6a24e", "#3b2412"], ["#c9b9a0", "#3a3a3a"]],
-  [["#d94fb0", "#7a2a6a"], ["#4f9ad9", "#1f4a7a"], ["#7ad94f", "#2f6a1f"], ["#9a5fe0", "#4a2a7a"], ["#f2d33a", "#9a7a10"]],
-];
 /** How many coats a breed comes in (the characters page steps through them). */
 export const coatsOf = (breed: number) => COATS[breed]?.length ?? 0;
 const EYES = ["#9ccf3a", "#e8c23a", "#e89a2a", "#5aa0e0", "#7ab85a"];
