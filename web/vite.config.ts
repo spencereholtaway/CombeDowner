@@ -69,12 +69,21 @@ const mapPacks = {
     });
   },
 };
+// ONNX Runtime's 26 MB wasm gets copied into the build because its code names it, but the critics'
+// eye never loads it: Transformers.js fetches the same file from jsDelivr, pinned to its version.
+// Leaving it out keeps every file under Cloudflare Pages' 25 MiB limit.
+const dropOrtWasm = {
+  name: "drop-ort-wasm",
+  generateBundle(_: unknown, bundle: Record<string, unknown>) {
+    for (const f of Object.keys(bundle)) if (/(^|\/)ort-wasm[^/]*\.wasm$/.test(f)) delete bundle[f];
+  },
+};
 export default defineConfig({
   base: "./",
   // when the game last changed, so players on an old page can be told to refresh (net.ts)
   define: { __BUILD__: String(BUILD), __COMMIT__: JSON.stringify(COMMIT) },
   // version.json says which version is live, for anyone who wants to check by hand
-  plugins: [reannounce, mapPacks, { name: "version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD }) }); } }],
+  plugins: [reannounce, mapPacks, dropOrtWasm, { name: "version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD }) }); } }],
   // so the change above applies in `npm run dev` too, which otherwise pre-packs Trystero untouched
   optimizeDeps: { exclude: ["trystero", "@trystero-p2p/nostr"] },
   build: {
