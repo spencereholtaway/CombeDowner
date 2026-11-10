@@ -23,8 +23,9 @@ from the railway step to the end.
 
 Speed limits (`tools/maxspeed.py`) come from the OpenStreetMap roads download and need no step.
 The map's picture for the telemetry dashboard is sent by the game itself; nothing to do.
-The partition (`tools/partition/`) runs only for a map with `partition=True`, which today is only
-Bath; a new map never sets it.
+The partition (`tools/partition/`) builds every map's squares, a new one's too: `build` packs the
+downloads into the map's layers (`tools/mapdata.py pack`) first, which the partition reads. Never set
+`partition` in `tools/area.py` for a new map.
 
 ## Not automated, by design
 
@@ -36,7 +37,7 @@ Bath; a new map never sets it.
 
 ## One shape for every map
 
-Dan's rule: the pack is self-sufficient and every map has the same format. The inputs vary; the
+The co-developer's rule: the pack is self-sufficient and every map has the same format. The inputs vary; the
 shape they are turned into does not.
 
 - Every map's pack (`data/<id>/`) has the same common layers, whatever the source: ground heights,
@@ -110,7 +111,7 @@ the command to rebuild just those. Shoot one view with
 `cd web && npm run shoot -- "<east,north,bearing,tilt>" --map <id> --out ../shots/<id>` (note
 `--map`: without it the tool shoots Bath).
 
-On Dan's Mac, full builds can go through `tools/mac_build.sh <commit> --map --map-id <id> --check`.
+On the build Mac, full builds can go through `tools/mac_build.sh <commit> --map --map-id <id> --check`.
 
 ## Publishing a map (only with the repository owner's say-so)
 
@@ -118,7 +119,7 @@ On Dan's Mac, full builds can go through `tools/mac_build.sh <commit> --map --ma
 2. Write `data/<id>/README.md` with each source and licence: copy `data/bradford-on-avon/README.md`
    (England) or `data/cape-town/README.md` (outside the UK) and change the names and dates.
 3. Commit `tools/area.py`, `web/src/maps.ts`, `data/<id>/` and `web/public/maps/<id>*`, never `data/raw/`.
-4. Big maps go into Spencer's `main` as one squashed pull request. Follow `CLAUDE.md`.
+4. Big maps go into the maintainer's `main` as one squashed pull request. Follow `CLAUDE.md`.
 
 ## Cost and size
 

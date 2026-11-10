@@ -14,7 +14,7 @@ How to read a ticket:
   code (and, for the map tools, checked against the shipped `combe-down.json`). `unconfirmed` means it
   follows from the code but depends on browser behaviour or timing nobody has reproduced.
 - **Where** is `file:line` on 97e9b43. Lines will drift as fixes land; the quoted code is the anchor.
-- Voice chat comes first, because Dan asked for it to be rock solid and low latency. After that, tickets
+- Voice chat comes first, because the co-developer asked for it to be rock solid and low latency. After that, tickets
   run by severity. Tick a ticket off (`[x]`) when it's fixed and pushed.
 
 Things that were checked and found fine are listed at the end, so nobody re-checks them.
@@ -463,7 +463,7 @@ touch, 1-4 cooks and the camera maths were all traced and are fine (see the end 
 So nobody re-checks them. These looked suspicious and were traced to the end.
 
 **Voice and net**
-- Streams that arrive before the game exists are kept per peer in `TrysteroNet.streams` and replayed when `Voice` sets `onStream`; `SFX.unlock()` runs in `start()` before `new Game`, so `SFX.context()`/`voiceOut()` are set when `Voice.hear` runs. (This is Spencer's 16:07 fix; it holds.)
+- Streams that arrive before the game exists are kept per peer in `TrysteroNet.streams` and replayed when `Voice` sets `onStream`; `SFX.unlock()` runs in `start()` before `new Game`, so `SFX.context()`/`voiceOut()` are set when `Voice.hear` runs. (This is the maintainer's 16:07 fix; it holds.)
 - Mic tracks reach everyone: `askForMic` adds the stream to all present peers once it resolves; `voice.join(id)` adds it to each later joiner; a peer joining while `getUserMedia` is pending is covered by the no-target `addStream` when it resolves. Trystero's `iterate()` only targets active (handshaken) peers, and per-peer stream metadata is paired with `ontrack` in order (one audio track per stream, so nothing crosses).
 - Simultaneous `addTrack` on both sides (the usual join case) is handled by Trystero's rollback/ignore logic in `peer.mjs` `signal()`; the browser re-fires `negotiationneeded` after rollback.
 - Muting sets `track.enabled = false` (silence frames, connection kept), so unmuting is instant. The radio key is released on pause and on window blur; the touch Radio button releases on `pointerup` and `pointercancel`.
@@ -494,7 +494,7 @@ So nobody re-checks them. These looked suspicious and were traced to the end.
 - Chamfer mesh and collision share geometry; secret door leaves no hole; ledge/step/vault heights are consistent with the comments; lava/deep water/chasm behaviour is as described.
 - Statues are always solvable; mirrors start unsolved by construction; gems/bells/dials/riddle state machines are sound.
 - `MV` in mobviews.ts matches `MOVE` in bosses.ts exactly; boss fx orientation (`fwd(a)`, `flat()`), per-instance materials with shared textures, texture sizes/wrap/colorSpace, dt-clamped springs, `shatter()` scaling, the centipede's teleport reset and the spider's first-state latch are all fine.
-- The mines page has no touch controls (`touch.ts` isn't imported): a gap rather than a bug, noted for Dan and Spencer.
+- The mines page has no touch controls (`touch.ts` isn't imported): a gap rather than a bug, noted for the co-developer and the maintainer.
 
 **Audio**
 - The AudioContext is only created in `unlock()` from a gesture; repeated calls resume. The music scheduler catches up after a stall without dumping notes; tracks don't overlap on change; the carrier hiss runs at gain 0 by design so keying up is instant. All one-shot sources have scheduled stops so their nodes are collected.

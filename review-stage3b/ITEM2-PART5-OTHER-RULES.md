@@ -25,7 +25,7 @@ So **two of the four rules do judge margin ground**, on 5 of 102 findings:
   given the same B-clipped `plots` the openings check was, and comes out in scope only because a
   plot's reachability is decided from the house, which is in the square.
 
-No rule was changed for this. Dan decides whether `narrow_corridors` and `edges_through_buildings`
+No rule was changed for this. The co-developer decides whether `narrow_corridors` and `edges_through_buildings`
 should be scoped the same way as the openings check; the argument for is the same one (a square should
 not report ground its owner ships, and the owner may report it too), and against is that these two
 rules report a *place on the ground* rather than a per-building fact, so a duplicate is less confusing

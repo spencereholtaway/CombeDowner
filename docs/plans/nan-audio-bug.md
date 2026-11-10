@@ -5,7 +5,7 @@ A sound's `setTargetAtTime` throws `The provided float value is non-finite`, and
 `game.update` stops the render loop: **the game freezes and the tab goes dead**. That is the part
 that matters. It is not a console warning.
 
-Seen once, in a frame-rate run on Spencer's `main` (`tools/fpsprobe.mjs --route`, 282 s over the
+Seen once, in a frame-rate run on the maintainer's `main` (`tools/fpsprobe.mjs --route`, 282 s over the
 full route). Its back leg recorded **1,234,859 "frames" with zero JavaScript** — a dead loop being
 counted, not a game at 9,000 fps. So the freeze is real and the throw is what causes it.
 

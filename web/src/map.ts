@@ -14,7 +14,7 @@ import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
 import { landmarkShape } from "./landmarks";
-import { type Shape, standOn } from "./landmarks/shape";
+import { type Shape, standOn, surfaceBetween } from "./landmarks/shape";
 import { breakable, inGap, leafy } from "./gaps";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
@@ -27,6 +27,7 @@ export interface Building {
   m?: string; rc?: string; w?: number;            // wall material, roof covering, has windows
   rr?: number[][]; rp?: number; hp?: number[];    // roof rectangle, ridge rise, hip insets at each end
   hs?: number;                                    // 1 where the lidar is sure of the roof's hipped or gabled ends (for the clash check)
+  lt?: number;                                    // 1 on a row house whose lidar roof has a level top: a box dormer or a flat roof (for the clash check)
   ch?: number[][];                                // chimney stacks
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
@@ -90,7 +91,11 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number };   // grass, dirt, gravel: paths the map says are made of that; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge)
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; bed?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number; pl?: number };   // grass, dirt, gravel: paths the map says are made of that; bed: the railway's bed, met by the ground, its ballast drawn by railway.ts; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge); pl: paths, front paths and drives are written level across, drawn at their written height
+  // the ground as one sheet with the faces (tools/partition/sheet.py; drawn unless ?ground=old): the cells under faces as
+  // run lengths, the grid points carved or built up to meet the faces (h, by hz decimetres), the face corners where the ground
+  // meets a face below or above its top (s, by sz centimetres: a retaining wall), the square's wall for those, and the cells where faces overlap (x), drawn whole
+  gs?: { n: number; c: ArrayLike<number>; h: ArrayLike<number>; hz: ArrayLike<number>; s: ArrayLike<number>; sz: ArrayLike<number>; w: string; x: ArrayLike<number> };
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
@@ -101,6 +106,7 @@ export interface MapData {
   tn?: Tunnel[];                                  // tunnels you can walk through
   tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
   sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
+  so?: number[][][];                              // set pieces' outlines (landmarks/setpieces.ts), for the faces they lay their own ground over
   // crossings and traffic lights: x, y, ground, the street's direction, kind (z a zebra, p a crossing with lights, s lights at a
   // junction), the carriageway's width (furniture.ts draws them; the driving examiner can ask whether you stopped)
   cx?: (number | string)[][];
@@ -154,19 +160,21 @@ export function gateShape(gt: (number | string)[], z0: number) {
 
 /** How tall a wall, fence, hedge or railing stands: its measured height, else its kind's. */
 export function barrierHeight(l: Line): number { return l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5; }
-/** The top of barrier l at its point i (scene Y, the map's base height z0): it runs straight from
- *  one point's top to the next's. world.ts draws it so and the walls you hit are built from it. */
 /** A long straight stretch of wall, fence or hedge follows the ground between its ends. The map
  *  can have one as just its two ends (the Royal Crescent's ha-ha is 139 m in one go), and a stretch
  *  is drawn and made solid straight from one point's height to the next's, so over a dip or a rise
  *  in between it floated over the grass or sank into it. A stretch longer than STRETCH whose ends
  *  stand on the ground is cut every few metres, each new point as high over the ground there as its
- *  ends are over theirs. Done to each square as it loads (tiles.ts) and to the first area (loadMap),
- *  before the game builds anything from it; nothing goes over the network. */
+ *  ends are over theirs. A stretch whose ground strays no more than DIP below or RISE above the
+ *  straight line between its ends is left as it is: the map tools already put a point in at each
+ *  fold of the ground that strays further (tools/partition/write_tile.py, walls_follow_the_ground,
+ *  with the same two limits), so their squares' walls aren't cut again for nothing. Done to each
+ *  square as it loads (tiles.ts) and to the first area (loadMap), before the game builds anything
+ *  from it; nothing goes over the network. */
 export function drapeBarriers(d: MapData) {
   const T = d.t;
   if (!T?.h?.length) return;
-  const STRETCH = 6, STEP = 3, ON = 0.6;
+  const STRETCH = 6, STEP = 3, ON = 0.6, DIP = 0.1, RISE = 0.2;
   const ground = (x: number, y: number) => {
     const fi = (x - T.x0) / T.dx, fj = (y - T.y0) / T.dy;
     if (!(fi >= 0 && fj >= 0 && fi <= T.nx - 1 && fj <= T.ny - 1)) return NaN;
@@ -181,13 +189,15 @@ export function drapeBarriers(d: MapData) {
       if (len > STRETCH) {
         const ga = ground(a[0], a[1]), gb = ground(b[0], b[1]);
         if (Math.abs(a[2] - ga) < ON && Math.abs(b[2] - gb) < ON) {
-          out ??= l.p.slice(0, i + 1);
-          const n = Math.ceil(len / STEP);
+          const n = Math.ceil(len / STEP), cut: number[][] = [];
+          let strays = false;
           for (let k = 1; k < n; k++) {
             const f = k / n, x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f, g = ground(x, y);
-            const z = a[2] + (b[2] - a[2]) * f + (Number.isFinite(g) ? g - (ga + (gb - ga) * f) : 0);
-            out.push([x, y, +z.toFixed(2)]);
+            const off = Number.isFinite(g) ? g - (ga + (gb - ga) * f) : 0;
+            if (off < -DIP || off > RISE) strays = true;
+            cut.push([x, y, +(a[2] + (b[2] - a[2]) * f + off).toFixed(2)]);
           }
+          if (strays) (out ??= l.p.slice(0, i + 1)).push(...cut);
         }
       }
       out?.push(b);
@@ -196,6 +206,8 @@ export function drapeBarriers(d: MapData) {
   }
 }
 
+/** The top of barrier l at its point i (scene Y, the map's base height z0): it runs straight from
+ *  one point's top to the next's. world.ts draws it so and the walls you hit are built from it. */
 export function barrierTop(l: Line, i: number, z0: number): number { return l.p[i][2] - z0 + barrierHeight(l); }
 export const BARRIER_HEIGHT: Record<string, number> = {
   // A jump clears about 1.6 m, and anything up to 2.6 m can be climbed (player.ts). Walls the
@@ -270,8 +282,19 @@ export function footballPosts(p: Oblong): number[][] {
 }
 
 const CELL = 8;
-/** The deepest a bridge's deck is drawn, top to underside (world.ts KINDS). */
+/** How deep each kind of bridge's deck is drawn, from the road on it to its underside (world.ts builds them). */
+export const BRIDGE_DECK: Record<string, number> = { arch: 0.9, beam: 1.1, truss: 0.9, foot: 0.45, suspension: 0.45 };
+/** Under a bridge with nothing of it drawn just there, its ceiling is this far under its road. */
 const DECK_DEPTH = 1.1;
+const FOOT_CLASSES = new Set(["footway", "path", "cycleway", "steps", "bridleway"]);
+/** What kind of bridge a road's is: the map's `bt`, or for a map built without it, a footbridge
+ *  for a path, beams for a trunk road and stone arches for the rest. */
+export function bridgeKind(r: { bt?: string; c: string }): string {
+  if (r.bt && BRIDGE_DECK[r.bt] !== undefined) return r.bt;
+  return FOOT_CLASSES.has(r.c) ? "foot" : r.c === "trunk" || r.c === "motorway" ? "beam" : "arch";
+}
+/** How far a bridge's road is drawn over the height the map gives it: a kerbed street's, more. */
+export function deckLift(c: string): number { return KERBED.has(c) ? 0.2 : 0.1; }
 /** Feet so far down that blocked() finds every trunk and post, wherever it stands. */
 export const ANY_HEIGHT = -1e9;
 /** How far under the ground something stands on (a house, a garden wall, a strange structure) you
@@ -358,8 +381,13 @@ export class GameMap {
   // the detailed terrain grid's far edges (data coords)
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
-  private decks: { p: number[][]; half: number; left: number; right: number }[] = [];
+  // and how far under its road its flat underside is drawn
+  private decks: { p: number[][]; half: number; left: number; right: number; drop: number }[] = [];
   private deckCells = new Map<number, number[]>();
+  // the arches drawn under bridges (world.ts), each stretch of barrel in scene coords: [ax, az, bx, bz,
+  // half its width, the road's height over it at a and b, the barrel's at a and b], by cell
+  private arches: number[][] = [];
+  private archCells = new Map<number, number[]>();
   // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
   private tA: number[][] = []; private tB: number[][] = [];
   private tunnelCells = new Map<number, number[]>();
@@ -538,7 +566,7 @@ export class GameMap {
         for (const side of [1, -1]) {
           const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
           // (down only to the deck's underside, so a road or path passing under has no wall across it)
-          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, Math.min(tops[i], tops[i + 1]) - DECK_DEPTH, tops[i + 1] + 1.25);
+          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, Math.min(tops[i], tops[i + 1]) - deckDrop(r), tops[i + 1] + 1.25);
         }
       }
     }
@@ -551,7 +579,7 @@ export class GameMap {
       // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
       // (out to its parapets, each side its own: a side with no pavement stops at its kerb)
       const k = this.decks.length, half = deckHalf(r) + 0.2, [hl, hr] = deckSides(r), seen = new Set<number>(), flags = spanFlags(r, g, this.z0);
-      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half, left: hl + 0.2, right: hr + 0.2 });
+      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
         for (let s = 0; s <= n; s++)
@@ -937,6 +965,16 @@ export class GameMap {
     return Math.max(g, extra);
   }
 
+  /** Whether a set piece standing here draws a surface to stand on at data x, y between lo and hi
+   *  (heights above sea level, as the map's faces are written). */
+  setPieceSurface(x: number, y: number, lo: number, hi: number): boolean {
+    for (const k of this.pieceCells.get(key(Math.floor(x / CELL), Math.floor(-y / CELL))) ?? []) {
+      const p = this.pieces[k], dx = x - p.x, dy = y - p.y;
+      if (surfaceBetween(p.sh, dx * p.c + dy * p.s, dx * p.s - dy * p.c, p.y0, lo - this.z0, hi - this.z0)) return true;
+    }
+    return false;
+  }
+
   private floorHere(x: number, z: number, y: number): number {
     let g = this.inTunnel(x, z, y) ?? this.ground(x, z);
     const on = (cx: number, cz: number, a: number, hl: number, hw: number, top: number) => {
@@ -1197,7 +1235,8 @@ export class GameMap {
 
   /** The surface as it's drawn (world.ts `surface`): the streets' faces and the terrain let down
    *  under them. Once the scene is built, everything stands on it, so what you walk and drive on is
-   *  what you see, not the survey's grid a metre under a street or above one in a cutting. */
+   *  what you see, not the survey's grid a metre under a street or above one in a cutting. Unless
+   *  ?ground=old, a square's ground is its sheet (world.ts, sheet.ts), cut along the faces' edges. */
   private drawn: ((x: number, z: number) => number) | null = null;
   standOnDrawn(surface: ((x: number, z: number) => number) | null) { this.drawn = surface; }
 
@@ -1362,9 +1401,50 @@ export class GameMap {
   ceiling(x: number, z: number, y: number): number | null {
     const b = this.boreAt(x, z);
     if (b && this.inTunnel(x, z, y) === b[0]) return b[0] + b[2];
-    const over = this.overhead(x, z, y + 0.6);
-    return over === null ? null : over - DECK_DEPTH;
+    return this.underside(x, z, y + 0.6);
   }
+
+  /** The underside of the lowest bridge over scene (x, z) whose road is above y, as it's drawn, or
+   *  null: its arch's barrel where one is drawn over here, else the flat underside of its kind of deck. */
+  private underside(x: number, z: number, y: number): number | null {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.underside(x, z, y);
+    let low: number | null = null, drop = DECK_DEPTH;
+    for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const { p, half } = this.decks[k];
+      for (let i = 0; i < p.length - 1; i++) {
+        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        const h = a[2] + (b[2] - a[2]) * t;
+        if (h > y && (low === null || h < low)) { low = h; drop = this.decks[k].drop; }
+      }
+    }
+    if (low === null) return null;
+    // (an arch belongs to the deck whose road it's under: within a hand of the same height)
+    let arch: number | null = null, near = 0.3;
+    for (const k of this.archCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const [ax, az, bx, bz, half, ta, tb, ua, ub] = this.arches[k], vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz || 1;
+      const t = Math.min(1, Math.max(0, ((x - ax) * vx + (z - az) * vz) / l2));
+      if (Math.hypot(x - ax - vx * t, z - az - vz * t) >= half) continue;
+      const off = Math.abs(ta + (tb - ta) * t - low);
+      if (off < near) { near = off; arch = ua + (ub - ua) * t; }
+    }
+    return arch ?? low - drop;
+  }
+
+  /** A stretch of an arch's barrel drawn under a bridge (world.ts), for its ceiling: from data (ax, ay)
+   *  to (bx, by), half wide, under the bridge's road at heights ta and tb, the barrel at ua and ub (scene). */
+  addArch(ax: number, ay: number, bx: number, by: number, half: number, ta: number, tb: number, ua: number, ub: number) {
+    const k = this.arches.length, seen = new Set<number>();
+    this.arches.push([ax, -ay, bx, -by, half, ta, tb, ua, ub]);
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / (CELL / 2)));
+    for (let s = 0; s <= n; s++)
+      for (const c of this.cellsAround(ax + (bx - ax) * s / n, -(ay + (by - ay) * s / n), half))
+        if (!seen.has(c)) { seen.add(c); push(this.archCells, c, k); }
+  }
+  /** Forget the arches, before the scene is built again. */
+  clearArches() { this.arches = []; this.archCells.clear(); }
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
    *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of
@@ -2126,6 +2206,8 @@ export function roadHalf(c: string, w?: number): number {
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   return (RW[c] ?? 4) / 2;
 }
+/** How far under a bridge's road (the map's height for it) its deck's flat underside is drawn. */
+function deckDrop(r: { bt?: string; c: string }): number { return BRIDGE_DECK[bridgeKind(r)] - deckLift(r.c); }
 /** Streets with kerbs and a pavement each side, and how wide the pavement is. */
 export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
 export const PAVE = 1.7;

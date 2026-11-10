@@ -3,10 +3,10 @@
 For checking over. The plan itself is `docs/plans/fps-round2.md`; this says what has been done
 against it, what the numbers were, and what is left.
 
-All figures are from Dan's Mac, route 1 of `tools/fpsprobe.mjs` (Combe Down → town → back, 2.7 km
+All figures are from the build Mac, route 1 of `tools/fpsprobe.mjs` (Combe Down → town → back, 2.7 km
 at 20 m/s) unless it says otherwise.
 
-## Shipped, live on Spencer's `main`
+## Shipped, live on the maintainer's `main`
 
 | step | what it does | evidence |
 |---|---|---|

@@ -35,8 +35,8 @@ counts, and their roofs are guessed. That is expected, not a fault.
 - **Energy certificates** (wall materials, bungalows; England and Wales): need an account at
   get-energy-performance-data.communities.gov.uk and a manual download. `docs/new-area.md`,
   "Energy certificates".
-- **HM Land Registry parcels** (INSPIRE): only Bath's partition build reads them. A new map does
-  not use the partition. Do not set `partition=True` in `tools/area.py`.
+- **HM Land Registry parcels** (INSPIRE): the partition reads them where a map has them; `build`
+  does not fetch them for a new map. Do not add them by hand.
 - **A canal with locks**: needs a hand-written pack in `tools/canal.py`.
 - **Landmarks and set pieces** (spires, porticos, a famous building): hand-made in code.
 - **Zones** (`zones=[...]` in `tools/area.py`): leave the list empty. The census and conservation

@@ -152,7 +152,8 @@ def _is_main(node):
 
 def _uses(node):
     """The plain names a piece of code uses, and `name.attr` for each attribute taken off a name. A
-    name the function binds itself (an argument, or assigned in it) is its own, not the module's."""
+    name the function binds itself (an argument, assigned in it, or a function defined in it) is its
+    own, not the module's."""
     out, own = set(), set()
     bases = {id(n.value) for n in ast.walk(node) if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)}
     for n in ast.walk(node):
@@ -167,6 +168,9 @@ def _uses(node):
             out.add(f"{n.value.id}.{n.attr}")
         elif isinstance(n, ast.arg):
             own.add(n.arg)
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n is not node:
+            # a helper defined inside is the function's own: one called `once` is not the module
+            own.add(n.name)
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         out = {u for u in out if u.partition(".")[0] not in own}
     return out

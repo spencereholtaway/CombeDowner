@@ -37,7 +37,7 @@ def corridors(lines):
 
 
 class UnreachablePlotsTest(unittest.TestCase):
-    """Dan's three cases for "a plot nobody can get to". The definition is about reachability, not
+    """The co-developer's three cases for "a plot nobody can get to". The definition is about reachability, not
     about which edge carries which source: a mid-terrace house whose footprint fronts the pavement
     is reached through its front door, and its plot never touching the street is the ordinary case."""
 

@@ -1,4 +1,4 @@
-"""The stage's own checks on a written tile, before Dan looks at it.
+"""The stage's own checks on a written tile, before the co-developer looks at it.
 
 Three things must hold in the tile the writer produced, and each is a way the game would be visibly
 wrong:

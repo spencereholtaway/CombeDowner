@@ -11,7 +11,7 @@
 //
 // Video: automatic (quality.ts), draw distance (view.ts), resolution, the retro look and depth of field (post.ts), field of view (view.ts,
 // used by game.ts), how far the shadows reach (Off to Ultra, a share of the draw distance: shadows.ts), and
-// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), how far off lit street lamps show after dark and how many light the street (Low to Max: view.ts, world.ts), and the debug panel (debug.ts, also F3). Choosing a distance, resolution or shadows yourself turns automatic off.
+// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), how far off lit street lamps show after dark and how many light the street (Low to Max: view.ts, world.ts), the debug panel (debug.ts, also F3), and the new ground (world.ts; changing it in a game reloads the page where you stand). Choosing a distance, resolution or shadows yourself turns automatic off.
 // Controls: mouse sensitivity, turning the look round for the mouse and
 // for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
 // rumble (gamepad.ts keeps those).
@@ -73,6 +73,8 @@ interface Hooks {
   scene: () => THREE.Scene;
   /** Mouse sensitivity changed (the game turns it into radians per pixel). */
   onSensitivity: (v: number) => void;
+  /** Where to reload to so you come back where you're standing (null with no game on): the ground is built as each square loads. */
+  here: () => string | null;
 }
 
 /** Wire up the Settings page and the buttons that open it. Returns what the automatic settings (quality.ts) need. */
@@ -81,6 +83,7 @@ export function settingsPage(h: Hooks) {
   const viewSel = $<HTMLSelectElement>("set-view"), resSel = $<HTMLSelectElement>("set-res");
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
   const auto = $<HTMLInputElement>("set-auto");
+  const ground = $<HTMLInputElement>("set-ground");
   const detail = $<HTMLSelectElement>("set-detail"), detailHint = $("set-detail-hint");
   const lights = $<HTMLSelectElement>("set-lights"), lightsHint = $("set-lights-hint");
   const shadows = $<HTMLSelectElement>("set-shadows"), shadowsHint = $("set-shadows-hint"), fx = $<HTMLInputElement>("set-fx"), dof = $<HTMLInputElement>("set-dof"), dbg = $<HTMLInputElement>("set-debug");
@@ -125,6 +128,7 @@ export function settingsPage(h: Hooks) {
     fx.checked = h.post.retroLook;
     dof.checked = depthOfField;
     dbg.checked = h.debug.open;
+    ground.checked = load("cd-ground", 1) !== 0;
     calm.checked = passive;
     sens.value = String(sensitivity);
     music.value = String(load("cd-music", MUSIC));
@@ -170,6 +174,12 @@ export function settingsPage(h: Hooks) {
   fx.onchange = () => h.post.setRetroLook(fx.checked);
   dof.onchange = () => setDepthOfField(dof.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);
+  // squares already built keep the ground they were built with, so this takes from the next game
+  ground.onchange = () => {
+    keep("cd-ground", ground.checked);
+    const url = h.here();
+    if (url) location.replace(url);
+  };
   calm.onchange = () => setPassive(calm.checked);
   menuCalm.onchange = () => setPassive(menuCalm.checked);
   sens.oninput = () => setSens(Number(sens.value));

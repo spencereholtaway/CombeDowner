@@ -1,7 +1,7 @@
 # Handover: the village loaded as nine ordinary squares
 
-Written 2026-10-15 for the agent taking this over. Branch `claude/village-squares` on Dan's fork
-(`danturn/CombeDowner`), at the commit that adds this file. The original plan and its reasoning are in
+Written 2026-10-15 for the agent taking this over. Branch `claude/village-squares` on the fork
+(the fork), at the commit that adds this file. The original plan and its reasoning are in
 `/mnt/project-files/combe-downer/village-squares/plan.md`; this file says what is done, what is left,
 and how to finish it. The prompt to start an agent on it is at the bottom.
 
@@ -9,22 +9,22 @@ and how to finish it. The prompt to start an agent on it is at the bottom.
 
 Combe Down's nine squares (0..2 each way) load exactly like every other square of Bath. There are no
 special cases apart from the minigames (the mines and the deli). The result has to be **proved the
-same** as today's village, using a probe on Dan's Mac. The minimap also gets the village's 4 m ground
+same** as today's village, using a probe on the build Mac. The minimap also gets the village's 4 m ground
 detail everywhere in Bath.
 
-Dan's words: "those sound fine if we do it carefully and dont merge anywhere without confirmation".
+The co-developer's words: "those sound fine if we do it carefully and dont merge anywhere without confirmation".
 
-## Rules for this work (Dan's, all still in force)
+## Rules for this work (the co-developer's, all still in force)
 
-- **Nothing is merged into any `main`** (Dan's fork or Spencer's) **without Dan saying so.** This
+- **Nothing is merged into any `main`** (the fork's or the maintainer's) **without the co-developer saying so.** This
   overrides the "merge and push main straight away" line in `CLAUDE.md`. Work on
   `claude/village-squares` and push only there, plus `claude/village-squares-data` for rebuilt map
-  files. When Dan does say merge, Spencer's `main` is pushed through the project's coordinator.
+  files. When the co-developer does say merge, the maintainer's `main` is pushed through the project's coordinator.
 - **No browser runs in the cloud container**: no screenshots, frame rates or probes there. All of
-  that runs on Dan's Mac (see "Running things on the Mac").
+  that runs on the build Mac (see "Running things on the Mac").
 - **Mac runs are muted, headless and never grab focus**, and leave no Chrome, node or server running.
-- **Map work goes to Dan's fork first.**
-- **Talk to Dan simply.** He has asked several times for plain explanations. Lead with the answer.
+- **Map work goes to the fork first.**
+- **Talk to the co-developer simply.** He has asked several times for plain explanations. Lead with the answer.
 - Commit trailer, and messages in the repo's style (a plain sentence about what changed for the player).
 
 ## What is done (all on the branch, build passes)
@@ -99,7 +99,7 @@ new code runs on both layouts, and the data switches in step 2 below.
 
 ### 3. Loose ends found in the code
 
-- **Waiting buses out in Bath: done.** Dan answered (2026-10-15): buses go all over Bath, doing what
+- **Waiting buses out in Bath: done.** The co-developer answered (2026-10-15): buses go all over Bath, doing what
   they do in the village today — a double-decker or minibus parked at the kerb at some stops (the
   same 1-in-3 chance, `startWith`), waiting until someone gets in and drives one. Nothing new drives
   itself; buses are not part of the traffic (`traffic.ts` is cars only).
@@ -113,7 +113,7 @@ new code runs on both layouts, and the data switches in step 2 below.
     shared, as `geos`/`busMats`/`paints` already were for everything else, so a bus can be removed
     without leaking what it built.
   - Answering a bus call already worked anywhere in Bath (`stopsNear`, `stopNear`, `callBus`).
-  - Follow-ups Dan's review of 6db5abf raised, all done: `started` is recorded even when the vehicle
+  - Follow-ups the co-developer's review of 6db5abf raised, all done: `started` is recorded even when the vehicle
     already exists, so a guest that becomes host still sends `k` for the buses it built from the old
     host's word; `spawnStarted` rejects a kind or paint that isn't real (the field arrives from
     another player); and a guest lets go a start-up vehicle the host has stopped listing, unless
@@ -135,25 +135,25 @@ new code runs on both layouts, and the data switches in step 2 below.
     and `wide.ts` and `minimap.ts` draw it);
   - names on short streets on the big map.
 - **Network ids changed** for village pitches, cars and buses. A player still on an old page in the
-  same room disagrees until they reload. That's accepted; say so in the merge message to Dan.
+  same room disagrees until they reload. That's accepted; say so in the merge message to the co-developer.
 - **`NOTES-FOR-AGENTS.md`:** keep the "in progress" entry up to date. Its older "Village built as 9
   normal squares (done, on main)" entry says game code reading `map.d` is unchanged, which stops
   being true at merge: rewrite it then.
 - **`CLAUDE.md` and `README.md`** on the branch already describe the new layout (C5). Check they're
   still true after step 2.
 
-### 4. Report to Dan and wait
+### 4. Report to the co-developer and wait
 
-- Write Dan a short, plain summary: what changed for players (nothing visible except the sharper
+- Write the co-developer a short, plain summary: what changed for players (nothing visible except the sharper
   minimap and pints at pubs in town), the c5 loading comparison, the clash counts, the waiting-bus
   question, and a link to the shots.
 - **Then wait for his "merge".**
 - On his word:
   1. Fetch both mains.
-  2. Merge `origin/main` (and Spencer's main) into the branch, keeping both sides.
+  2. Merge `origin/main` (and the maintainer's main) into the branch, keeping both sides.
   3. Build.
   4. Push the branch.
-  5. Ask the coordinator to merge it to Spencer's `main`.
+  5. Ask the coordinator to merge it to the maintainer's `main`.
 
 ### 5. Later (the plan's C7, not part of this)
 
@@ -187,7 +187,7 @@ new code runs on both layouts, and the data switches in step 2 below.
      `push:` and `alone:`.
 2. Send the project's coordinator session one line: "`macq-<name>.req.md` is waiting". Find the
    session id with `mcp__hearthbot__get_channel_session_id`.
-3. The Mac polls every few minutes. Don't ask Dan to paste anything.
+3. The Mac polls every few minutes. Don't ask the co-developer to paste anything.
 4. Results come back as `macq-<name>.done.md` plus the returned files, all in `/mnt/project-files/`.
    To cancel a queued request, delete its `.req.md` and tell the coordinator.
 5. `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check] [--shots views.json] [--push <branch>]`
@@ -197,8 +197,8 @@ new code runs on both layouts, and the data switches in step 2 below.
 
 ## Prompt for the next agent
 
-> You're taking over the "village loaded as nine ordinary squares" work on Combe Downer, in Dan's
-> fork `danturn/CombeDowner`, branch `claude/village-squares`. Read `CLAUDE.md`,
+> You're taking over the "village loaded as nine ordinary squares" work on Combe Downer, in the
+> fork, branch `claude/village-squares`. Read `CLAUDE.md`,
 > `NOTES-FOR-AGENTS.md`, then `docs/plans/village-squares.md` on that branch: it says what's done,
 > what the Mac has measured, and what's left, in order.
 >
@@ -207,14 +207,14 @@ new code runs on both layouts, and the data switches in step 2 below.
 > Then work through steps 1 to 4 of the plan.
 >
 > Hard rules:
-> - Never merge into any `main` without Dan explicitly saying so in his own words. Push only to
+> - Never merge into any `main` without the co-developer explicitly saying so in his own words. Push only to
 >   `claude/village-squares` (and the Mac pushes rebuilt data to `claude/village-squares-data`).
 > - Never run a browser, probe, screenshot or frame-rate test in the cloud container: send those
->   to Dan's Mac with a `macq-<name>.req.md` request, as the plan describes.
+>   to the build Mac with a `macq-<name>.req.md` request, as the plan describes.
 > - `cd web && npm run build` must pass before every push.
 > - The waiting-buses question is answered: buses go all over Bath, parked at the kerb at stops
 >   until someone gets in, exactly as in the village today (step 3). Don't add self-driving buses.
 >
-> Keep Dan's messages short and plain: lead with the answer, say what was checked, and ask
+> Keep the co-developer's messages short and plain: lead with the answer, say what was checked, and ask
 > questions he can answer in one word. Update the plan file and `NOTES-FOR-AGENTS.md` as things
 > change.

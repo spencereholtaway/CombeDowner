@@ -1,4 +1,4 @@
-# Stage 4 questions, aimed at Dan walking square 0,0
+# Stage 4 questions, aimed at the co-developer walking square 0,0
 
 The goal for the first cut is narrow: **one reference square, loaded in the game, walked around**. So
 the target is one tile file, `web/public/maps/combe-down/0_0.json`, written from the partition, which
@@ -29,7 +29,7 @@ to look like a place?
 The plan says "from the current build's building pass", with the cleaned footprints replacing its
 footprints, and the partition's own plot data is not the building geometry. My reading is that the
 right first move is **copy `bl` from the existing 0,3-style tile for the same square** and leave it
-alone — the footprints are not what stage 4 is testing. Is that right, or does Dan want the cleaned
+alone — the footprints are not what stage 4 is testing. Is that right, or does the co-developer want the cleaned
 footprints written so the sliver-gap joins show?
 
 **3. `rd`: one record per corridor stretch, or per street?**
@@ -72,7 +72,7 @@ carriageway flattened to the profile. **For a first walk, is that the thing to d
 the existing build unchanged and leave `sinkUnder` to flatten the strips as it does now?** The second is
 much less work and would look the same, since the game is still drawing roads as strips at this stage.
 
-**8. How does Dan load it?**
+**8. How does the co-developer load it?**
 Is the way to walk a single new tile `prep_tiles.py`'s stitch plus the game's own map list, or is there
 a quicker path (a dev server pointed at one square)? And is 0,0 the square he wants, or would 0,3
 (the city centre, which has a tile already to compare against) be a better first one?

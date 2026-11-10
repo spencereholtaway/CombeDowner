@@ -172,18 +172,18 @@ node instead of cutting across.
 
 ## The village
 
-- [ ] **Spencer's main now builds the village as nine ordinary squares**, so the writer does them
+- [ ] **The maintainer's main now builds the village as nine ordinary squares**, so the writer does them
   like any other.
 - [ ] **The new village has a few more wall clashes than the old one** (doubled 0 → 5, a metre
   apart 5 → 23, stubs 0 → 10, two walls standing in a road: a service lane at (-1817, 1299) and
   Prior Park Road at (-435, 1339)), about the rate of the rest of the city's partition build. It
   has far fewer buildings in the road (112 → 11 on a carriageway, 262 → 2 on a pavement).
 
-## Spencer's main
+## The maintainer's main
 
 - [ ] **One-way streets are carried over from the old build's roads** (`carry_one_way`): a new
   stretch takes the way of the old road it lies along. Check traffic on a one-way street in town.
-- [x] **Wall styles follow Spencer's rules.** A lidar wall keeps the style `walls.py` gave it from
+- [x] **Wall styles follow the maintainer's rules.** A lidar wall keeps the style `walls.py` gave it from
   its area and height (stone wall, low brick wall, high brick wall) and a mapped retaining wall
   stays one (`evidence_of`), where before all were flattened to "wall"; a front garden with nothing
   seen along it is rolled from `gardens.STYLE`'s mix for its area, once per 150 m along the street
@@ -223,7 +223,7 @@ node instead of cutting across.
   `out/city-fresh`). A rebuild of pass 3 alone reused garden divisions from 18 October against
   streets fitted that day and doubled ten times as many walls (39 to 377); built together, the clash
   check matches the last map but for one more footbridge span sunk in the ground (5 to 6).
-- [ ] **The map is 211 MB against 177 MB** before paths had faces (Spencer's is 154 MB): the paths'
+- [ ] **The map is 211 MB against 177 MB** before paths had faces (the maintainer's is 154 MB): the paths'
   outlines carry a point every 3 m.
 - [ ] **`tools/partition/watertight.py` measures what's left**: on three squares, gaps and overlaps
   0, street faces against the partition's 108 m2 either way (the 5 cm simplifying), 7 m2 drawn
@@ -231,7 +231,7 @@ node instead of cutting across.
   a street. Over the city: gaps and overlaps 0, 1,419 m2 missing and 1,390 extra, 22 drawn twice,
   1,133 of path undrawn, 1,540 trees and 879 shrubs on a street.
 - [ ] **A "position is NaN" warning showed on two of four drives into town on the new map**, none on
-  Spencer's map, and not on a run with every mesh checked, so it comes and goes: probably something
+  the maintainer's map, and not on a run with every mesh checked, so it comes and goes: probably something
   that moves (traffic on the carried-over one-way streets?) rather than the scenery. Nothing wrong
   could be seen. `tools/fpsprobe.mjs --route` shows it.
 
@@ -245,7 +245,7 @@ node instead of cutting across.
 - [ ] **A tree that can't be moved stays on the pavement as a street tree** (the 238). A shrub that
   can't, or a tree on a path, goes: 459 more trees and 371 more shrubs dropped across the city.
 
-## From Dan's walk on 22 October
+## From the co-developer's walk on 22 October
 
 - [x] **Walls and hedges beside a street hung above the grass**, with daylight under them: the
   ground there is pulled down to tuck it under the street, and a wall's foot went only 0.4 m below
@@ -290,7 +290,7 @@ node instead of cutting across.
 - [x] **Canal footbridges keep their headroom.** The step that brings a footbridge over a stream
   down to its banks now leaves one over the canal alone: "road through the canal" 4 to 0.
 
-## Things on Spencer's main that the partition build lacked (23 October)
+## Things on the maintainer's main that the partition build lacked (23 October)
 
 Six spots compared square by square against main's tiles.
 
@@ -343,7 +343,7 @@ Six spots compared square by square against main's tiles.
 - [ ] **Doors within 1.6 m of a second boundary get no gate of their own**, so a fence is not split
   from its double ("walls a metre apart"). This leaves about 1.1k fewer paths than without the rule.
 
-- [ ] **Bridge headroom is 13 against main's 1, on Spencer's latest squares.** The cycleway over the
+- [ ] **Bridge headroom is 13 against main's 1, on the maintainer's latest squares.** The cycleway over the
   trunk link near 2_5 (A4 east of Bath), a trunk over a footway and a service over a footway at -5_6
   have 0.4 to 2.8 m of headroom. The old base had 12, so the merges did not cause it, but main's
   road smoothing has fixed what ours has not. Check whether the partition's road levelling drops
@@ -385,7 +385,7 @@ Six spots compared square by square against main's tiles.
 ## Speed (23 October)
 
 - [ ] **Per-square setup slices still reach 55 to 65 ms** (squares 1,3 and 0,3, phase "landmarks" in
-  `map.ts`), and "landmarks-tunnels" 42 to 47 ms in the build. Spencer's main shows the same
+  `map.ts`), and "landmarks-tunnels" 42 to 47 ms in the build. The maintainer's main shows the same
   (59 to 62 ms setup, 41 ms build), so they are not the partition's. The 90 ms "roads" slice from the
   earlier route could not be reproduced in four runs; the first buildings after it now yield by the
   clock (6 ms) instead of every eight buildings, in case a run of big town buildings was the cause.
@@ -619,7 +619,7 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   (before 0.931 / 0.924 / 0.978, main 0.969 / 0.945 / 0.986); presence 0.967 unchanged. No check_map
   count moved.
 
-## Spencer's main merged in (23 October)
+## The maintainer's main merged in (23 October)
 
 - [ ] **Main merged at 6235fe9** (83 commits): the roof gate, OSTN15 for the lidar, and trees and
   lone fence stubs kept off fences. The writer starts from main's tiles (`--base`), so it takes main's
@@ -912,7 +912,7 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   away from the abutments, and the per-side standing reach. The kinds and the pier clearance need
   the map fields.
 
-## Merging Spencer's canal and bridge work
+## Merging the maintainer's canal and bridge work
 
 - [ ] **A bridge's pieces are joined end to end before it is built** (main's `joinSpans`), and the
   joined bridge carries every piece's `uo` stretches, moved along by where that piece starts on the
@@ -1090,11 +1090,11 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   counted a path's whole length within a metre of a pavement, so every path crossing a street
   (through both pavements) was a finding: 390 of the 415. With that, the partition has 9 against
   main's 70 (old rule: 415 and 462); the 9 are short stretches, 5 to 7 m, where a path meets a
-  pavement at a slant. The change is in Spencer's `check_map.py`: show him.
+  pavement at a slant. The change is in the maintainer's `check_map.py`: show him.
 
-## Bridges and streets together, on Spencer's latest main
+## Bridges and streets together, on the maintainer's latest main
 
-- [ ] **The fourth bridge pass and the streets-clear-of-buildings pass are merged**, with Spencer's
+- [ ] **The fourth bridge pass and the streets-clear-of-buildings pass are merged**, with the maintainer's
   main as of e196fd37 (Pulteney Road level over Bath Deep Lock, the Bailbrook and Spring Gardens
   Road underpasses, roads ramping up to bridge ends). The writer takes both the bridge pass's
   lock-pound polygons and the streets pass's lidar for measured widths. The whole map was written
@@ -1170,7 +1170,7 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 - [ ] **Too steep, 41 against main's 39.** 19 are trunk roads. The data (OSM and Overture both) has
   them as trunk; `prep_map.py` turns every trunk into primary (`CLASS`, from when the game drew no
   trunk), so main checks them at primary's 1 in 6.7 and the partition at trunk's 1 in 8. The
-  partition's class is the true one and the game draws trunk, so it is left: decide with Spencer
+  partition's class is the true one and the game draws trunk, so it is left: decide with the maintainer
   whether the check, or main, should change. Midford Road: 13 of our 14 are main's same 13 on its
   hill; the 14th (112,-1927) is where its bridge crosses into the next square: the writer drops the
   stub of span left in this square, with nothing under it here, and the first point drops 1.4 m
@@ -1180,7 +1180,7 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 
 - [ ] **A clean rebuild with fresh city-wide passes scored worse than the combined build**
   (carriageways within a metre 0.776 to 0.750). The combined build used passes from 23 October,
-  run before Spencer's lidar wall runs were read from the right spot and the walls came back across
+  run before the maintainer's lidar wall runs were read from the right spot and the walls came back across
   the outer edges. With the new runs, 812 street edges fitted differently: a run inside a tagged
   street (Cynthia Road, Second Avenue, Saint Mark's Road) made the fit drop the width tag. A street
   with a width tag is now fitted between buildings and mapped barriers only (`fit_cross_section`'s
@@ -1252,7 +1252,7 @@ same as main):
   changes today: run over the whole graph, Bailbrook is the only bore that differs); and each
   carriageway gets its own 4.8 m tube (`TUNNEL` in `web/src/map.ts`), narrower than a two-lane trunk.
   The game's tunnels still come from `prep_map.py`'s squares (`tn`), not the partition's `bored`.
-- [ ] **A tunnel is a bore under whole ground** (Dan, after the Bailbrook shots). The ground over a
+- [ ] **A tunnel is a bore under whole ground** (the co-developer, after the Bailbrook shots). The ground over a
   bore is the survey's, unbroken past the first 5 m inside each mouth (`tunnels.INTO`, dug so the
   slope up onto the hill falls inside the tube, where the game hides it: `prep_map.py` puts the rest
   back after the roads' easing, and the writer
@@ -1338,7 +1338,7 @@ same as main):
   `partition/pipeline.py`). A key's code is the functions the stage runs, found by reading the
   source and following the names they use; a function called by a name made at run time would be
   missed, so a build from an empty store compared with one from the store
-  (`tools/mac_build.sh --verify`, before each big merge into Spencer's main) is the check, and `cache.VERSION` is raised by hand when a stage's files change shape.
+  (`tools/mac_build.sh --verify`, before each big merge into the maintainer's main) is the check, and `cache.VERSION` is raised by hand when a stage's files change shape.
 - [ ] **A square is written again when the map's layers change within 1 km of it**
   (`stage.WRITER_REACH`), or any other data file at all. The writer reads nothing further out
   today; a new reader that does needs the reach raising.
@@ -1372,7 +1372,7 @@ same as main):
 
 ## A tunnel's bore as wide as its way (28 October)
 
-- [ ] **A bore is as wide as the way going in** (Dan: "tunnel bore should be same width as road").
+- [ ] **A bore is as wide as the way going in** (the co-developer: "tunnel bore should be same width as road").
   The writer gives each tunnel `hw`, half its width at every point (`write_tile.bore_widths`,
   `tunnels.bore_half`): the carriageway's `w` plus its pavements, or 0.5 m of floor each side where
   it has none; a path's width plus 1 m each side. It comes from the record meeting each portal, or
@@ -1391,7 +1391,7 @@ same as main):
 
 ## A tunnel's look and height follow what goes through it (28 October)
 
-- [ ] **Concrete for cars, stone for everything else, from the tunnel's own class** (Dan: style B
+- [ ] **Concrete for cars, stone for everything else, from the tunnel's own class** (the co-developer: style B
   for the Bailbrook Underpass and as the rule). `map.ts carriesTraffic` reads the record's `c`:
   motorway, trunk, primary, secondary, tertiary, unclassified, residential, living street, service
   and their links are drawn as a concrete box (`tunnels.ts portalStyle` "b"); anything else (a
@@ -1444,7 +1444,7 @@ same as main):
   no guessed fronts in the city centre) and `SUBURB_FRONTS`, and `plots.FRONT` for zones with no
   mix of their own, name Bath's zones. Every other map's zones fall through to their mixes in
   `gardens.STYLE`, so nothing breaks, but Cape Town's `cbd` keeps guessed fronts where a house
-  stands back more than 1.5 m. Left as tables for Dan to decide, because no data rule measured
+  stands back more than 1.5 m. Left as tables for the co-developer to decide, because no data rule measured
   keeps Bath as it is. Building cover within 120 m does not tell a city centre from a dense
   suburb: Cape Town's `cape` zone has a median of 0.29 against Bath's `bath` zone's 0.39. Shop signs
   per building within 120 m does tell them apart (`bath` median 0.43, 64% of houses at 0.2 or more;
@@ -1587,3 +1587,67 @@ same as main):
   wall tops were evened out and brought the hedge down to the pavement's height; Holcombe Close 3_4
   (1616,3365) has had it all along. The rule would be in the gardens step: set a guessed boundary
   back from the paving by half its width.
+- [ ] **Where the canal opens into the river, the river takes the canal's level** (rule 35). At
+  Widcombe the Avon's piece below the bottom lock reads 15.9 m from its banks and the canal's
+  bottom pound is 15.8 m; the river piece that touches the canal's mouth is set to the lower of the
+  two, so the two waters are one. The plan said the larger body's level, but the canal's levels
+  are the maintainer's and set its locks, so the river gives way. Pieces of one river cut by squares
+  still each take their own bank's level, so a step of a few centimetres can stand at a square's
+  edge; the sheet's single water level per reach would remove it.
+- [ ] **A level path's fill side is a plain stone face, not the area's own wall** (rule 26). With
+  paths written level across (`sf.pl`), the game carves the ground down to just under them and
+  raises it by up to a kerb to meet their edges; where the ground beside still falls further, the
+  path's edge face is drawn down to it, in stone when it is over 0.45 m, as a street's is. The co-developer asked
+  for a low retaining wall in the area's existing wall material there; the edge face is the
+  interim, and the writer's grid is not yet carved and filled to the paths' edges within the batter
+  rules (the game's carving does it on the drawn ground). The sheet makes both exact.
+- [ ] **Steps are sunk by cutting the drawn ground to a straight climb between their ends** (rule
+  33). The ground within three quarters of a cell of a flight's sides is let down to the straight
+  line between the true ground at its two ends, so the treads' edges meet the bank. A flight that
+  is not straight in height (a landing halfway) has its bank cut to the straight line all the same.
+- [ ] **A footpath steeper than 1 in 4 over 3 m becomes steps** (the co-developer's threshold, was 1 in 1.5 over
+  2 m). The heights are the 4 m grid's, so a path on a bank the grid sees as steep but the survey
+  doesn't can be stepped for a few metres.
+
+
+## The ground sheet, stage 3 (7 November)
+
+Behind `?ground=sheet`, on the twelve test squares. What was traded, to come back to:
+
+- [ ] **The sheet's cut cells are cut by the game, not baked.** The build writes only which cells
+  lie wholly under faces, the grid points carved or built up to meet them, and where a retaining
+  wall holds the ground off a face (`gs`, 1–5 KB gzipped a square, 0.5–1.1%). Writing the cut
+  cells' triangles out would have been about 12% more download a square, over the 5% gate, so
+  the game cuts each cell along the faces' free edges as the square loads (`web/src/sheet.ts`,
+  about 0.1 s a square under Node). `tools/partition/sheet.py` `Land` cuts them the same way for
+  the checks.
+- [ ] **Where faces of two heights meet at one corner, the ground meets the lower.** A free
+  edge's ends each have one ground height, the lowest face top there, so a pavement whose corner
+  touches a path a metre below it keeps a side face down to the path's level (counted by rule 26:
+  these are the faces' own heights, from stage 2, not the ground).
+- [ ] **A retaining wall is wherever a 3 m bank can't meet a face's edge** (more than 2 m of
+  cut or 1.5 m of fill), drawn in the square's commonest kind of wall. Ground held up by one beside
+  a face can stand over a face across a narrow gap, which rule 27's lumps now count (1–2 a square).
+  Its length is a figure of rule 26's ("retaining wall m"), not a fault.
+- [ ] **Bridges and steps are not attached to the sheet yet** (stage 4). The ground isn't built
+  up within a cell and a half of a deck or the water, but the sheet still meets a face's edge
+  where it ends at a deck, so a little more ground stands within half a metre of some decks'
+  undersides (rule 31, Cape Town most). Flights keep their treads as before; the ground beside
+  them is now the batter, not the cut to a straight climb.
+
+## The ground triangulated round the faces (9 November)
+
+The ground is one constrained triangulation round the faces (`web/src/sheet.ts`
+`buildSheetCdtGen`). The co-developer accepted two counts that went up with it:
+
+- [ ] **A footbridge's foot at 1_4 (-16, 3139): rule 30 up by one.** The ground stands 0.10 m up
+  through 0.2 m² of the deck's end. The triangulation puts a corner on a face's edge only where
+  the face has one, so the ground there is drawn between corners further apart than the old
+  grid's, and rises through the deck's end between them.
+- [ ] **Flights' treads: rule 33 up by three**, for the same reason: with fewer corners along the
+  flight's edge, the ground beside a flight is drawn as a straighter slope and buries or lets go
+  of a few treads' ends.
+
+  If they are looked at again, two ways to go: keep the grid's own points in the triangulation
+  near decks and flights (a few more triangles a square, only there), or put back the points
+  where the grid's lines cross a face's edge there, as the cell-by-cell sheet does.

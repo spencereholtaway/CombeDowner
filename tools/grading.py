@@ -25,6 +25,9 @@ ROUNDING = 0.1
 # road's bridge, so two ways crossing it at different heights with no bridge in the data are the
 # grading cutting one through a bump in the survey, not one passing over the other
 COARSE = 8.0
+# the cost each point's height adds to break ties between equally good gradings (`grade`): above the
+# solver's tolerance (1e-7), and twenty thousand times less than a point standing a metre off its survey
+TIE = 1e-4
 
 
 def terrain_detail(dem, px, least=1.3):
@@ -160,6 +163,19 @@ def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, joi
     nv = oq + nb
     lam = scale * scale
     c = np.concatenate([np.zeros(nn), weight, weight, np.full(ne, hard), np.full(nb, lam)])
+    # Where several gradings cost the same, the solver's pick depends on the order it meets the
+    # whole city's roads in, so a road added in one place moved heights by centimetres (and now and
+    # then by a metre) kilometres away. A cost far too small to matter otherwise makes one grading the
+    # cheapest wherever it is solved from: the lower of two, which digs rather than fills, each
+    # point's share drawn from where it is so that no two gradings still tie.
+    where = np.zeros((nn, 2))
+    for i, n in node.items():
+        where[n] = xy[i]
+    cell = np.round(where * 2).astype(np.int64)
+    u = ((cell[:, 0] * 73856093) ^ (cell[:, 1] * 19349663)) % 1000003 / 1000003.0
+    c[oz:oz + nn] += TIE * (0.5 + u)
+    c[oa:oa + nn] += TIE * u
+    c[ob:ob + nn] += TIE * (1 - u)
     # equalities: z - above + below = survey
     r = np.concatenate([np.arange(nn)] * 3)
     cc = np.concatenate([oz + np.arange(nn), oa + np.arange(nn), ob + np.arange(nn)])

@@ -209,8 +209,12 @@ def main(argv):
                                          (os.path.join(HERE, "measured.py"), "missed")),
                           cache.file_digest(KEPT), cache.libraries())
     data = data_keys(map_id, src_dir, store, wanted)
+    from partition import LON0, LAT0, setpiece_cuts
+    from partition.data import box_of
+    cuts = cache.file_digest(os.path.join(HERE, "setpiece_cuts.py"))
     wkey = lambda t: digest([os.path.join(base, name(t) + ".json")],
-                            (passes["partition"].get(name(t)), passes["upstream"], data[t], writer))
+                            (passes["partition"].get(name(t)), passes["upstream"], data[t], writer,
+                             *((cuts, k) if (k := setpiece_cuts.key((LON0, LAT0), box_of(*t))) else ())))
     out_of = lambda t: os.path.join(out_dir, name(t) + ".json")
     todo, copy = [], []
     for t in wanted:

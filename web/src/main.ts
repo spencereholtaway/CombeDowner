@@ -273,7 +273,10 @@ function notePlaying() {
   try { sessionStorage.setItem(PLAYING_KEY, JSON.stringify({ code: playingCode, map: current.id, t: Date.now() })); } catch { /* storage may be blocked */ }
 }
 addEventListener("pagehide", notePlaying);
-const refreshed = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload";
+// (or reloaded by the game itself, to put you back where you stood: Settings' new ground)
+const RELOADED_KEY = "cd-reloaded";
+const refreshed = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload"
+  || (() => { try { const r = sessionStorage.getItem(RELOADED_KEY); sessionStorage.removeItem(RELOADED_KEY); return !!r; } catch { return false; } })();
 const wasPlaying = ((): { code: string; map: string } | null => {
   if (!refreshed) return null;
   try {
@@ -827,12 +830,22 @@ $("copy").onclick = async () => {
 };
 
 // F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
-const debug = new DebugPanel(renderer, camera, () => game);
+const debug = new DebugPanel(renderer, camera, () => game, () => current.world.scene);
 $("debugbtn").onclick = () => debug.toggle();
 fullscreenButton($("fullscreen"));
 const pictureHooks = settingsPage({
   post, debug, renderer, scene: () => current.world.scene,
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
+  here: () => {
+    if (!game) return null;
+    notePlaying();
+    try { sessionStorage.setItem(RELOADED_KEY, "1"); } catch { /* storage blocked: back to the menu */ }
+    const p = game.player.pos, deg = (r: number) => Math.round(r * 180 / Math.PI);
+    const url = new URL(location.href);
+    url.searchParams.delete("ground");
+    url.searchParams.set("at", `${p.x.toFixed(1)},${(-p.z).toFixed(1)},${(deg(-game.player.yaw) % 360 + 360) % 360},${deg(game.player.pitch)}`);
+    return url.href;
+  },
 });
 {
   // the pixels drawn at Normal (about 540 lines) on this screen, as post.ts sizes them

@@ -5,7 +5,7 @@ Usage: python3 -I tools/osm.py <map> <out.geojson> [wide] [roads | bridges | det
 With "wide" on the end it fetches the map's wider circle (see area.py) instead, for the tiles.
 With "roads" it fetches the streets instead (tools/prep_map.py reads osm-roads.geojson beside the
 other layers): every way tagged highway, with only the tags that say how wide it is and whether it
-has pavements (lanes, width, sidewalk), its speed limit (maxspeed and the zone tags: tools/maxspeed.py)
+has pavements (lanes, width, sidewalk), what it will be if it is still being built (construction), its speed limit (maxspeed and the zone tags: tools/maxspeed.py)
 and whether it's on a bridge or in a tunnel, as lines.
 With "bridges" it fetches the bridges instead (osm-bridges.geojson, read by the partition's writer):
 every way tagged bridge (a street's, a path's, the railway's or the canal's), with only the tags that
@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
 KEYS = ("shop", "amenity", "office", "craft", "healthcare", "tourism", "leisure")
-UA = {"User-Agent": "CombeDowner map builder (github.com/danturn/CombeDowner)"}
+UA = {"User-Agent": "CombeDowner map builder (https://combedowner.com)"}
 TILE = 0.008     # degrees: a tile of the main API's map call
 
 
@@ -45,7 +45,7 @@ def get(url, data=None, timeout=180):
     return urllib.request.urlopen(req, timeout=timeout).read()
 
 
-ROAD_TAGS = ("highway", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway",
+ROAD_TAGS = ("highway", "construction", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway",
              "maxspeed", "maxspeed:type", "zone:maxspeed", "source:maxspeed", "tunnel", "bridge", "layer", "covered")
 BRIDGE_TAGS = ("bridge", "bridge:structure", "bridge:support", "material", "layer", "highway", "railway",
                "waterway", "man_made", "name", "bridge:name")

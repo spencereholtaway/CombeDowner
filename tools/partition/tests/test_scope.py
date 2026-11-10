@@ -113,7 +113,7 @@ class DeferralTest(unittest.TestCase):
         self.assertEqual(len(findings), 1, "nobody holds the house, so nobody can gate the plot")
 
     def test_another_square_gating_the_same_index_does_not_resolve_it(self):
-        # the gap Dan found: a building index is global, so any square holding a fragment of the plot
+        # the gap the co-developer found: a building index is global, so any square holding a fragment of the plot
         # names the same one. Only the square holding the *house* can resolve it, because the house is
         # where the way in has to be.
         elsewhere = (0, 1)
@@ -155,7 +155,7 @@ class DeferralTest(unittest.TestCase):
         self.assertEqual(deferred, [(14, EAST)])
 
     def test_a_corner_house_is_deferred(self):
-        # Dan's second gap: the house is in the *diagonal* square, so the plot gets out at the corner.
+        # The co-developer's second gap: the house is in the *diagonal* square, so the plot gets out at the corner.
         # The garden runs 3 m along each of the two edges meeting there, which is a walkable way out.
         diagonal = (1, 1)
         corner_garden = Polygon([(X0 + SIDE - 3, Y0 + SIDE - 3),
@@ -193,7 +193,7 @@ class SharedEdgeTest(unittest.TestCase):
         self.assertAlmostEqual(list(e.coords)[0][1], Y0 + SIDE, places=3)
 
     def test_a_diagonal_neighbour_shares_a_corner(self):
-        # the second gap Dan found: a garden whose house is in the diagonal square gets out at the
+        # the second gap the co-developer found: a garden whose house is in the diagonal square gets out at the
         # corner, so the boundary is the corner plus the two edges of this square meeting there. It
         # is not an edge, but it is not nothing either.
         g = shared_edge((0, 0), (1, 1), SQ)

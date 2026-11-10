@@ -11,11 +11,73 @@ that the corridor fit reads the width and pavement tags from.
 """
 import collections
 
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 PATHS = {"footway", "path", "cycleway", "bridleway", "steps", "track"}
+DRAWN = {"motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street",
+         "service", "pedestrian", "raceway", "escape"} | PATHS
+JOIN, BESIDE = 1.0, 8.0     # metres: an end this close carries a way on; a way this close runs beside it
+
+
+def as_built(roads):
+    """A way still being built (highway=construction) is drawn as what it will be: OpenStreetMap
+    names that in its construction tag. Where the tag is missing, it is what it carries straight on
+    from, or failing that what it runs beside, as a new stretch of a street is mapped; and a
+    construction of something not drawn here goes. roads: [(LineString, tags)], as street_graph."""
+    if not any(t.get("highway") == "construction" for _, t in roads):
+        return roads
+    drawn = lambda c: (c or "").removesuffix("_link") in DRAWN
+    built = [(l, t) for l, t in roads if t.get("highway") != "construction"]
+    tree = STRtree([l for l, _ in built])
+
+    def heading(l, end):
+        c = l.coords
+        a, b = (c[0], c[1]) if end == 0 else (c[-1], c[-2])
+        d = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5 or 1
+        return ((b[0] - a[0]) / d, (b[1] - a[1]) / d)
+
+    def nearby(l):
+        best = None
+        for e in (0, -1):
+            here = Point(l.coords[e])
+            for k in tree.query(here.buffer(JOIN)):
+                m = built[int(k)][0]
+                for f in (0, -1):
+                    if Point(m.coords[f]).distance(here) > JOIN:
+                        continue
+                    h, g = heading(l, e), heading(m, f)
+                    straight = -(h[0] * g[0] + h[1] * g[1])
+                    if straight > 0.7 and (best is None or straight > best[0]):
+                        best = (straight, built[int(k)][1]["highway"])
+        if best:
+            return best[1]
+        mid = l.interpolate(0.5, normalized=True)
+        h = heading(l, 0)
+        side = []
+        for k in tree.query(mid.buffer(BESIDE)):
+            m = built[int(k)][0]
+            d = m.distance(mid)
+            if d > BESIDE:
+                continue
+            t = m.project(mid)
+            a, b = m.interpolate(max(0.0, t - 1)), m.interpolate(min(m.length, t + 1))
+            n = a.distance(b) or 1
+            if abs(h[0] * (b.x - a.x) / n + h[1] * (b.y - a.y) / n) > 0.9:
+                side.append((d, built[int(k)][1]["highway"]))
+        return min(side)[1] if side else None
+
+    out = []
+    for l, t in roads:
+        if t.get("highway") != "construction":
+            out.append((l, t))
+            continue
+        will = t.get("construction")
+        cls = will if drawn(will) else nearby(l) if will in (None, "yes") else None
+        if drawn(cls):
+            out.append((l, dict(t, highway=cls)))
+    return out
 
 
 def street_graph(roads, bbox, log=print):

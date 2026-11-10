@@ -14,13 +14,13 @@ const WEB = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "we
 export function fakeBrowser(maps) {
   const reading = { packs: false };
   const nothing = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : nothing), apply: () => nothing, set: () => true });
-  const canvas = () => ({ width: 0, height: 0, getContext: () => nothing, style: {}, addEventListener() {}, toDataURL: () => "" });
+  const canvas = () => ({ width: 0, height: 0, getContext: () => nothing, style: {}, dataset: {}, addEventListener() {}, toDataURL: () => "" });
   const quiet = { addEventListener() {}, removeEventListener() {} };
   Object.assign(globalThis, {
     location: { search: "", host: "localhost", pathname: "/", href: "http://localhost/", origin: "http://localhost", hostname: "localhost", protocol: "http:" },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     addEventListener() {}, removeEventListener() {},
-    document: { ...quiet, getElementById: () => null, createElement: canvas, createElementNS: canvas, body: { appendChild() {} }, hidden: false, visibilityState: "visible" },
+    document: { ...quiet, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [], createElement: canvas, createElementNS: canvas, body: { appendChild() {} }, head: { appendChild() {} }, hidden: false, visibilityState: "visible" },
     requestAnimationFrame: () => 0,
     matchMedia: () => ({ matches: false, ...quiet }),
     devicePixelRatio: 1, innerWidth: 1280, innerHeight: 720, screen: { width: 1280, height: 720 },

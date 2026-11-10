@@ -15,7 +15,11 @@
 // "Bonfire night", builds Get Wood's bonfire on the court by Fonthill Road (bonfire.ts) and moves the
 // clock on to nine at night if it isn't dark yet, for everyone in the game. L, or the draw distance
 // button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres,
-// and remembers it, as the draw distance in Settings does (settings.ts).
+// and remembers it, as the draw distance in Settings does (settings.ts). Under Drawing it counts the
+// last frame's draws and triangles square by square, split into the ground, the street and path
+// faces, water, structures (bridges, kerbs' stone, tunnels, set pieces) and everything else, with how
+// long each square's ground and faces took to build; tools/walk_probe.mjs reads the same counts
+// through window.__squareCounts.
 //
 // Nothing goes over the network from here except T and N, which game.ts passes to the host, and Go to,
 // which only moves you (everyone else sees you there, as after going to a pub); every player sees
@@ -132,6 +136,75 @@ export function osGrid(lat: number, lon: number): { e: number; n: number; ref: s
   return { e: Math.round(E), n: Math.round(N), ref };
 }
 
+/** What a square's draws are counted as. */
+export type DrawClass = "ground" | "faces" | "water" | "structures" | "other";
+export interface SquareCount {
+  square: string;                                           // "ti_tj", or "shared" for what isn't in any square
+  calls: number; tris: number;
+  byClass: Record<DrawClass, [number, number]>;             // [draws, triangles]
+  byPart: Record<string, [number, number]>;                 // by world.ts's parts of a square's scenery
+  buildMs: { ground: number; faces: number; all: number };  // building its scenery, on the main thread
+}
+const FACE_KINDS = new Set(["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"]);
+const STRUCTURE_PARTS = new Set(["landmarks-tunnels", "pitches"]);
+
+/** What a draw of o is: its square's group (tiles.ts marks it), the part of the scenery it was built in
+ *  (world.ts names each part as it goes) and which class that puts it in. */
+function drawnAs(o: THREE.Object3D): { square: THREE.Object3D | null; part: string; cls: DrawClass } {
+  let part = "", square: THREE.Object3D | null = null;
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) {
+    if (p.userData.square) { square = p; break; }
+    if (p.name) part = p.name;
+  }
+  const what = o.userData.what as string | undefined;
+  // (outside the squares, world.ts's parts are the main world's, not a square's: no class read into them)
+  const cls: DrawClass = !square ? "other" : o.userData.water || what === "stream" ? "water"
+    : part === "ground" ? "ground"
+    : part === "roads" ? (what && (what.includes(",") || FACE_KINDS.has(what)) ? "faces" : "structures")
+    : STRUCTURE_PARTS.has(part) ? "structures" : "other";
+  return { square, part: part || "unnamed", cls };
+}
+
+/**
+ * The draws and triangles of the last frame's main view of scene (not its shadows), by square and
+ * by class: read from three.js's list of what it drew, as unlit.ts reads it. A square's build times
+ * are its slices up to world.ts's "ground" mark (the terrain, let down under the faces) and from
+ * there to its "roads" mark (the faces, paths, bridges and water).
+ */
+export function squareCounts(renderer: THREE.WebGLRenderer, scene: THREE.Scene): SquareCount[] {
+  const list = renderer.renderLists.get(scene, 0), rows = new Map<THREE.Object3D | null, SquareCount>();
+  const add = (r: [number, number], tris: number) => { r[0]++; r[1] += tris; };
+  for (const items of [list.opaque, list.transmissive, list.transparent]) {
+    for (const it of items) {
+      const o = it.object, g = it.geometry, grp = it.group as unknown as { start: number; count: number } | null;
+      if (!o || !g) continue;
+      const { square, part, cls } = drawnAs(o);
+      let row = rows.get(square);
+      if (!row) {
+        const ms = (square?.userData.buildMs ?? {}) as Record<string, number>, at = (k: string) => ms[k] ?? 0;
+        row = {
+          square: square ? (square.userData.square as number[]).join("_") : "shared", calls: 0, tris: 0,
+          byClass: { ground: [0, 0], faces: [0, 0], water: [0, 0], structures: [0, 0], other: [0, 0] }, byPart: {},
+          buildMs: { ground: at("") + at("sky"), faces: at("ground"), all: Object.values(ms).reduce((a, b) => a + b, 0) },
+        };
+        rows.set(square, row);
+      }
+      // (as three.js counts them: a mesh's part drawn, times its copies)
+      const n = g.index ? g.index.count : g.attributes.position?.count ?? 0;
+      const start = Math.max(g.drawRange.start, grp?.start ?? 0);
+      const end = Math.min(g.drawRange.start + g.drawRange.count, grp ? grp.start + grp.count : n, n);
+      const copies = (o as THREE.InstancedMesh).isInstancedMesh ? (o as THREE.InstancedMesh).count : 1;
+      // (three.js skips a draw of nothing: so does the count)
+      if (end <= start || copies <= 0) continue;
+      const tris = (o as THREE.Mesh).isMesh ? Math.floor((end - start) / 3) * copies : 0;
+      row.calls++; row.tris += tris;
+      add(row.byClass[cls], tris);
+      add(row.byPart[part] ??= [0, 0], tris);
+    }
+  }
+  return [...rows.values()].sort((a, b) => b.calls - a.calls);
+}
+
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
@@ -158,7 +231,8 @@ export class DebugPanel {
   private linkT = 0;
   private dir = new THREE.Vector3();
 
-  constructor(private renderer: THREE.WebGLRenderer, private camera: THREE.Camera, private game: () => Game | null) {
+  constructor(private renderer: THREE.WebGLRenderer, private camera: THREE.Camera, private game: () => Game | null, private scene: () => THREE.Scene) {
+    (globalThis as { __squareCounts?: () => SquareCount[] }).__squareCounts = () => squareCounts(renderer, scene());
     this.el = document.createElement("div");
     this.el.id = "debug";
     this.el.hidden = true;
@@ -364,6 +438,11 @@ export class DebugPanel {
     rows.push("");
     rows.push(`<b>Drawing</b>`);
     rows.push(`${(info.render.triangles / 1000).toFixed(0)}k triangles; in memory ${info.memory.geometries} geometries, ${info.memory.textures} textures${mem ? `, JS ${(mem.usedJSHeapSize / 1048576).toFixed(0)} of ${(mem.jsHeapSizeLimit / 1048576).toFixed(0)} MB` : ""}`);
+    for (const q of squareCounts(r, this.scene())) {
+      const c = q.byClass, k = (v: number) => `${(v / 1000).toFixed(0)}k`;
+      rows.push(`  ${esc(q.square)}  ${q.calls} draws, ${k(q.tris)} tris: ground ${c.ground[0]}/${k(c.ground[1])}, faces ${c.faces[0]}/${k(c.faces[1])}, water ${c.water[0]}/${k(c.water[1])}, structures ${c.structures[0]}/${k(c.structures[1])}, other ${c.other[0]}/${k(c.other[1])}`
+        + (q.buildMs.all ? `; built in ${q.buildMs.all.toFixed(0)} ms (ground ${q.buildMs.ground.toFixed(0)}, faces ${q.buildMs.faces.toFixed(0)})` : ""));
+    }
     rows.push(`screen ${innerWidth}×${innerHeight}, drawing ${buf.x}×${buf.y} (×${r.getPixelRatio().toFixed(2)})`);
     if (this.gpu) rows.push(`GPU ${esc(this.gpu.slice(0, 60))}`);
     rows.push(`version ${built.toISOString().slice(0, 16).replace("T", " ")} UTC${COMMIT ? ` (${COMMIT})` : ""}`);

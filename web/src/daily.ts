@@ -32,7 +32,7 @@ const POOL: { k: DailyKind; n: number[]; text: (n: number) => string }[] = [
   { k: "job", n: [1, 2], text: (n) => (n === 1 ? "Finish a job from a noticeboard" : `Finish ${n} jobs from the noticeboards`) },
   { k: "ride", n: [1000, 2000, 3000], text: (n) => `Ride ${n / 1000} km on anything with wheels (or a pogo stick)` },
   { k: "combo", n: [300, 800, 1500], text: (n) => `Land a combo worth ${n} on a ride` },
-  { k: "trap", n: [30, 40, 50], text: (n) => `Get clocked at ${n} km/h by a speed trap` },
+  { k: "trap", n: [20, 25, 30], text: (n) => `Get clocked at ${n} mph by a speed trap` },
   { k: "pint", n: [1, 2], text: (n) => (n === 1 ? "Have a pint" : `Have ${n} pints`) },
   { k: "naughty", n: [3, 5, 8], text: (n) => `Sort out ${n} naughty boys` },
 ];
@@ -67,7 +67,7 @@ function pick(day: string): Mission[] {
 
 let sink: ((k: DailyKind, n: number) => void) | null = null;
 
-/** Tell today's jobs about something you did: n of kind k (metres for "ride", the score for "combo", km/h for "trap"). */
+/** Tell today's jobs about something you did: n of kind k (metres for "ride", the score for "combo", mph for "trap"). */
 export function note(k: DailyKind, n = 1) { sink?.(k, n); }
 
 export class Daily {

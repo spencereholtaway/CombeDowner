@@ -59,9 +59,10 @@ jobs:
           path: web/dist
       - if: github.ref == 'refs/heads/main'
         uses: actions/deploy-pages@v5
-      # The same build goes to Cloudflare Pages too, ready for combedowner.com to move there. Only
-      # Spencer's repo holds the token, so a fork's run skips these.
-      - if: github.ref == 'refs/heads/main' && github.repository == 'spencereholtaway/CombeDowner'
+      # The same build goes to Cloudflare Pages too. Each repo that publishes there says which branch it
+      # publishes as in its CLOUDFLARE_BRANCH variable: `main` is combedowner.com, `test` is
+      # test.combedowner.pages.dev. A repo without it skips these.
+      - if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_BRANCH != ''
         name: Make sure the Cloudflare Pages project is there
         continue-on-error: true   # it fails once the project exists, which is fine
         uses: cloudflare/wrangler-action@v3
@@ -69,10 +70,10 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages project create combedowner --production-branch=main
-      - if: github.ref == 'refs/heads/main' && github.repository == 'spencereholtaway/CombeDowner'
+      - if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_BRANCH != ''
         name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web/dist --project-name=combedowner --branch=main --commit-dirty=true
+          command: pages deploy web/dist --project-name=combedowner --branch=${{ vars.CLOUDFLARE_BRANCH }} --commit-dirty=true

@@ -1,6 +1,6 @@
 # Item 2: where the failing plots come from, and what the check is asking of them
 
-No code changes. Dan's item 2 was "the absorb step's `D_same_label` exit"; measuring it showed the
+No code changes. The co-developer's item 2 was "the absorb step's `D_same_label` exit"; measuring it showed the
 premise was wrong, and the report below is what the table says instead.
 
 ## The premise that died first
@@ -69,7 +69,7 @@ gardens (2.4 to 3,128 m² written, median around 100 m²); the tiny ones in the 
 clipped at B's edge**, not small gardens — 255 of 258 are fragments of a larger plot. The plot's own
 square gates it correctly. The check is failing a building on the square that *cannot see its house*.
 
-So the defect is in the **check's inputs**, not in the build and not in the rule Dan proposed. Two
+So the defect is in the **check's inputs**, not in the build and not in the rule the co-developer proposed. Two
 candidate fixes, and they are different in kind:
 
 - **(a) Give the check the houses it needs.** The square already gathers the neighbours' plots, so the
@@ -82,10 +82,10 @@ candidate fixes, and they are different in kind:
 
 (a) is the honest one if the fragment really is a front on this square's ground; (b) if the fragment
 is incidental ground that the holder square already handles. The measurement says the holder gates
-them, which points at (b) — but which is right is Dan's call, and it changes a check or a check's
+them, which points at (b) — but which is right is the co-developer's call, and it changes a check or a check's
 inputs, so it is not made here.
 
-**Dan's prior, tested:** "a plot a couple of metres deep between a terrace house and the pavement is
+**The co-developer's prior, tested:** "a plot a couple of metres deep between a terrace house and the pavement is
 a doorstep, not a garden". The table does not show that. The fronts' depths run 0.8 to 94.7 m, the
 plots are ordinary gardens, and the houses are not on the other side of the front — they are in
 another square. No rule in `assemble` about shallow plots would touch any of these 55.

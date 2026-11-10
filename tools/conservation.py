@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
 API = "https://www.planning.data.gov.uk/entity.geojson"
-UA = {"User-Agent": "CombeDowner map builder (github.com/danturn/CombeDowner)"}
+UA = {"User-Agent": "CombeDowner map builder (https://combedowner.com)"}
 SAME = 0.8          # of the smaller outline lying in one already kept: the same area mapped twice
 
 

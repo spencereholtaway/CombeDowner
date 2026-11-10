@@ -1,6 +1,6 @@
 # Bradford-on-Avon by train: feasibility and implementation plan
 
-Checked against Dan's fork `danturn/CombeDowner` main at `f5f061b` (15 Oct 2026). Nothing here is
+Checked against the fork main at `f5f061b` (15 Oct 2026). Nothing here is
 built. This version replaces the earlier "two lobes in one map" plan: each town is its own map (a
 **place**), every player stays in the **same room**, and the train is the way between places. It
 scales to Hackney, Norfolk or Yorkshire at a fixed cost, and **leaves Bath and today's game as they
@@ -77,7 +77,7 @@ can't hear the traveller on the radio until they update.
 | Everyone sees the same train | To within each device's clock: trains read `Date.now()` every frame, unsmoothed. The cable car smooths its clock; the trains should too | `railway.ts:339`; `cableway.ts:295-302` |
 | The Wessex trains are local trains | They're drawn as HSTs stopping only at Bath Spa (any route named Great Western over 15 km gets one) | `railway.ts:104-108, 155` |
 | Black loading screen | No fade exists yet; "Go to a pub" moves you instantly | `game.ts:1081-1131` |
-| ST86SW is already in the Bath lidar list | True, but the south of the town needs **ST85NW** too, and neither raw tile is on Dan's Mac | |
+| ST86SW is already in the Bath lidar list | True, but the south of the town needs **ST85NW** too, and neither raw tile is on the build Mac | |
 | Wiltshire certificates and Land Registry parcels | Certificates yes; **no tool reads Land Registry parcels**. The UPRN cut box in `docs/new-area.md` stops at longitude -2.25, the middle of the town | `tools/epc.py` |
 | (not mentioned) | The Kennet and Avon runs through the town (Bradford Lock), so the canal pack needs an entry | `tools/canal.py:42-60` |
 
@@ -85,12 +85,12 @@ can't hear the traveller on the radio until they update.
 
 From the project instructions; they apply to every stage.
 
-- **Map work goes to Dan's fork first** (`danturn/CombeDowner`) and is verified there by Dan before
-  it goes near `spencereholtaway/CombeDowner`. Never push it straight to Spencer's main. A push to
-  Spencer's main needs Dan's approval message quoted with its id.
-- **Full map builds run on Dan's Mac**, never in a cloud container (quick single-square checks are
-  fine in the container), in a throwaway worktree off `/Users/dan/CombeDowner`, using
-  `/Users/dan/.venvs/combedowner`, via `tools/mac_build.sh`.
+- **Map work goes to the fork first** (the fork) and is verified there by the co-developer before
+  it goes near the main repo. Never push it straight to the maintainer's main. A push to
+  the maintainer's main needs the co-developer's approval message quoted with its id.
+- **Full map builds run on the build Mac**, never in a cloud container (quick single-square checks are
+  fine in the container), in a throwaway worktree off `~/CombeDowner`, using
+  `~/.venvs/combedowner`, via `tools/mac_build.sh`.
 - **Ask the Mac through the queue**: write `/mnt/project-files/macq-<name>.req.md` (flat, new unique
   lowercase name, no dots) with `thread`, `kind` (test | build | push), `commit`, `run`, `return`,
   `push` (none | fork-main | spencer-main), `alone` (map builds and FPS probes = yes). Tell the
@@ -100,19 +100,19 @@ From the project instructions; they apply to every stage.
   grabbing mouse focus, and stop the dev server and every browser afterwards. Game tests run in
   parallel, each in its own worktree and port. Never run the game in a cloud browser.
 - **Pushes to a main go one at a time, fast-forward only, never forced.**
-- **Settle it with Spencer** (`CLAUDE.md`, "Working alongside each other"): the decisions below,
+- **Settle it with the maintainer** (`CLAUDE.md`, "Working alongside each other"): the decisions below,
   before stage 1. Add the work to `NOTES-FOR-AGENTS.md` while it's in flight.
 - Run `tools/check_map.py <map> web/public/maps --all` before and after every map change; Bath's
   counts must not go up.
 
 ## Stages
 
-Each stage is a commit on a `claude/bradford-*` branch on Dan's fork. Stages 1-2 (the new map) and
+Each stage is a commit on a `claude/bradford-*` branch on the fork. Stages 1-2 (the new map) and
 4-6 (the game) can go in parallel; stage 3 (the railway) joins them.
 
-### Stage 0: decisions with Spencer
+### Stage 0: decisions with the maintainer
 
-Dan takes the decisions at the end of this file to Spencer and adds an entry to
+The co-developer takes the decisions at the end of this file to the maintainer and adds an entry to
 `NOTES-FOR-AGENTS.md`.
 
 ### Stage 1: Bradford-on-Avon as its own map
@@ -166,7 +166,7 @@ On the Mac (needs the network), raw data in `data/raw/bradford-on-avon/wide/`, f
    repository like Bath. Add `data/bradford-on-avon/README.md` (sources and licences, as Bath's).
 7. `check_map.py bradford-on-avon --all` as its baseline, and shots of the station, the Town
    Bridge, the Tithe Barn and the Shambles.
-8. Push the map files and data to `claude/bradford-map` on Dan's fork. Dan checks the map with
+8. Push the map files and data to `claude/bradford-map` on the fork. The co-developer checks the map with
    `?map=bradford-on-avon` (a hidden map opens this way, `main.ts:96-98`).
 
 Bath's files must not change in this stage.
@@ -301,13 +301,13 @@ time, the fade, and arrival on the platform with the train behind. Then, with tw
 later train and arrives in front of the first traveller. Then the return. Take shots of each moment.
 Then a frame-rate probe in Bradford-on-Avon (`alone: yes`).
 
-### Stage 7: to Spencer's repo
+### Stage 7: to the maintainer's repo
 
-Only once Dan has checked the map (stage 2) and the travel (stage 6) on his fork and Spencer has
-agreed the decisions: a `push` request with `push: spencer-main`, quoting Dan's approval message and
+Only once the co-developer has checked the map (stage 2) and the travel (stage 6) on his fork and the maintainer has
+agreed the decisions: a `push` request with `push: spencer-main`, quoting the co-developer's approval message and
 its id, fast-forward only.
 
-## Decisions to settle with Spencer
+## Decisions to settle with the maintainer
 
 1. **Places, not one big map**: each town its own map, all in one room (this plan).
 2. **How big Bradford-on-Avon is**: field 1.2 km (town, station, Tithe Barn, Barton Farm; about 16
@@ -332,7 +332,7 @@ its id, fast-forward only.
 - **Bath changing by accident**: the new train routes rebuild Bath's squares; the byte-for-byte
   check in stage 3 is the guard, with `check_map` before and after.
 - **`game.ts` conflicts**: everyone edits it. Keep the stage 4 and 6 changes small and local, and
-  fetch Spencer's main just before merging.
+  fetch the maintainer's main just before merging.
 - **Carrying state across a new Game**: anything left out (a carried ladder, a vehicle, a quest in
   progress) needs a rule. Simplest: get out of vehicles and drop what you're carrying before you
   board.

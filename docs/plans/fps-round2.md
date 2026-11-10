@@ -9,13 +9,13 @@ steps in one commit: each one is measured on its own.
 - The game is CPU-bound, not GPU-bound. Each frame's time goes on the browser handing draws to the
   graphics card (about 5 µs each). Triangles and resolution hardly matter. **Fewer draw calls is
   the lever**, so every step here cuts the number of separate meshes drawn.
-- Spencer's main (`3808bf4` and `3d8a3f2`) already did the following. Don't redo any of it:
+- The maintainer's main (`3808bf4` and `3d8a3f2`) already did the following. Don't redo any of it:
   scenery in a square of Bath no longer recomputes its positions every frame (`stayPut` in
   `world.ts`), far squares are drawn simpler, ponds are merged, tree patches are bigger, far trees
   are flat pictures, and antialiasing is off on the screen.
-- Work happens on `claude/fps-round2` in Dan's fork (`danturn/CombeDowner`), which branches from
-  Spencer's main. **Nothing goes to Spencer's main until Dan says so.**
-- **Never measure frame rate or take screenshots in a cloud container.** All of that runs on Dan's
+- Work happens on `claude/fps-round2` in the fork, which branches from
+  the maintainer's main. **Nothing goes to the maintainer's main until the co-developer says so.**
+- **Never measure frame rate or take screenshots in a cloud container.** All of that runs on the build
   Mac through the Mac queue (the project instructions explain how: a `macq-<name>.req.md` file in
   `/mnt/project-files`, then tell the coordinator). Frame-rate runs must be `alone: yes`.
 - The Mac's numbers are noisy: the same commit can vary by ±20 fps between runs. Compare
@@ -37,7 +37,7 @@ steps in one commit: each one is measured on its own.
 - `tiles.ts` records each square's setup and build time when `globalThis.__tileStats` is set
   (only the probe sets it).
 
-## Baseline (Spencer's main, Dan's Mac, 1280x720)
+## Baseline (the maintainer's main, the build Mac, 1280x720)
 
 | spot | fps | draws | biggest kinds |
 |---|---|---|---|
@@ -136,17 +136,17 @@ that on a phone, and those are the stutters.
 **Check:** the route's "longest slice" for every square is under about 5 ms, the frames over 16.7 ms
 during the drive go down, and the total build time doesn't go up much.
 
-## Step 5 (big, optional; ask Dan first): bake squares at build time
+## Step 5 (big, optional; ask the co-developer first): bake squares at build time
 
 Each square's scenery (terrain sunk under the streets, road and pavement strips, buildings with
 their roofs, walls, fences, canopies) and its collision setup are worked out in the browser from
 the square's JSON, which takes 100–220 ms per square on the Mac. It's all deterministic, so it
 could be done once in the map build and loaded ready to draw. This removes the stutter and the
-loading work, but **not** the steady frame rate. Don't start this without Dan's go-ahead: it
-touches the map build, and the project rule is that map build changes go to Dan's fork and are
-checked by Dan before anything else.
+loading work, but **not** the steady frame rate. Don't start this without the co-developer's go-ahead: it
+touches the map build, and the project rule is that map build changes go to the fork and are
+checked by the co-developer before anything else.
 
-Outline, if Dan says go:
+Outline, if the co-developer says go:
 - Add a Node step after `prep_tiles.py` (`tools/bake_squares.mjs`) that imports `world.ts`'s
   builders with the canvas textures stubbed out, runs `worldGen` for each square, and writes each
   mesh's typed arrays (position quantised to 16 bits, normal, uv, colour, index) and a material

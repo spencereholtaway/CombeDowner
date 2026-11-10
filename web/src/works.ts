@@ -23,7 +23,7 @@
 //
 // Nothing here goes over the network: every player builds the same banks from the same canal file.
 import * as THREE from "three";
-import { inRing, lockAt, LOCK_PAVED, outsideLocks, type CanalData } from "./canal";
+import { clipMouths, inRing, lockAt, LOCK_PAVED, outsideLocks, pastMouths, type CanalData } from "./canal";
 
 const UP = 0.4;          // the coping and the banks stand this far above the water
 const BED = 1.2;         // the bed is this far below it
@@ -125,6 +125,8 @@ export class CanalWorks {
   /** The basins off the canal near this square (a marina): the canal's banks open where they meet. */
   private basins: { r: number[][][]; lv: number; x0: number; y0: number; x1: number; y1: number }[] = [];
   private boreCells = new Map<number, number[]>();
+  /** Where a run near this square opens into a river: the river's edge there (canal.ts clipMouths). */
+  private mouths: number[][] = [];
 
   /** canal: the canal file; G: this square's grid; ground: its own ground's height at data (x, y). */
   /** under: the lowest bridge deck (or road on one's approach) over data (x, y), above sea level,
@@ -145,6 +147,7 @@ export class CanalWorks {
       let near = false;
       for (const q of p) if (q[0] > x0 - 30 && q[0] < x1 + 30 && q[1] > y0 - 30 && q[1] < y1 + 30) { near = true; break; }
       if (!near) continue;
+      if (run.x) this.mouths.push(...run.x);
       // its tunnels: each stretch between two points in one, with the towpath's side through it
       for (let k = 0; k < n - 1; k++) {
         const a = p[k], b = p[k + 1];
@@ -298,7 +301,7 @@ export class CanalWorks {
     // and where it carries on into the next, left to that one after a little overlap
     const past = Math.max(-t * s.len, (t - 1) * s.len);
     if (past > 0) d = Math.max(d, (t < 0 ? s.capA : s.capB) ? past : past - OVERLAP);
-    return d;
+    return this.mouths.length ? Math.max(d, pastMouths(this.mouths, x, y)) : d;
   }
 
   /** The canal's ground at data (x, y), where its outline takes it in (above sea level), or null. */
@@ -376,7 +379,14 @@ export class CanalWorks {
     const vert = (x: number, y: number, h: number, c: THREE.Color, u: number, w: number) => { pos.push(x, h - z0, -y); col.push(c.r, c.g, c.b); uv.push(u, w); };
     // a quad from four points [x, y, height], with the ground texture laid flat (or up a wall)
     let cur: Seg | null = null, crowded = false;
+    // (past the river's edge where the canal opens into one, nothing is laid: what reaches over it is cut off there)
+    const fan = (K: number[][], c: THREE.Color, wall: boolean) => {
+      for (let i = 1; i + 1 < K.length; i++)
+        for (const p of [K[0], K[i], K[i + 1]]) vert(p[0], p[1], p[2], c, wall ? Math.hypot(p[0] - K[0][0], p[1] - K[0][1]) / 7 : p[0] / 7, wall ? p[2] / 7 : -p[1] / 7);
+    };
     const quad = (P: number[][], c: THREE.Color | THREE.Color[], wall = false) => {
+      const K = clipMouths(this.mouths, P);
+      if (K !== P) { if (K.length >= 3) fan(K, Array.isArray(c) ? c[0] : c, wall); return; }
       if (crowded && cur) {
         // where stretches run into one another (a junction's basin) or a basin opens off the canal,
         // a stretch's banks are laid a metre at a time, leaving out whatever lies over the other's water
@@ -435,9 +445,11 @@ export class CanalWorks {
       const Q = R.map((p, i) => [p[0], p[1], p[2], wall && (i === 1 || i === 2) ? len : 0]);
       const pieces = outsideLocks(this.canal, Q, 0, LOCK_PAVED, 0.05);
       if (pieces[0] === Q) return quad(R, c, wall);
-      for (const piece of pieces)
+      for (const whole of pieces) {
+        const piece = clipMouths(this.mouths, whole);
         for (let i = 1; i < piece.length - 1; i++)
           for (const [x, y, h, wu] of [piece[0], piece[i], piece[i + 1]]) vert(x, y, h, c, wall ? wu : x / 7, wall ? h / 7 : -y / 7);
+      }
     };
     // where along a straight line from (ax, ay) to (bx, by) it crosses the ground's grid lines and
     // the diagonals of its triangles, so a verge's edge laid on the ground bends where the ground does

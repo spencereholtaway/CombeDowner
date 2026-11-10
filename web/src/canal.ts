@@ -26,7 +26,7 @@ import { wall } from "./textures";
 import { tag } from "./kinds";
 
 export interface CanalData {
-  runs: { lv: number; p: number[][] }[];
+  runs: { lv: number; p: number[][]; x?: number[][] }[];
   locks: { n: string; no: string; lo: number[]; hi: number[]; zl: number; zh: number; tl?: number }[];
   tunnels: { n: string; a: number[]; b: number[]; tw?: number }[];
   moor: number[][];   // x, y, angle, length, livery, and the water's level for a boat in a basin (which stays moored)
@@ -304,6 +304,31 @@ export function outsideLocks(d: CanalData | null | undefined, P: number[][], vIn
     }
   }
   return pieces;
+}
+
+/** How far from where a run opens into a river its edge there still cuts the canal off. */
+const MOUTH_REACH = 30;
+
+/** Convex polygon P (data x, y, then anything else) less what lies past the river's edge where a
+ *  run opens into one (tools/canal.py "x": a point on the edge and the way into the river): the
+ *  canal's water, banks and verges stop there instead of standing out into the river. P itself
+ *  where no mouth reaches it, [] where it all lies past one. */
+export function clipMouths(mouths: number[][] | undefined, P: number[][]): number[][] {
+  let out = P;
+  for (const [px, py, nx, ny] of mouths ?? []) {
+    const f = (p: number[]) => -((p[0] - px) * nx + (p[1] - py) * ny);
+    if (out.every((p) => f(p) >= 0) || out.every((p) => Math.hypot(p[0] - px, p[1] - py) > MOUTH_REACH)) continue;
+    out = clipHalf(out, f);
+    if (out.length < 3) return [];
+  }
+  return out;
+}
+
+/** How far past a river's edge (data x, y) lies where a run opens into one, or -Infinity. */
+export function pastMouths(mouths: number[][], x: number, y: number): number {
+  let d = -Infinity;
+  for (const [px, py, nx, ny] of mouths) if (Math.hypot(x - px, y - py) < MOUTH_REACH) d = Math.max(d, (x - px) * nx + (y - py) * ny);
+  return d;
 }
 
 /** The part of convex polygon P where f >= 0. */
@@ -683,7 +708,9 @@ export class Canal {
           pos.push(q[0] + nx * h, y, -(q[1] + ny * h), q[0] - nx * h, y, -(q[1] - ny * h));
           if (k === k0) continue;
           const j = (k - k0) * 2, at = (i: number) => [pos[i * 3], -pos[i * 3 + 2]];
-          const P = [at(j - 2), at(j - 1), at(j + 1), at(j)], pieces = outsideLocks(d, P, LOCK_WALLS, 50);
+          const P = [at(j - 2), at(j - 1), at(j + 1), at(j)];
+          let pieces = outsideLocks(d, P, LOCK_WALLS, 50);
+          if (r.x) { const K = pieces.map((pc) => clipMouths(r.x, pc)); if (K.some((k, i) => k !== pieces[i])) pieces = K.filter((k) => k.length >= 3); }
           if (pieces[0] === P) idx.push(j - 2, j - 1, j, j - 1, j + 1, j);
           else cut.push(...pieces);
         }

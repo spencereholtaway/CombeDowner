@@ -144,7 +144,7 @@ function markTri(mask: Uint8Array, W: number, H: number, ax: number, ay: number,
  */
 export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: number, z: number) => number, kinds: THREE.Color[],
   time: { value: number }, roadWidth: (r: { c: string; w?: number }) => number, paths: Set<string>, kerbed: Set<string>, pavement: number,
-  rail: number[][][] = [], bare: number[][][] = []): Generator<void, Grass> {
+  rail: number[][][] = [], bare: number[][][] = [], floored?: (x: number, y: number) => boolean): Generator<void, Grass> {
   const T = D.t;
   const touch = navigator.maxTouchPoints > 1;
   const CELL = 8, STEP = touch ? 0.62 : 0.5;   // STEP: spacing between tufts (the circle's size: GRASS.reach)
@@ -217,6 +217,17 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
       if (++n % 3000 === 0) yield;
     }
     yield;
+  }
+  // nor through a set piece's floor or paving near the ground (the Royal Crescent's flags), which its
+  // outline alone doesn't tell from the lawn or garden it leaves to the map
+  if (floored) for (const ring of D.so ?? []) {
+    const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
+    const i0 = Math.max(0, Math.floor(X(Math.min(...xs)))), i1 = Math.min(W - 1, Math.ceil(X(Math.max(...xs))));
+    const j0 = Math.max(0, Math.floor(Y(Math.min(...ys)))), j1 = Math.min(H - 1, Math.ceil(Y(Math.max(...ys))));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) if (!blocked[j * W + i] && floored(T.x0 + i, T.y0 + j)) blocked[j * W + i] = 1;
+      if (j % 50 === 49) yield;
+    }
   }
   const free = (x: number, y: number) => {
     const i = Math.round(X(x)), j = Math.round(Y(y));

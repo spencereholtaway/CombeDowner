@@ -8,7 +8,7 @@
 // Prints a line per street and input, then the totals. AT="east,north" looks for streets round
 // somewhere else, ONLY=W runs just the inputs whose names start so, TRACE=<lean> prints every tenth of
 // a second of the W runs (and the pad's with that lean), and STEER=blades,bike,... measures a 100 ms
-// tap of D and a second's hold at speed on each ride. The zones' wall is taken down for the run.
+// tap of D and a second's hold at speed on each ride. QUERY="ground=sheet" adds that to the address. The zones' wall is taken down for the run.
 import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
@@ -42,7 +42,7 @@ await silence(page);
 page.on("pageerror", (e) => console.log("pageerror", e.message));
 
 // the middle of Bath, by the Abbey
-await page.goto(`http://127.0.0.1:${port}/?map=combe-down&net=local&room=RIDE${Math.floor(Math.random() * 1e4)}&time=11:00&fx=0&at=${AX},${AY},0,0`);
+await page.goto(`http://127.0.0.1:${port}/?map=combe-down&net=local&room=RIDE${Math.floor(Math.random() * 1e4)}&time=11:00&fx=0&at=${AX},${AY},0,0${process.env.QUERY ? "&" + process.env.QUERY : ""}`);
 await page.waitForFunction(() => !document.getElementById("play")?.disabled, null, { timeout: 120000 });
 await page.fill("#name", "Rider");
 await page.click("#play");

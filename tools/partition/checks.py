@@ -4,7 +4,7 @@ The partition is fitted to whatever the data says, so when the data is wrong the
 wrong in a way no rule can fix: a centre line drawn through a building, a footprint that is really a
 shed and a garage as one, a plot with no way in from any street. Those are the build's way of
 finding bad data, and each is written as a line with its square and its position, as
-`tools/check_map.py` does, so Dan can go and look at it in the game.
+`tools/check_map.py` does, so the co-developer can go and look at it in the game.
 
 Four checks, all of them computed from what the square's build already has:
 - **corridor narrower than its class**: a fitted carriageway narrower than the class's own minimum,
@@ -111,7 +111,7 @@ def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square
     a mid-terrace house, whose plot is its back garden and never touches the street, which is the
     ordinary case (measured: 398 of them on the village square, all fine). "Does the house or its plot
     reach a corridor" flags an ordinary house whose front garden is open land in another title,
-    because the title stops at the back of the verge (measured: 193, of which Dan traced 119 to
+    because the title stops at the back of the verge (measured: 193, of which the co-developer traced 119 to
     exactly this). Only the walk gets both right.
 
     This extends stage 1's opening check rather than adding a separate idea: that check says a
@@ -170,7 +170,7 @@ def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square
             # shared edge. A half-metre sliver at one end of a 23 m crossing is the junction where the
             # two faces' other boundaries meet, not a wall across the gap, and treating it as one
             # leaves the walk unable to move (measured: 192 houses read as unreachable on the village
-            # square, of which Dan traced 168 to open ground that is really reachable this way).
+            # square, of which the co-developer traced 168 to open ground that is really reachable this way).
             if along.length >= 0.5 * shared.length:
                 return False
         return True

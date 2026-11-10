@@ -19,6 +19,7 @@ import { SQUARES, view } from "./view";
 import { maskSetPieces } from "./landmarks/setpieces";
 import { clearCourt } from "./bonfire";
 import { clearClimb } from "./theclimb";
+import { buildWait } from "./sheet";
 
 // Squares are built when their nearest edge is closer than view.load (just past the fog: view.ts),
 // and dropped once it's further than view.drop; and no more than SQUARES of them, the nearest, with
@@ -277,10 +278,22 @@ export class Tiles {
           continue;
         }
         if (!t.near) break;
-        if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
-        const s0 = performance.now(), r = t.job.next();
+        if (!t.job) {
+          t.group = new THREE.Group();
+          // (for the debug panel's counts by square: debug.ts squareCounts)
+          t.group.userData.square = [t.ti, t.tj];
+          t.group.userData.buildMs = {};
+          (globalThis as any).__wphase = "";
+          this.scene.add(t.group);
+          t.job = this.build(t.map!, t.group);
+        }
+        const part = (globalThis as any).__wphase as string, s0 = performance.now(), r = t.job.next();
         const buildMs = performance.now() - s0;
         stat(t, "build", buildMs);
+        if (t.group) t.group.userData.buildMs[part] = (t.group.userData.buildMs[part] ?? 0) + buildMs;
+        // (tools/shoot.mjs keeps the longest slice of each part here)
+        const most = (globalThis as any).__sliceMax;
+        if (most && !(buildMs <= (most[part || "?"] ?? 0))) most[part || "?"] = +buildMs.toFixed(1);
         // a long slice says which part of the square's scenery it was in (after world.ts's last mark)
         if (buildMs > 30) {
           const long: unknown[][] = ((globalThis as any).__longBuild ??= []);
@@ -289,6 +302,8 @@ export class Tiles {
         }
         if (T) T.build += performance.now() - s0;
         if (r.done) { t.world = r.value; t.job = undefined; this.drawnVersion++; break; }
+        // (waiting on a worker: on to the next square, not round again on this one)
+        if (buildWait.on) { buildWait.on = false; break; }
       }
       if (busy()) break;
     }

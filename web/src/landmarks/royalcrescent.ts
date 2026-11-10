@@ -41,16 +41,43 @@ function depthAt(h: number, t: number): number {
   if (h === DEPTH.length - 1) return t > 3.285 ? lerp(18.9, 3, (t - 3.285) / 0.059) : 18.5;
   return DEPTH[h];
 }
-/** Where the street's pavement (or, where it has none on this side, its carriageway) begins, s at
- *  t = -0.2, -0.15, ... 3.35: the flagged pavement in front of the houses runs out to here. */
+/** Where the street's pavement (or, where it has none on this side, its carriageway) began in the
+ *  map it was first fitted to, s at t = -0.2, -0.15, ... 3.35: where the square has no carriageway
+ *  of its own to meet (crescentEdges), the flagged pavement runs out to here. */
 const EDGE = [-9.6, -10.1, -10.7, -11.2, -11.7, -12, -12.1, -12.1, -12.1, -12.1, -12.1, -11.9, -11.8, -11.8, -11.7, -11.6,
   -11.6, -11.5, -11.6, -11.6, -11.6, -11.6, -11.6, -11.8, -11.7, -11.9, -11.9, -11.8, -11.8, -11.9, -13.9, -13.9, -14, -14,
   -14, -14, -14.2, -14.3, -14.3, -14.5, -14.5, -14.6, -14.7, -14.7, -14.7, -14.9, -15, -15.1, -15, -14.8, -14.7, -14.6, -14.6,
   -14.5, -14.3, -14.4, -14.4, -14.3, -14.2, -14.2, -14.1, -14.1, -14, -14, -13.9, -13.8, -13.5, -13.4, -13.1, -12.5, -11.9, -11.3];
-const edgeAt = (t: number) => {
-  const f = Math.min(EDGE.length - 1.001, Math.max(0, (t + 0.2) / 0.05)), i = Math.floor(f);
-  return EDGE[i] + (EDGE[i + 1] - EDGE[i]) * (f - i);
+const edgeAt = (edge: number[], t: number) => {
+  const f = Math.min(edge.length - 1.001, Math.max(0, (t + 0.2) / 0.05)), i = Math.floor(f);
+  return edge[i] + (edge[i + 1] - edge[i]) * (f - i);
 };
+const EDGE_REACH = 3;       // metres either side of EDGE that the square's carriageway is looked for
+
+/** The origin's height above sea level: the street's level in front of the middle. */
+export const CRESCENT_Y = 51.5;
+const KERB = 0.17;          // how far the map's pavement stands over the street as written (world.ts FACE_LIFT)
+
+/** Where the flags run out to, s at each of EDGE's t, and how high they stand there: to the near side
+ *  of the square's own carriageway (road(x, z) in the set piece's frame: its height above sea level
+ *  there, or null off it), so they meet its kerb however the map lays the street, with no verge or
+ *  stray bit of pavement between, and a kerb over it as the map's own pavements stand (the street
+ *  isn't level all the way round); EDGE and PAVE where there is no carriageway near. */
+export function crescentFit(road: (x: number, z: number) => number | null): { edge: number[]; top: number[] } {
+  const hits = EDGE.map((e, i): [number, number | null] => {
+    const t = -0.2 + 0.05 * i;
+    for (let s = Math.min(RAIL - 1, e + EDGE_REACH); s >= e - EDGE_REACH; s -= 0.1) {
+      const h = road(...at(t, s));
+      if (h !== null) return [s + 0.05, h];
+    }
+    return [e, null];
+  });
+  const found = hits.map(([s]) => s);
+  // (a lone stretch caught on a bit of carriageway poking in, at a corner, mustn't make a notch)
+  const edge = found.map((e, i) => +Math.min(e, Math.max(found[i - 1] ?? e, found[i + 1] ?? e)).toFixed(2));
+  const top = hits.map(([, h]) => (h === null ? PAVE : +Math.max(PAVE, h + KERB - CRESCENT_Y).toFixed(2)));
+  return { edge, top };
+}
 
 // heights above the street in front
 const GF = 4.55;            // the band at the first floor, under the columns
@@ -165,8 +192,10 @@ function sweep(k: Kit, mat: THREE.Material, section: Prof | ((t: number) => Prof
 /** A rectangle round the crescent from s0 to s1, y0 to y1. */
 const rect = (s0: number, s1: number, y0: number, y1: number): Prof => [[s0, y0], [s1, y0], [s1, y1], [s0, y1]];
 
-export function royalCrescent(): THREE.Object3D {
+export function royalCrescent(args: (number | string)[] = []): THREE.Object3D {
   const k = new Kit();
+  const fit = args.length === 2 * EDGE.length ? args.map(Number) : null;
+  const edge = fit?.slice(0, EDGE.length) ?? EDGE, top = fit?.slice(EDGE.length) ?? EDGE.map(() => PAVE);
   const S = stone("#ecdcb5"), S2 = stone("#dac79e"), G = georgian("#d6c096"), roofs = slate();
   const sash = sashGlass(), arched = archedGlass(), bal = balusters();
   const door = plain("#2c302d"), pots = plain("#9a5a3c"), flags = stone("#c4bba8"), floor = stone("#9d9380");
@@ -195,7 +224,7 @@ export function royalCrescent(): THREE.Object3D {
 
   // ---- the basement areas, and the flagged pavement out to the street ---------------------------
   sweep(k, floor, rect(RAIL, -0.05, AREA - 0.2, AREA), T0, T1, 2, null);
-  sweep(k, flags, (t) => rect(Math.min(RAIL - 1, edgeAt(t) - 0.1), RAIL, AREA - 0.2, PAVE), T0, T1, 2);
+  sweep(k, flags, (t) => { const s0 = Math.min(RAIL - 1, edgeAt(edge, t) - 0.1); return [[s0, AREA - 0.2], [RAIL, AREA - 0.2], [RAIL, PAVE], [s0, edgeAt(top, t)]]; }, T0, T1, 2);
 
   // ---- the houses ------------------------------------------------------------------------------
   const middle = Math.PI / 2;
@@ -277,16 +306,17 @@ function railTex() { return (rails ??= TX.railings()); }
 
 // ---- what the set piece covers (setpieces.ts), in its frame ----------------------------------------
 
-/** Everything from the street's pavement to the backs of the houses, all the way round. */
-export const CRESCENT_OUTLINE: [number, number][] = (() => {
+/** Everything from the street's kerb (s at each of EDGE's t: crescentEdges) to the backs of the houses, all the way round. */
+export function crescentOutline(edge: number[] = EDGE): [number, number][] {
   const out: [number, number][] = [], n = 120;
-  for (let i = 0; i <= n; i++) { const t = T0 + ((T1 - T0) * i) / n; out.push(at(t, edgeAt(t) - 0.2)); }
+  for (let i = 0; i <= n; i++) { const t = T0 + ((T1 - T0) * i) / n; out.push(at(t, edgeAt(edge, t) - 0.2)); }
   for (let h = DEPTH.length - 1; h >= 0; h--) for (let i = 8; i >= 0; i--) {
     const t = WALLS[h] + ((WALLS[h + 1] - WALLS[h]) * i) / 8;
     out.push(at(t, depthAt(h, t) + 0.8));
   }
   return out.map(([x, z]) => [+x.toFixed(2), +z.toFixed(2)] as [number, number]);
-})();
+}
+export const CRESCENT_OUTLINE = crescentOutline();
 
 /** The houses themselves, each its own outline, where it's solid all the way through (not the
  *  pavement in front, where you can stand). */
@@ -298,8 +328,8 @@ export const CRESCENT_SOLID: [number, number][][] = DEPTH.map((_, h) => {
 /** The ground it lowers: everywhere inside it to just under the street's level, under the
  *  pavement, and down to the floor of the basement areas along the front (rectangles in its frame,
  *  each round a short stretch of the areas). */
-export const CRESCENT_SINK: { x0: number; x1: number; z0: number; z1: number; y: number }[] = (() => {
-  const out = [{ x0: -120, x1: 120, z0: -120, z1: 40, y: -0.05 }];
+export const CRESCENT_SINK: { x0: number; x1: number; z0: number; z1: number; y: number; over?: boolean }[] = (() => {
+  const out: { x0: number; x1: number; z0: number; z1: number; y: number; over?: boolean }[] = [{ x0: -120, x1: 120, z0: -120, z1: 40, y: -0.05, over: true }];
   for (let t = T0; t < T1; t += 0.04) {
     const q = [at(t, RAIL), at(t, -0.1), at(Math.min(T1, t + 0.04), RAIL), at(Math.min(T1, t + 0.04), -0.1)];
     const xs = q.map((p) => p[0]), zs = q.map((p) => p[1]);

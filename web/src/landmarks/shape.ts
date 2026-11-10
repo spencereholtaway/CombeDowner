@@ -213,6 +213,20 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
   return { tops: out, walls: W, box };
 }
 
+/** Whether a shape has a surface to stand on at x, z in its frame (offset by y0) between lo and hi. */
+export function surfaceBetween(s: Shape, x: number, z: number, y0: number, lo: number, hi: number): boolean {
+  const i = Math.floor(x / STEP), j = Math.floor(z / STEP), L = s.tops.get(cellKey(i, j));
+  if (!L) return false;
+  const fx = x - i * STEP, fz = z - j * STEP;
+  const u = Math.min(SUB - 1, Math.floor((fx / STEP) * SUB)), v = Math.min(SUB - 1, Math.floor((fz / STEP) * SUB)), bit = 1 << (u + SUB * v);
+  for (let n = 0; n < L.length; n += TOP) {
+    if (!(L[n + 1] & bit)) continue;
+    const h = y0 + Math.max(L[n + 4], Math.min(L[n + 5], L[n] + L[n + 2] * (fx - STEP / 2) + L[n + 3] * (fz - STEP / 2)));
+    if (h >= lo && h <= hi) return true;
+  }
+  return false;
+}
+
 /** The highest surface of a shape at x, z in its frame (offset by y0) that's above g and no more
  *  than a step above feet at y; or g. */
 export function standOn(s: Shape, x: number, z: number, y0: number, g: number, y: number): number {

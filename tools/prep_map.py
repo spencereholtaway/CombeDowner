@@ -1389,13 +1389,17 @@ for r in pending:
     if not r["span"]: continue
     half = RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED_RD else 0.3) + 1.0
     for st in stretches(r["span"]):
-        if len(st) < 4: continue
-        inner = st[1:-1]
-        line = shapely.LineString([r["run"][i][:2] for i in inner])
+        # (the deck between its abutments, to within 1.5 m of each end, every 2 m: the points one in
+        # from each end left a short footbridge undug, and the last metres of a longer one)
+        cum = np.concatenate([[0.0], np.cumsum([math.dist(r["run"][a][:2], r["run"][b][:2]) for a, b in zip(st, st[1:])])])
+        if len(st) < 2 or cum[-1] <= 3.5: continue
+        at = np.linspace(1.5, cum[-1] - 1.5, max(2, int((cum[-1] - 3.0) / 2.0) + 1))
+        line = shapely.LineString([(float(np.interp(s_, cum, [r["run"][i][0] for i in st])),
+                                    float(np.interp(s_, cum, [r["run"][i][1] for i in st]))) for s_ in at])
+        zs = [float(np.interp(s_, cum, [r["z"][i] for i in st])) for s_ in at]
         poly = line.buffer(half, cap_style=2)
         win, inn = cover_xy(poly)
         PROTECT[win][inn] = True
-        zs = [r["z"][i] for i in inner]
         px, py = GX[win][inn], GY[win][inn]
         if len(px):
             tt = np.array([line.project(shapely.Point(x, y)) for x, y in zip(px, py)]) / (line.length or 1) * (len(zs) - 1)
@@ -1645,6 +1649,10 @@ if True:
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
             # the basins off it (a marina): canal.ts draws their water too, at their pound's level
             cbasins = [(shapely.Polygon(b["r"][0], b["r"][1:]).buffer(0.8), b["lv"]) for b in json.load(open(canal_file)).get("basins", []) if not b.get("own")]
+            # where the canal opens into a river (tools/canal.py "x"), the two are one water
+            cmouths = [(Point(q[0], q[1]), run["lv"]) for run in json.load(open(canal_file))["runs"] for q in run.get("x") or []]
+    rivers_near = unary_union([transform(proj, g) for g, p in L("water") if g.geom_type.endswith("Polygon") and p.get("class") != "canal"
+                               and not is_sea(p) and transform(proj, g).intersects(BM)] or [Point(1e9, 1e9)]) if canal_lv is not None else None
     whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
 
     _shore = []
@@ -1784,6 +1792,8 @@ if True:
                     bank = [(x, y) for x, y in rings[0] if not (weir_near is not None and shapely.intersects_xy(weir_near, x, y))] or rings[0]
                     wz = A.sea if at_sea else min(elev(x, y) for x, y in bank) + 0.1
                     if joins_sea: wz = max(wz, A.sea)
+                    if not (is_canal or tank or at_sea) and canal_lv is not None:
+                        wz = min([wz] + [lv for at_, lv in cmouths if poly.distance(at_) < 1])
                     entry = dict(r=[[[r1(x), r1(y)] for x, y in ring] for ring in rings], z=r1(wz), **({"c": "canal"} if is_canal else {}),
                                  **({"k": "t"} if tank else {}))
                     water_all.append(entry)
@@ -1799,7 +1809,9 @@ if True:
                             for bp, blv in cbasins:
                                 inb = shapely.contains_xy(bp, GX[win][wet], GY[win][wet])
                                 bed |= inb; lv = np.where(inb, blv, lv)
-                            blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.maximum(blk[wet], lv + 0.3)); grid[win] = blk
+                            # (but where the map's canal outline runs out over a river it is the river's water, not bank)
+                            bank_up = ~shapely.contains_xy(rivers_near, GX[win][wet], GY[win][wet])
+                            blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.where(bank_up, np.maximum(blk[wet], lv + 0.3), blk[wet])); grid[win] = blk
                         elif at_sea:
                             # the harbour's quays stand straight up out of deep water, a metre and a
                             # half above it; a beach is left to run down into the sea
@@ -2334,7 +2346,10 @@ def clear_of_line(poly):
     return parts[0].simplify(0.25)
 
 
+from buildings import built_as_church
+_church = built_as_church(L("osm") if os.path.exists(f"{src_dir}/osm.geojson") else [], args[0])
 for fi, (g, p) in enumerate(L("building")):
+    if _church(g, p): p = dict(p, _church=True)
     for k, poly in enumerate(polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
             p = dict(p, _own=keeper(poly) == (ti, tj))      # whole, in the tile holding its middle
@@ -2384,7 +2399,7 @@ else:
                        [poly for poly, p in cand])
     if STORE is not None: roof_levels = STORE.put_roofs([poly for poly, p in cand], roof_levels)
 for (poly, p), lv in zip(cand, roof_levels):
-    church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
+    church = p.get("_church")
     parts = [poly]
     if lv is not None:
         parts = lv
@@ -2641,7 +2656,34 @@ if _merged:
     if keys is not None: keys = [k for n, k in enumerate(keys) if n not in _merged]
 blds, footprints, bld_props, bld_fresh = [], [], [], []
 as_built = [c[0] for c in cand]     # each outline as the game draws it, for the doors to stand on its walls
-at_measured, uphill, faced = 0, [0, 0], 0       # (unmeasured, measured on ground not the map's)
+at_measured, uphill, faced, boxed = 0, [0, 0], 0, 0       # (unmeasured, measured on ground not the map's)
+
+
+def box_dormer(poly, roof, eaves):
+    """A house with a box dormer the width of it (buildings.classify): its roof slopes up from the
+    wall nearer a street to the ridge, and runs on level from there to the back wall, which stands
+    up to meet it. As a lidar roof mesh (map.ts RoofMesh), which pages that don't know the form
+    already draw; the plain roof in rr stays for any that don't know those either."""
+    q = roof["rect"]
+    sides = [((q[0][0] + q[1][0]) / 2, (q[0][1] + q[1][1]) / 2), ((q[3][0] + q[2][0]) / 2, (q[3][1] + q[2][1]) / 2)]
+    near = lambda pt: min((road_lines[streets_[int(j)]].distance(shapely.Point(pt))
+                           for j in street_tree.query(shapely.Point(pt).buffer(60))), default=1e9) if street_tree else 1e9
+    front, back = sides if near(sides[0]) <= near(sides[1]) else sides[::-1]
+    depth = math.dist(front, back) or 1
+    nx, ny = (back[0] - front[0]) / depth, (back[1] - front[1]) / depth
+    k = roof["rise"] / (depth / 2)
+    slope = (k * nx, k * ny, eaves - k * (front[0] * nx + front[1] * ny))
+    top = eaves + roof["rise"]
+    # the half-plane up to the ridge, from the street side
+    mx, my = front[0] + nx * depth / 2, front[1] + ny * depth / 2
+    big = 4 * (depth + math.dist(q[0], q[1]))
+    tx, ty = -ny, nx
+    half = shapely.Polygon([(mx + tx * big, my + ty * big), (mx - tx * big, my - ty * big),
+                            (mx - tx * big - nx * big, my - ty * big - ny * big), (mx + tx * big - nx * big, my + ty * big - ny * big)])
+    faces = [(0, g) for g in shapely.get_parts(poly.intersection(half)) if g.geom_type == "Polygon" and g.area > 0.01]
+    faces += [(1, g) for g in shapely.get_parts(poly.difference(half)) if g.geom_type == "Polygon" and g.area > 0.01]
+    V, T, Wl, rings, tops = roof_faces.mesh(poly, faces, [slope, (0.0, 0.0, top)], eaves, top)
+    return roof_faces.for_game(dict(v=V, t=T, w=Wl, r=rings, z=tops), 0.0)
 for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
     ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
     if not ring: continue       # a sliver with no area once rounded: nothing to build
@@ -2676,8 +2718,13 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
         out["rp"] = round(b["roof"]["rise"], 1)
         out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
         if b["roof"].get("sure_ends"): out["hs"] = 1
+    if b["level"] and b["kind"] in ("terrace", "semi"): out["lt"] = 1
     k = roof_faces.ring_key(out) if FACES else None
-    if k in FACES:
+    _whole = shapely.Polygon(ring, holes).buffer(0) if b["roof"] and b["roof"].get("box") else None
+    if _whole is not None and _whole.geom_type == "Polygon" and k not in FACES:
+        out["r"], out["rm"] = box_dormer(_whole, b["roof"], eaves)
+        boxed += 1
+    elif k in FACES:
         # into the map's frame as the eaves were: the survey's heights over its ground at the walls
         # (where the survey gave no eaves here, its ground as the roofs were fitted)
         up = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - FACES[k]["base"]
@@ -2698,6 +2745,7 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
     bld_props.append(p)
     bld_fresh.append(f)
 if FACES: print(f"roofs: {faced} of {len(blds)} in faces from the lidar")
+if boxed: print(f"roofs: {boxed} row houses with a box dormer the width of the house")
 print(f"buildings: {at_measured} of {len(blds)} at their measured eaves height; by the hill behind them, "
       f"{uphill[0]} unmeasured and {uphill[1]} where the survey's ground isn't the map's")
 
@@ -4083,7 +4131,7 @@ if KEEP:
         for k in kept.query(c.buffer(1.5)):
             o = kept_bl[int(k)]; op = shapely.Polygon(o["r"][0])
             if op.centroid.distance(c) < 1.5 and abs(op.area - poly.area) < poly.area / 6:
-                for key_ in ("dz", "m", "rc", "w", "rr", "rp", "hp", "hs", "ch", "pp", "st", "c"):
+                for key_ in ("dz", "m", "rc", "w", "rr", "rp", "hp", "hs", "lt", "ch", "pp", "st", "c"):
                     if key_ in o: b[key_] = o[key_]
                     elif key_ in b: del b[key_]
                 # (its eaves at the height the earlier build measured, on this build's ground)

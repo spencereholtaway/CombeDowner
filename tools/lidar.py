@@ -26,6 +26,7 @@ PX = 0.5            # sample spacing inside a footprint, metres
 INSET = 0.4         # keep samples this far inside the walls, clear of gutters and overhangs
 MIN_ABOVE = 1.8     # median height above ground below which there is no building in the survey
 MAX_RISE = 5.0      # tallest roof, eaves to ridge
+LEVEL_TOP = 0.5     # metres: a roof with over half of it this near its highest point has a level top
 TREE_COVER = 0.3    # share of a roof under tree canopy beyond which the survey can't see it
 ROUGH = 1.0         # metres: how lumpy a survey can be (see rough) and still be a roof; tree crowns are lumpier
 TOWER = 30.0        # metres: a smooth roof this high is a tower, even where the canopy map takes it for a tree
@@ -260,7 +261,9 @@ def decide(poly, got, max_rise=MAX_RISE):
     flat = ridge - eaves < 1.0
     # and it is hipped if the roof also falls away towards both ends of the ridge
     hipped = not flat and got["fall"] < -0.25
-    out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=got["u"], hipped=hipped, base=base)
+    # a box dormer the width of the house, or a flat roof: the survey's middle height is its top
+    level = ridge - mid < LEVEL_TOP
+    out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=got["u"], hipped=hipped, base=base, level=level)
     fit = choose_roof(got["fit"])
     out["sure"] = out["sure_hips"] = False
     if fit is not None:

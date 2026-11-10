@@ -131,6 +131,30 @@ CORE_TALL = 8.0         # metres to the eaves: a town house of three storeys or 
 PAINTS = ("#f7f5ef", "#f7f5ef", "#f1e7cc", "#e8eedf", "#f3e1da", "#e0e8f0", "#f2ecc8")
 CORE_SHADES = {"stone": ("#f2dfb2", "#e4d2a8", "#d8cdb6"), "buff": ("#f2efe8", "#cfcac0", "#a9a294"),
                "brick": ("#c0644a", "#a85a46", "#c98062"), "render": PAINTS}
+CHURCH_CLASSES = ("church", "chapel", "cathedral")   # Overture's classes for a building built as a church
+
+
+def built_as_church(osm, map_id):
+    """A test of whether a building (a lon/lat outline and its Overture properties) was built as a
+    church: Overture's class says so, or an OpenStreetMap building covering it and covered by it
+    says so (tools/worship.py: its tags, or what Wikidata says of it), or its name does (but a terrace
+    called Chapel Row is houses)."""
+    from worship import churches, built_as_church as tagged, name_says_church
+    known = churches(map_id)
+    outlines = [g.buffer(0) for g, q in osm if g.geom_type in ("Polygon", "MultiPolygon") and tagged(q, known)]
+    tree = STRtree(outlines)
+
+    def test(g, p):
+        if (p.get("class") or "") in CHURCH_CLASSES or name_says_church((p.get("names") or {}).get("primary")):
+            return True
+        if not outlines or g.geom_type not in ("Polygon", "MultiPolygon"):
+            return False
+        g = g.buffer(0)
+        return any((a := outlines[int(k)].intersection(g).area) > 0.5 * g.area and a > 0.5 * outlines[int(k)].area
+                   for k in tree.query(g))
+    return test
+
+
 HOME = {"", "residential", "apartments", "house", "detached", "semidetached_house", "terrace", "bungalow"}
 HOUSE = {"house", "detached", "semidetached_house", "terrace", "bungalow"}
 
@@ -232,8 +256,7 @@ def priors(polys, props, certs, keys, zones, default_zone, census, cores):
     fixed = {}
     for i, (poly, p) in enumerate(zip(polys, props)):
         cls = p.get("class") or p.get("subtype") or ""
-        name = (p.get("names") or {}).get("primary") or ""
-        if oa_of[i] < 0 or cls not in HOME or poly.area < 28 or "Chapel" in name: continue
+        if oa_of[i] < 0 or cls not in HOME or poly.area < 28 or p.get("_church"): continue
         floors, c = p.get("num_floors") or 0, certs[i]
         est[i] = max(1.0, poly.area * (floors or 3) / FLAT_M2, (c["n"] - c["houses"]) if c else 0)
         if (poly.area > 320 or (poly.area > 150 and floors >= 4)) and (cls == "apartments" or (floors >= 4 and zone[i] not in BATH)):
@@ -386,7 +409,8 @@ def rows(polys, adj, measured=None, shapes=None):
     shapes: the roof shape mapped for each house.
     Returns ({house: ridge direction}, {house: whether the row's free ends are hipped, or None,
     for each house without the survey's own},
-    {house in a row: "survey" where it keeps the survey's roof, or why it takes the row's})."""
+    {house in a row: "survey" where it keeps the survey's roof, or why it takes the row's},
+    {house in a row with surveyed pitched roofs: the middle of their rises, eaves to ridge})."""
     sides = [_sides(p) if HOUSE_M2[0] <= p.area <= HOUSE_M2[1] else None for p in polys]
 
     def alike(i, j):
@@ -410,7 +434,7 @@ def rows(polys, adj, measured=None, shapes=None):
             if (s_wall < length / 4 and m["hips"][0]) or (s_wall > length * 3 / 4 and m["hips"][1]): return True
         return False
 
-    ridge, hipped, why, seen = {}, {}, {}, set()
+    ridge, hipped, why, pitch, seen = {}, {}, {}, {}, set()
     for i in range(len(polys)):
         if i in seen or not sides[i]: continue
         members, stack = [], [i]
@@ -451,7 +475,13 @@ def rows(polys, adj, measured=None, shapes=None):
                 wx, wy, _ = own[k]
                 ridge[k] = (wx, wy) if turn else (-wy, wx)
             hipped[k] = sum(ends) * 2 >= len(ends) if ends else None
-    return ridge, hipped, why
+        # a row was built to one pitch, which a house with a box dormer the width of it shares on
+        # its slope to the street. A level top (a box dormer, a flat roof) says nothing of the pitch
+        rises = [measured[k]["ridge"] - max(2.2, measured[k]["eaves"]) for k in members
+                 if measured and measured[k] and not measured[k]["flat"] and not measured[k].get("level")]
+        if len(rises) >= 2:
+            for k in members: pitch[k] = float(np.median(rises))
+    return ridge, hipped, why, pitch
 
 
 def oriented_rect(poly, ux, uy):
@@ -744,7 +774,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                      for f in (p.get("_prior") or {}).get("near", ()) if f in whole})
     adj, comp = groups(polys, [p.get("_whole_geom") for p in props], joined)
     apart = set(joined)
-    row_ridge, row_hipped, row_why = rows(polys, adj, measured, [p.get("roof_shape") for p in props])
+    row_ridge, row_hipped, row_why, row_pitch = rows(polys, adj, measured, [p.get("roof_shape") for p in props])
     near_wall = near_walls(polys, certs)
     # (the mapped facades count as well, for where an old core's fronts are painted)
     near_data = near_walls(polys, [{"wall": w} if (w := _data_wall(p, c)) else None for p, c in zip(props, certs or [None] * len(props))])
@@ -770,7 +800,6 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             group_key[mat[i]] = min(group_key.get(mat[i], keys[i]), keys[i])
     for i, (poly, p) in enumerate(zip(polys, props)):
         cls = p.get("class") or p.get("subtype") or ""
-        name = (p.get("names") or {}).get("primary") or ""
         ml = p.get("height")
         cx, cy = poly.centroid.coords[0]
         zone = zone_at(zones, cx, cy, default_zone)
@@ -789,7 +818,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         core = bool(prior.get("core"))
 
         # ---- what kind of building ----
-        if cls in ("church", "chapel") or "Chapel" in name or name == "Holy Trinity":
+        if p.get("_church") or cls in CHURCH_CLASSES:
             kind = "church"
         elif cls in ("school", "kindergarten", "hospital", "university") or (area > 700 and not flats):
             kind = "institution"
@@ -969,7 +998,16 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             if fill < 0.9:
                 rect, length, depth = core_rect(poly, ux, uy)
             shape = None if m else p.get("roof_shape")      # the mapped shape, where there is no survey
-            if (zone == "riverside" and kind == "flats") or (m and m["flat"]) or zone in ("cbd", "bokaap") \
+            box = bool(m and m.get("level") and i in row_pitch and depth > 3 and kind in ("terrace", "semi")
+                       and m["ridge"] - row_pitch[i] >= 2.2)
+            if box:
+                # a level top in a row of pitched roofs: a box dormer the width of the house, at the
+                # survey's top, behind the row's slope to the street (tools/prep_map.py finds which
+                # side that is). Its walls stand where the row's pitch from that top puts them
+                eaves = m["ridge"] - row_pitch[i]
+                if tall: tall = max(1, round((eaves - 0.8) / 3.5))
+                roof = dict(rect=rect, rise=row_pitch[i], hips=(0.0, 0.0), u=(ux, uy), box=True)
+            elif (zone == "riverside" and kind == "flats") or (m and m["flat"]) or zone in ("cbd", "bokaap") \
                     or (zone == "cape" and kind in ("flats", "institution", "shop")) or shape == "flat":
                 pass                                    # flat roofs
             elif m and depth > 3:
@@ -1099,7 +1137,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             elif kind == "terrace" and len(adj[i]) == 1 and r_self < 0.5:
                 pass   # end-of-terrace: the stack on the shared wall is enough
         # (base: the survey's lowest ground at the walls, which its eaves and ridge are measured from)
-        out.append(dict(kind=kind, zone=zone, core=core, row_roof=row_why.get(i) if roof else None, eaves=eaves, base=m.get("base") if m else None, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
+        out.append(dict(kind=kind, zone=zone, core=core, row_roof=row_why.get(i) if roof else None, level=bool(m and m.get("level")), eaves=eaves, base=m.get("base") if m else None, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
                         wc=_hex(p.get("facade_color")) or (core_shade if wall == core_wall else None), rk=_hex(p.get("roof_color")),
                         windows=kind not in ("outbuilding",)))
     return out

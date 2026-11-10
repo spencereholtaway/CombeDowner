@@ -103,7 +103,7 @@ and `__game().challengeZones()` lists which zone each challenge went in. `node t
 combe-down cape-town` (from `web/`, after a build) prints every map's zones and challenges.
 
 The quickest way to play one is the games list (`web/src/gameslist.ts`), a hidden page on the main
-menu and the pause menu. Ask Dan for the word, open the game once with `?games=<word>` and the list
+menu and the pause menu. Ask the co-developer for the word, open the game once with `?games=<word>` and the list
 stays on that device (`?games=0` takes it off again). It lists every challenge (with a note for
 any this map hasn't placed) and every kind of job, and the pub takeover. Pick one and you, and
 everyone in your room, are put at its start, with the zones' wall down and never mind whether it's

@@ -134,7 +134,7 @@ const DRAW: Record<string, Record<string, () => void>> = {
   news: {
     "A kill": () => keep(() => news("You splatted Ann"), 25000),
     "A pickup": () => keep(() => news("+25 rifle rounds"), 25000),
-    "The speed trap": () => keep(() => news("Speed trap, Ralph Allen Drive: 48 km/h, a best (was 41)"), 25000),
+    "The speed trap": () => keep(() => news("Speed trap, Ralph Allen Drive: 30 mph, a best (was 25)"), 25000),
     Arriving: () => keep(() => news("Arrived at Bath"), 25000),
     "Long (wraps smaller)": () => keep(() => news("The Flag Lads have taken over The Hadley Arms! Follow the purple marker and clear them out"), 25000),
     "A critic's remark": () => keep(() => news("Lady Tilly on Ann's: “Bold. Wrong, but bold.” 4/10"), 25000),

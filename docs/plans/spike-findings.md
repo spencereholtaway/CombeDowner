@@ -1,6 +1,6 @@
 # What the spikes while driving are: findings (round 2, item 1)
 
-Measured on Dan's Mac with `tools/spikeprobe.mjs` (new), the same route as
+Measured on the build Mac with `tools/spikeprobe.mjs` (new), the same route as
 `tools/fpsprobe.mjs --route` (Combe Down → town and back, 2.7 km at 20 m/s). The probe drives the
 route and, for every frame over the threshold, records:
 

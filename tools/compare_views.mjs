@@ -1,5 +1,5 @@
-// Side-by-side screenshots of the same views from two builds of the game (Spencer's main on the
-// left, ours on the right), to judge a map change in a couple of minutes and stop early if it is
+// Side-by-side screenshots of the same views from two builds of the game (the maintainer's main on
+// the left, ours on the right), to judge a map change in a couple of minutes and stop early if it is
 // wrong. It serves both built games (web/dist folders, never rebuilt here), opens ONE muted
 // headless Chrome, and shoots both builds in parallel, several pages each. Each page loads once
 // and then moves the menu's backdrop camera with window.__at, as tools/shoot.mjs does, so a view
@@ -40,8 +40,8 @@ const { chromium } = (() => {
   try { return createRequire(WEB + "package.json")("playwright"); } catch { return createRequire(import.meta.url)("playwright"); }
 })();
 
-const SCRATCH = "/private/tmp/claude-501/-Users-dan-src-CombeDowner/1fc84dd2-d541-4305-bacd-d8528644eadc/scratchpad";
-const scratch = fs.existsSync(SCRATCH) ? SCRATCH : process.cwd();
+const SCRATCH = process.env.COMPARE_SCRATCH;
+const scratch = SCRATCH && fs.existsSync(SCRATCH) ? SCRATCH : process.cwd();
 const opt = {
   "ours-dist": WEB + "dist", views: fs.existsSync(path.join(TOOLS, "compare_views.json")) ? path.join(TOOLS, "compare_views.json") : path.join(scratch, "compare/views.json"),
   jobs: "3", size: "1280x720", timeout: "60", near: "150", once: "out/once-styles", city: "out/city-rows",

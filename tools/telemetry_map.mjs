@@ -18,7 +18,7 @@ import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const args = process.argv.slice(2);
-const opt = { url: "https://spencereholtaway.github.io/CombeDowner/", out: "../combe-downer-telemetry/priv/static", map: "combe-down" };
+const opt = { url: "https://combedowner.com/", out: "../combe-downer-telemetry/priv/static", map: "combe-down" };
 for (let i = 0; i < args.length; i += 2) opt[args[i].replace(/^--/, "")] = args[i + 1];
 
 const req = process.env.PW ? createRequire(import.meta.url) : createRequire(WEB + "package.json");

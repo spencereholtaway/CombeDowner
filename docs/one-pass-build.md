@@ -1,7 +1,7 @@
 # One pass: what the map build does, what it repeats, and how to make it one pipeline
 
 A cold build of Bath takes 12.5 minutes and 2.3 CPU-hours on the M4 Max. Cape Town takes 19.4
-minutes and 3.4 CPU-hours. Dan's target is under 5 minutes.
+minutes and 3.4 CPU-hours. The co-developer's target is under 5 minutes.
 
 This note:
 - maps every step of both phases, from the code;
@@ -11,7 +11,7 @@ This note:
   (b) part of it can go byte-identically; (c) removing it changes the output;
 - sets out the one-pass pipeline and the order to build it in.
 
-The main track is Dan's: stay byte-identical and get the speed by reordering, recombining and
+The main track is the co-developer's: stay byte-identical and get the speed by reordering, recombining and
 refactoring, so that shared work is done once. The (c) items are listed separately, as an option.
 
 Everything here was measured at `937402f5` (the combined branch with build-speed merged), in the
@@ -70,7 +70,7 @@ so take a single run's time to within about 5–10%.
 
 ## How it was measured
 
-Everything runs through `scratchpad/slot.sh`. The measuring scripts named below (`loop.py`, `secttime.py`, `pertime.py`, `kerbs_alt.py`) are in this session's scratchpad (`/private/tmp/claude-501/-Users-dan-src-CombeDowner/1fc84dd2-d541-4305-bacd-d8528644eadc/scratchpad/onepass/`), not in the repo. Timed runs use `--both`, with no other build on the
+Everything runs through `scratchpad/slot.sh`. The measuring scripts named below (`loop.py`, `secttime.py`, `pertime.py`, `kerbs_alt.py`) are in this session's scratchpad (`onepass/` in it), not in the repo. Timed runs use `--both`, with no other build on the
 machine.
 
 **Whole maps.** `prep_tiles.py` cold, with an empty `CD_PARTITION_CACHE` store, under
@@ -327,7 +327,7 @@ byte-compared; "estimated" means worked out from the profiles above.
 | B2 | prep_map's `br` as read by `drop_walls_on_paving` | only a 1.5 m buffer of every run | nothing, unless the test moves into prep_map's tail and passes on only the buffer | negligible |
 | B3 | prep_map's road solve (9.3 s on -1_2, 12.5 of 26 on Cape Town 2_2) | all of it: its flattened ground is kept everywhere at grade, and its span flags drive `fill_dug_ground` | the span/ramp regrowth that only feeds the discarded `rd` heights (P:2089-2160) | small; most of that section also feeds the ground |
 
-### (c) Needs an output change (Dan's option)
+### (c) Needs an output change (the co-developer's option)
 
 | # | what | cost | replacement |
 |---|---|---|---|
@@ -509,7 +509,7 @@ Byte-identical, first:
    square's window divides it: divide every multi-square parent from two windows and compare. Only
    if that holds does it count as byte-identical.
 
-Then, if Dan takes the (c) option, these change the output. Each is checked against
+Then, if the co-developer takes the (c) option, these change the output. Each is checked against
 `check_map.py`, which must stay as good or better on Bath, with shots of the village, the city
 centre and a Cape Town street:
 
@@ -524,14 +524,14 @@ centre and a Cape Town street:
 
 The first Bath build here read the EPC folder through a symlink into the main checkout. `epc.py`
 then wrote its address cache, `data/raw/combe-down/wide/epc/.addresses-cdeb17f3.pickle`, into
-`/Users/dan/src/CombeDowner`. It is an ignored cache file, so nothing is committed. It was left
+`~/src/CombeDowner`. It is an ignored cache file, so nothing is committed. It was left
 there rather than deleted, because this work doesn't delete outside its worktree. The worktree's
 `epc` folder now holds links to the CSVs only.
 
 ## Appendix A: prep_map's steps
 
 
-Worktree `/Users/dan/src/cd-onepass` at `937402f5`. `P:` = `tools/prep_map.py`, `W:` = `tools/partition/write_tile.py`.
+Worktree `~/src/cd-onepass` at `937402f5`. `P:` = `tools/prep_map.py`, `W:` = `tools/partition/write_tile.py`.
 All line numbers are from that commit. "WT" = `build_tile` (W:6221-6470), which `write_one` (W:6473) calls.
 
 ### How the two phases connect
@@ -788,7 +788,7 @@ Output clipping (P:4076-4147): terrain to own vertices; buildings whole by `keep
 ## Appendix B: the partition's steps
 
 
-Worktree: `/Users/dan/src/cd-onepass` @ `937402f5`. All paths below are relative to `tools/`.
+Worktree: `~/src/cd-onepass` @ `937402f5`. All paths below are relative to `tools/`.
 "J" = `--jobs` (process-pool size). "prep square" = `<raw>/partition/prep/<ti>_<tj>.json`
 (prep_map's output after prep_tiles' `clear_seams` + `string_city_wires`). `[?]` marks something
 inferred rather than read end to end.

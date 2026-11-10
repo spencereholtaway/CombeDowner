@@ -5,12 +5,12 @@ across inside a force field, built from real open data: Overture Maps buildings,
 woods and water on Environment Agency lidar terrain. It starts in Combe Down, round the Hadley
 Arms, and everything you can do there you can do anywhere in Bath.
 
-**Play:** https://spencereholtaway.github.io/CombeDowner/
+**Play:** https://combedowner.com/
 
-**Who's who:** https://spencereholtaway.github.io/CombeDowner/characters.html, everyone you meet on
+**Who's who:** https://combedowner.com/characters.html, everyone you meet on
 the streets and down the mines, and every car, bus, train, balloon, boat and ride in their colours, on a turntable.
 
-**What's what:** https://spencereholtaway.github.io/CombeDowner/whatswhat.html, the set pieces,
+**What's what:** https://combedowner.com/whatswhat.html, the set pieces,
 landmarks and vehicles, in full, without textures or as wireframes, and in AR on an iPhone or iPad.
 
 It's paintball by default, peer to peer with no game server, and ships no images or sound files:
@@ -32,7 +32,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
-  saw it. Every deck is solid from parapet to parapet, however narrow the path along it, and the
+  saw it. Underneath, your head meets the bridge where it's drawn: a footbridge's thin deck, a
+  concrete beam's deeper one, or a stone arch's barrel, which over the canal's towpath can be low
+  enough to make you crouch. Every deck is solid from parapet to parapet, however narrow the path along it, and the
   parapets run unbroken round its bends and where its pieces join, stopping only where another
   deck runs right alongside. A bridge over a road opens over all of it, both carriageways and their
   pavements, with no pier or wall standing in the road and an arch flattened to clear it, and the
@@ -92,7 +94,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   up; everyone in a game sees the same time.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
-  each kerb, and traffic lights at junctions; bus shelters only at the stops that have one, and the
+  each kerb, and traffic lights at junctions, lit both ways and changing in their own time; bus
+  shelters only at the stops that have one, and the
   stops on a street closed to traffic that buses still use (Milsom Street, the University's
   Parade) at its kerb, with the bus you call driving along it; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
@@ -101,8 +104,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   pavement or parked cars; in front of a shop the pavement runs on up to its front, with no
   front garden, and a front door opens clear of any wall or fence, on a wall with open ground
   outside it (never a terrace's party wall or into a neighbour's extension); paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
-  dog-leg between gardens goes round them rather than through them; flights of steps are solid treads climbing between the ground at each
-  end, turning at their landings, with handrails along them where the map has them. Mapped
+  dog-leg between gardens goes round them rather than through them; flights of steps (and any footpath steeper than 1 in 4) are treads you climb one by one, sunk into the bank, between the ground at each
+  end, turning at their landings, with a stone cheek wall where the bank beside them falls away and handrails along them where the map has them; you walk on footpaths where they're drawn, and a footpath, front path or drive lies level from side to side, cut into the hillside it crosses, following the slope only along its length. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
   kissing gate (only where the boundary is really there), with cattle grids across the lanes.
@@ -244,7 +247,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   happy, a walking stick for being hit by one, a thermos in a string bag for being hit by the lot),
   earmuffs for a clean touch on the bells, a beret when the critics call your show a triumph, a
   lock-keeper's cap for gold on the Lock Run, an L-plate for passing the driving test, dazzled eyes
-  for 60 km/h past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
+  for 40 mph past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
   shoot-out won, a froth moustache for ten different pubs, a monocle for a night out seen through,
   sunblock stripes for knocking over the stumps, climbing rope for topping the Climb with no lives
   lost, a balancing pole for the Tightrope, a miner's lamp for the bottom of the mines, a skateboard
@@ -275,8 +278,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched
   off on this site for now, so here the whole map is open, every way to get about runs from the start,
   and none of the three shows anywhere. Tick Progression in Settings (Play) to try them, and it's kept
-  for next time; in a game with others, the host's say counts for the room. They're on to start with at
-  danturn.github.io/CombeDowner and on a copy run locally. `?progression=1` or `0` in the address
+  for next time; in a game with others, the host's say counts for the room. They're on to start with on
+  the test copies and on a copy run locally. `?progression=1` or `0` in the address
   switches them for one visit.
 - **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
   and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
@@ -531,7 +534,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
   checkpoint, a minigame, a strange structure, a bus stop or a cable car station, and the
-  marker goes exactly on it and says what it is ("Dan marked Push the Bus"); a pub opens its card,
+  marker goes exactly on it and says what it is ("Ada marked Push the Bus"); a pub opens its card,
   with Mark it on it; clicking a bunch of jobs
   zooms in on them. In the street a marker on something is a ring of light that fits round that
   thing, so you can see what was picked when you get there. Each player's markers and arrow are in
@@ -627,7 +630,9 @@ If whoever put the game online has switched it on, the game sends play counts so
 roughly how many people play, for how long, on which map and in which mini-games, and how big the
 rooms get. It sends the name you chose to play under, a random number kept in your browser, a random
 number for each tab, which copy of the game you are playing (its web address), whether you are on a
-phone, tablet or computer and the model of its graphics chip, the map, the game's version, when a
+phone, tablet or computer and the model of its graphics chip, your browser's time zone and language,
+a rough screen size, whether you play with a keyboard and mouse, touch or a controller, the website
+that linked you to the game (just its name), the map, the game's version, when a
 race, ball or the mines start and stop, and at the end how smoothly the game ran (frame rate and how
 much it drew each frame). Every half minute it notes which 50 m square of the map you are in, without your name. Your
 room's code goes along scrambled so it can't be read back, and the host of a room also sends how
@@ -637,8 +642,9 @@ allows (nothing about who they are). If something goes wrong in the game (an err
 out, a part of the map that won't load) it sends what went wrong and where in the game's code, once
 each. Once per version of each map, a computer also sends the game's own picture of the whole map
 (nothing about you) if the server hasn't got that version's yet, for the map of where people go. It
-never sends chat, voice or your address. Add `?telemetry=0` to the address to
-turn it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
+never sends chat or voice. The server records your connection's IP address with the session, along
+with a coarse location (your country, region and town) worked out from it. Add `?telemetry=0` to the
+address to turn all of it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
 nothing at all.
 
 ## Rebuild a map
@@ -691,13 +697,25 @@ map was built before, to compare the two. Each garden has one style of front and
 of fence or hedge, and in Georgian Bath (where the houses round a street are tall town houses, or
 Historic England lists railings all along it) a front garden's edge nothing was seen along is iron
 railings. Buildings stand at the eaves height the lidar measured, and you walk and drive on the
-streets as they're drawn. `prep_map.py`'s squares are kept apart, in
+streets as they're drawn. Each square also carries its ground as one sheet with its streets and
+paths (`tools/partition/sheet.py`): the grass is cut down or built up to meet every street's,
+pavement's and path's edge, banked no steeper than 1 in 1.5 above it and 1 in 2 below, and where a
+bank 3 m wide can't make up the difference a low retaining wall in the square's own kind of wall
+takes the rest. The railway lies on a bed of ballast in the sheet too, level across and flush with
+the grass either side, two tracks side by side on one bed, each at its own height. That's how the ground is drawn and walked: the open ground is triangulated
+round the faces' edges, meeting them only at their own corners; `?ground=sheet` in the address cuts
+each grid cell along the edges instead, and `?ground=old` draws the grid let down under the faces,
+to compare. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip` (Bath's
 only, so far).
 The churches' towers and spires are measured from the lidar by `tools/towers.py` and kept in
-`data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh.
+`data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh. A
+building is drawn as a church when it was built as one, whatever it's used for now: OpenStreetMap's
+`building=church`, `chapel` or `cathedral`, a Christian place of worship, or a building Wikidata
+calls a church (St Mark's in Widcombe is a community centre), or whose name says so (a chapel, church, abbey or kerk, but not Chapel Row or a church hall). `python3 -I tools/worship.py $MAP`
+looks those up afresh into `data/$MAP/worship.json`.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
 more the first time (five and a half hours of processor time, nearly all of it dividing the blocks
@@ -737,12 +755,12 @@ gables do, and a terrace or a pair of semis is decided together, so a row reads 
 steps only where the survey shows it really does; where one roof steps down to another the step
 has its wall, so no roof shows a gap into the house. The roofs for every square are kept in
 `data/$MAP/measured/faces/`; a building the survey can't see, or whose row the new roofs don't fit
-clearly better, keeps the flat, gabled or hipped roof that fits it best; one too far off square for a single rectangle (an L or a T, a church with its apse and chapels, a wedge on a corner plot, a block round a courtyard) gets one roof following its whole outline, hips, valleys and ridges as a roofer would lay them and gables at the ends of a gabled building's wings, rather than a few gables on a flat cap; a block too deep for its pitch is flat on top. The parts a building is split into, and every house of a row, share one roof covering and one wall; a house keeps the ridge the lidar fits to it wherever that fit is plainly better one way than the other and hips no party wall (and its hipped or gabled ends where the fit is plainly sure of those too); where it isn't (most footprints are drawn a metre or two off the survey's building), a house in a row of alike houses takes its row's ridge direction (as its sure houses run, or along the row) and roof form, so a semi's halves are hipped or gabled together, and a corner house or end pavilion of another shape keeps its own. Steps in height between them stay, with the gable wall showing, as Bath's rows climb its hills. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
+clearly better, keeps the flat, gabled or hipped roof that fits it best; one too far off square for a single rectangle (an L or a T, a church with its apse and chapels, a wedge on a corner plot, a block round a courtyard) gets one roof following its whole outline, hips, valleys and ridges as a roofer would lay them and gables at the ends of a gabled building's wings, rather than a few gables on a flat cap; a block too deep for its pitch is flat on top. The parts a building is split into, and every house of a row, share one roof covering and one wall; a house keeps the ridge the lidar fits to it wherever that fit is plainly better one way than the other and hips no party wall (and its hipped or gabled ends where the fit is plainly sure of those too); where it isn't (most footprints are drawn a metre or two off the survey's building), a house in a row of alike houses takes its row's ridge direction (as its sure houses run, or along the row) and roof form, so a semi's halves are hipped or gabled together, and a corner house or end pavilion of another shape keeps its own. Steps in height between them stay, with the gable wall showing, as Bath's rows climb its hills. A house in a pitched row whose lidar roof is level on top (a box dormer the width of the house) gets the row's slope to the street, at the row's pitch, with the dormer's flat top behind it, instead of standing up flat like a tower. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
 without them (a row keeps its old roofs where the new ones don't fit the survey clearly better),
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts
 broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
-walls or too tall, faces lying over each other and buildings standing in each other, and, on the pitched roofs too, a roof covering only part of its building, roofs over one building that don't meet, buildings sharing a wall whose roofs differ in covering or colour, alike houses in a row with their ridges turned against each other, and a semi's halves roofed differently (listed on a line of their own where the lidar is sure of both halves' ends). Every roof is
+walls or too tall, faces lying over each other and buildings standing in each other, and, on the pitched roofs too, a roof covering only part of its building, roofs over one building that don't meet, buildings sharing a wall whose roofs differ in covering or colour, alike houses in a row with their ridges turned against each other, and a semi's halves roofed differently (listed on a line of their own where the lidar is sure of both halves' ends), and a terraced or semi-detached house standing up like a tower, flat beside a pitched neighbour or with its walls over 1.5 m above both (on a line of its own where the lidar's roof over it is level on top). Every roof is
 solid where it's drawn: you stand on the strips closing the slits between its faces, walk into its
 steps rather than through them, land on it however fast you fall, and stand on a building that
 reaches over from the square next door. Rule 22 (`tools/roof_probe.mjs`, the game's own code run

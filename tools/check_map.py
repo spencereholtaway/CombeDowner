@@ -50,10 +50,15 @@ case by case:
     the lidar's are), are looked at too (tools/roofs_drawn.ts runs map.ts on the square): no
     pitched roof leaving much of its building under a flat cap, no roofs over one building that
     don't meet, and no two buildings sharing a wall (one building's parts, or a row) whose roofs
-    are in different coverings or colours, or don't meet along it at the same eaves.
+    are in different coverings or colours, or don't meet along it at the same eaves; and no
+    terraced or semi-detached house standing up like a tower in its row (row_towers).
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
     tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, whether
-    roofs are solid to stand on, and whether paths are whole as they're drawn.
+    roofs are solid to stand on, and whether paths are whole as they're drawn; and from 24, the
+    ground's measures (paths level across, faces meeting, bridges' ends and room under them, tunnels,
+    flights, locks' edges, land and water, fences on water and ways); and from 39, faults found by
+    playing (road markings, lanes' faces in streets, steps in the road, the faces at squares' sides,
+    flights and their handrails, walls standing over the ground).
 """
 import functools, glob, json, math, multiprocessing, os, subprocess, sys, tempfile, collections
 import numpy as np
@@ -388,6 +393,7 @@ def main():
         check_more.OVERROAD_ONLY[0] = tuple(os.path.basename(f)[:-5] for f in files if "_" in os.path.basename(f))
     check_more.overroad(root, map_id, check_more.OVERROAD_ONLY[0])
     check_more.roofs_solid(root, map_id, check_more.OVERROAD_ONLY[0])
+    check_more.ground_seams(root, map_id, check_more.OVERROAD_ONLY[0])
     # the files are checked a few at once (each on its own), and their failures gathered in order
     global _check
     _check = check
@@ -585,6 +591,7 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
             tris = v[np.concatenate(ids)]
             ttree = shapely.STRtree(shapely.polygons(tris[:, :, :2]))
     sq = box(*m["b"])
+    laid = check_more.set_piece_streets(tuple(m["centre"])) if m.get("centre") else []
     for what, xy, tops, (hl, hr), depth in bridge_spans(roads, marks, rail_pts, ground):
         if what == "railway" or len(xy) < 2: continue
         span = LineString(xy)
@@ -603,6 +610,8 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
         for k in ttree.query(outline.buffer(-0.3), predicate="intersects"):
             t = tris[int(k)]
             cx, cy = t[:, 0].mean(), t[:, 1].mean()
+            # (a face in a set piece's street isn't drawn: the game cuts it out and lays the street)
+            if any(st.contains(Point(cx, cy)) for st in laid): continue
             u = under_at(cx, cy)
             if t[:, 2].max() > u - 1.0 and t[:, 2].min() < u - 2.5:
                 note("10 face rising into a bridge", t[:, 2].max() - t[:, 2].min(), (tag, round(cx), round(cy)), f"{t[:, 2].min():.1f} to {t[:, 2].max():.1f} m under {what}")
@@ -738,7 +747,8 @@ def fit_together(m, tag, note, f=None):
     # along its own line, with no gateway, drive or front path in between. One ending in the open,
     # with nothing ahead of it in reach, is a real loose end (a park wall, a ruin), not a fault.
     F = check_more.faces_of(m)
-    ground_faces = shapely.union_all([F[k] for k in F] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
+    # (not the railway's bed, which the sheet makes a face: a lineside fence doesn't run to the ballast)
+    ground_faces = shapely.union_all([F[k] for k in F if k != "bed"] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
     meets = shapely.union_all([ground_faces] + homes).buffer(MEETS)
     shapely.prepare(meets)
     ahead = [h.exterior for h in homes if h.geom_type == "Polygon"] + [g for g in getattr(ground_faces.boundary, "geoms", [ground_faces.boundary])]
@@ -982,9 +992,11 @@ def roofs_whole(m, tag, note):
             x = p.intersection(q).area
             if x > 2: note("11 buildings standing in each other", x, (tag, round(p.centroid.x), round(p.centroid.y)), f"{x:.0f} m2")
     roofs_drawn_whole(m, tag, note, polys, drawn)
+    row_towers(m, tag, note, polys)
 
 
 PART_WALL = 2.5     # buildings.groups: two footprints share a wall at least this long
+TOWER_STEP = 1.5    # metres: a row house's walls this much above both its joined neighbours' stand up like a tower
 FLAT_LEFT = 10.0    # m2: a flat-capped part of a pitched building this big is seen as a roof missing
 
 
@@ -1049,6 +1061,39 @@ def roofs_drawn_whole(m, tag, note, polys, drawn):
                     note("11 semi's halves in different roof shapes", 1, at, "ridges turned" if turned else "one hipped, one gabled")
             elif turned and _alike(polys[a], polys[c]):
                 note("11 ridge turned against a same-shaped neighbour", 1, at, "")
+
+
+def row_towers(m, tag, note, polys):
+    """Rule 11: a terraced or semi-detached house standing up like a tower in its row, flat between
+    pitched joined neighbours or with its walls over TOWER_STEP above both. Where the build found
+    the lidar's roof over it level on top (lt: a box dormer the width of the house, or a flat roof,
+    lidar.LEVEL_TOP) it is listed on a line of its own, as the semis the lidar is sure of are."""
+    bl = m.get("bl") or []
+    rows = [i for i, (b, P) in enumerate(zip(bl, polys)) if b.get("c") in ("terrace", "semi") and P is not None and P.area >= 1]
+    grown = {i: polys[i].buffer(0.35) for i in rows}
+    tree = shapely.STRtree([grown[i] for i in rows])
+    pitched = lambda b: bool(b.get("rp") or b.get("rm"))
+    for a in rows:
+        A = bl[a]
+        if A.get("rm") and not A.get("lt"): continue        # the lidar's own faces: its walls are its own
+        nb = []
+        for k in tree.query(grown[a]):
+            c = rows[int(k)]
+            if c == a: continue
+            wall = grown[a].intersection(grown[c])
+            if wall.is_empty or wall.area <= 0: continue
+            rr = list(wall.minimum_rotated_rectangle.exterior.coords)[:4]
+            if max(math.dist(rr[0], rr[1]), math.dist(rr[1], rr[2])) >= PART_WALL: nb.append(bl[c])
+        if not nb: continue
+        top = A["g"] + A["h"]
+        why = None
+        if not pitched(A) and any(pitched(C) for C in nb): why = "flat beside a pitched neighbour"
+        elif len(nb) >= 2 and all(top > C["g"] + C["h"] + TOWER_STEP for C in nb):
+            why = f"walls {top - max(C['g'] + C['h'] for C in nb):.1f} m above its neighbours'"
+        if not why: continue
+        at = (tag, round(polys[a].centroid.x), round(polys[a].centroid.y))
+        if A.get("lt"): note("11 row house standing up like a tower, the lidar level on top (excused)", 1, at, why)
+        else: note("11 row house standing up like a tower", 1, at, why)
 
 
 def _ridge_dir(q):

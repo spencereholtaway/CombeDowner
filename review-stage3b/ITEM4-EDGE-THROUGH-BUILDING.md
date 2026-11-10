@@ -1,6 +1,6 @@
 # Item 4: `edge_through_building` 22 → 96, explained
 
-Dan's item 4: bucket the 87 new findings by which evidence line they lie on and whether stage 3 had
+The co-developer's item 4: bucket the 87 new findings by which evidence line they lie on and whether stage 3 had
 that line at all. A bug gets fixed; real findings on ground stage 3 never cut get three examples in
 the PR.
 
@@ -56,6 +56,6 @@ which cannot tell a boundary running *along* a footprint from one crossing it.
 The honest fix is in the check, not the build: report a finding only where the edge is inside the
 footprint by more than a tolerance (the measured 0.0 m against the real 0.33 and 0.91 m suggests a
 few centimetres is enough), or sample along the edge rather than at its midpoint. That is a change to
-a check, which the plan's rules say not to weaken to improve a number - so it is Dan's call, and it
+a check, which the plan's rules say not to weaken to improve a number - so it is the co-developer's call, and it
 is written here with the measurement rather than made quietly. Stage 3's own 23 findings have the
 same 21-of-23 false positives, so the check has been reporting them all along.

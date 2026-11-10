@@ -10,10 +10,12 @@ those of `city.py`, in the same order and with the same code, and each has its o
 - each square's corridors, from the graph and the buildings, barriers and lidar walls near its edges;
 - the bridges and road heights, from the graph, the water, the terrain, the railway and the canal;
 - the worked pieces and their parent blocks, from every square's corridors and the buildings;
-- each square's division of its pieces, from the pieces and the corridors, and the barriers, parcels
-  and lidar walls in its window;
+- each square's division of its pieces, from its own pieces, the parent blocks, footprints and
+  corridors near them, and the barriers, parcels and lidar walls in its window;
 - each square's assembly, from its own and its eight neighbours' corridors and divisions, and the
   layers over its worked area;
+- each square's writing (in `stage.py`), from its assembly and the corridors, road heights, footprints
+  and parent blocks near it;
 - each square's report (metrics, checks, fragments, edge profile), from its assembly, and then the
   city summary. Nothing in a report reaches the map, so a change to the checks redoes only this.
 
@@ -24,6 +26,7 @@ whatever they had, under keys that no longer match, so the next whole build redo
 Nothing here is decided over the network: it is all build-time.
 """
 import collections
+import glob
 import json
 import os
 import pickle
@@ -34,12 +37,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from partition import MAP, ROOT, cache, once as O               # noqa: E402
-from partition.data import neighbours, owner_of                  # noqa: E402
+from partition.data import neighbours                            # noqa: E402
 from partition.corridors import REACH                             # noqa: E402
+from partition.plots import FRONT_REACH                           # noqa: E402
 
 ONCE = os.path.join(HERE, "once.py")
 MAIN = os.path.join(HERE, "__main__.py")
 PAD = max(REACH, 100.0)          # metres: more than any stage looks beyond its window
+# metres round its square the writer reads the cleaned footprints and the parent blocks from: as far as
+# `settle.owners_near` (150) and `write_tile.build_tile`'s `read_parents` (200) look
+WRITE_REACH = 200.0
 
 
 def name(t):
@@ -123,9 +130,74 @@ def digest_of(files):
     return cache.sha("".join(f"{k}{v}" for k, v in sorted(files.items())))
 
 
+def _grow(b, d):
+    return (b[0] - d, b[1] - d, b[2] + d, b[3] + d)
+
+
+def _meets(a, b):
+    return a[2] >= b[0] and a[0] <= b[2] and a[3] >= b[1] and a[1] <= b[3]
+
+
+class Slices:
+    """The parts of the passes' city-wide files a window reads, as digests, so that a square's
+    division and writing are keyed on what lies near them and not on the whole file: a street
+    changed across the city leaves them as they were. Each part is taken as its reader takes it
+    (the same order, the same window test, the same global numbering), or more."""
+
+    def __init__(self, once):
+        self.once = once
+        self._got = {}
+
+    def _load(self, what):
+        """[(box, digest of the row, row id)] in file order."""
+        if what not in self._got:
+            row = lambda r: cache.sha(json.dumps(r))
+            if what == "corridors":
+                got = []
+                for f in sorted(glob.glob(os.path.join(self.once, "*", "corridors.json"))):
+                    for r in json.load(open(f)):
+                        xs, ys = [q[0] for q in r["line"]], [q[1] for q in r["line"]]
+                        got.append(((min(xs), min(ys), max(xs), max(ys)), row(r), r["id"]))
+            elif what == "structures":
+                got = {k: row(v) for k, v in O.read_structures(self.once).items()}
+            elif what == "pieces":
+                got = [row(r) for r in json.load(open(O.blocks_path(self.once)))]
+            else:
+                path, k = dict(cleaned=(O.cleaned_path, "b"), parents=(O.parents_path, "k"))[what]
+                # a footprint's place in the whole list is the building's number everywhere
+                got = [(r[k], row(r), i) for i, r in enumerate(json.load(open(path(self.once))))]
+            self._got[what] = got
+        return self._got[what]
+
+    def _in(self, what, win):
+        return [(b, d, i) for b, d, i in self._load(what) if _meets(b, win)]
+
+    def divide(self, ids, win):
+        """What one square's division reads: its own pieces, the parents and footprints in its window,
+        and the corridors near enough for a house in the window to face or a piece to be thinned by."""
+        pieces = self._load("pieces")
+        cleaned = self._in("cleaned", win)
+        boxes = [win] + [b for b, _d, _i in cleaned]
+        reach = _grow((min(b[0] for b in boxes), min(b[1] for b in boxes),
+                       max(b[2] for b in boxes), max(b[3] for b in boxes)), PAD)
+        return cache.sha(json.dumps([[(i, pieces[i]) for i in ids], [d for _b, d, _i in self._in("parents", win)],
+                                     [(i, d) for _b, d, i in cleaned], [d for _b, d, _i in self._in("corridors", reach)]]))
+
+    def write(self, sq):
+        """What one square's writing reads: the corridors near it, the road heights of those crossing
+        it, and the footprints and parent blocks within WRITE_REACH."""
+        near = self._in("corridors", _grow(sq, FRONT_REACH))
+        heights = self._load("structures")
+        wide = _grow(sq, WRITE_REACH)
+        return cache.sha(json.dumps([[d for _b, d, _i in near], [(i, heights.get(i)) for b, _d, i in near if _meets(b, sq)],
+                                     [(i, d) for _b, d, i in self._in("cleaned", wide)],
+                                     [d for _b, d, _i in self._in("parents", wide)]]))
+
+
 def build(raw, once, city, store, jobs, wanted=None, log=print):
     """Every stage up to the squares' assembly. Returns what `stage.py` needs to write the squares:
-    the squares assembled, those that failed, and the digests a square's writing is keyed by."""
+    the squares assembled, those that failed, and the digests a square's writing is keyed by (its
+    assembly with its own slice of what the passes wrote)."""
     R = Run(raw, once, city, store, jobs, log)
     os.makedirs(once, exist_ok=True)
     os.makedirs(city, exist_ok=True)
@@ -139,17 +211,19 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     g = R.stage("graph", gkey, once, ["graph.json"], lambda: O.build_graph(once, raw, log=log))
     graph_d = g["graph.json"]
     edges = O.read_graph(once)
-    owned = collections.defaultdict(list)
-    for e in edges:
-        owned[owner_of(e["line"].bounds)].append(e["id"])
     bb = O.map_bbox()
-    tasks = [(ti, tj, sorted(ids), once, raw, bb) for (ti, tj), ids in sorted(owned.items())]
+    tasks = [(ti, tj, ids, once, raw, bb) for (ti, tj), ids in O.owned_edges(edges)]
     _clear_unowned(once, {(t[0], t[1]) for t in tasks}, ("corridors.json", "held-out.json"))
     code = cache.code_key((ONCE, "_fit_square_edges"))
+    by_id = {e["id"]: e for e in edges}
+    rows = {r["id"]: r for r in json.load(open(O.graph_path(once)))}
     keys = []
     for t in tasks:
-        win = O.edge_window([edges[i]["line"] for i in t[2]])
-        keys.append(cache.key_of("corridors", code, R.lib, graph_d, t[:3],
+        win = O.edge_window([by_id[i]["line"] for i in t[2]])
+        # keyed by the square's own edges as the graph file has them, not the whole graph: an edge
+        # changed elsewhere in the city leaves this square's fit as it was
+        mine = cache.sha(json.dumps([rows[i] for i in t[2]]))
+        keys.append(cache.key_of("corridors", code, R.lib, mine, t[:2],
                                  R.layers.digest("building", win, PAD),
                                  R.layers.digest("infrastructure", win, PAD), R.layers.ridges(win, PAD)))
     R.weight = {(t[0], t[1]): len(t[2]) for t in tasks}
@@ -179,7 +253,6 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     pkey = cache.key_of("pieces", cache.code_key((ONCE, "pass_pieces")), R.lib, corridors_d, whole("building"))
     p = R.stage("pieces", pkey, once, ["cleaned-buildings.json", "parents.json", "blocks.json"],
                 lambda: O.pass_pieces(once, raw, jobs, log))
-    pieces_d = digest_of(p)
     tasks, work = O.block_tasks(once, raw)
     _clear_unowned(once, {(t[0], t[1]) for t in tasks}, ("blocks.json",))
     if wanted is not None:
@@ -187,7 +260,8 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
         tasks = [t for t in tasks if (t[0], t[1]) in gather]
     windows = _block_windows(once, tasks)
     code = cache.code_key((ONCE, "_fit_square_blocks"), (ONCE, "divide_split"))
-    keys = [cache.key_of("divide", code, R.lib, pieces_d, corridors_d, t[:3],
+    slices = Slices(once)
+    keys = [cache.key_of("divide", code, R.lib, slices.divide(t[2], w), t[:3],
                          R.layers.digest("infrastructure", w, PAD), R.layers.digest("parcels", w, PAD),
                          R.layers.ridges(w, PAD))
             for t, w in zip(tasks, windows)]
@@ -210,7 +284,6 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
         s = R.store.put("structures", skey, once, ["structures.json"])
         R.ran["structures"] += 1
     R.count("structures", [skey], s, took)
-    structures_d = s["structures.json"]
     log(f"  pass 1: bridges and road heights {'built' if side is not None else 'kept'}, "
         f"{time.time() - t0:.0f}s so far")
 
@@ -234,14 +307,18 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
                 for t in asm}
     done, bad = R.pool("assemble", assemble_one, jobs_, keys, lambda t: city,
                        lambda t: [f"{name(t)}/partition.json", f"{name(t)}/report.pkl"])
+    # each square's writing is keyed on its own slice of what the passes wrote (`Slices.write`)
+    upstream = {name(t): slices.write(_box(t)) for t in done}
     log(f"  assembled {len(asm)} squares, {R.ran['assemble']} built, {len(bad)} failed, "
         f"{time.time() - t0:.0f}s in all")
     log(f"  store: {R.store.hits} taken, {R.store.misses} built; stages run: {dict(R.ran)}")
     R.store.prune()
     R.write_tally(os.path.dirname(os.path.abspath(once)))
     return dict(assembled=[list(t) for t in sorted(done)], failed=[list(t) for t in sorted(bad)],
-                partition={name(t): done[t].get(f"{name(t)}/partition.json") for t in done},
-                upstream=cache.sha(corridors_d + structures_d + pieces_d), ran=dict(R.ran))
+                partition={name(t): cache.sha(done[t].get(f"{name(t)}/partition.json", "") + upstream[name(t)])
+                           for t in done},
+                # (nothing the passes wrote is read whole by the writer any more: its share is in `partition`)
+                upstream="", ran=dict(R.ran))
 
 
 def structures_one(once, raw):

@@ -9,7 +9,7 @@ Working notes for the next session. Square 1,1 unless said otherwise.
 3. **The ground beyond a worked piece is open land, not a street** (`a3066cb`).
 4. **The parent block is cut, not the piece** (`36d625a`).
 5. **`_label_outside` tests the parent boundary with distance, and a pass-output guard** (`fcac87a`).
-6. **Classification reads the faces of the worked area, not of the square** (`cd7f286`) - Dan's half 1.
+6. **Classification reads the faces of the worked area, not of the square** (`cd7f286`) - the co-developer's half 1.
 7. **A worked piece's open face can reach past the piece** (`5bd0567`).
 8. **The held-out width test reads pass 1's fit** (`5bd0567`).
 9. **The neighbour summary counts edges and lines apart** (`73c3127`).
@@ -35,7 +35,7 @@ The three reference squares are within a point of stage 3 on every figure (`comp
 
 ### The three misses
 
-**Loose ends: 1**, on square 5,5, at (3890.0, 4652.6). Not a `gather`-reach problem - Dan's first
+**Loose ends: 1**, on square 5,5, at (3890.0, 4652.6). Not a `gather`-reach problem - the co-developer's first
 hypothesis, and it is not this: the face beside the segments is owned by **5,5 itself** (piece 6876),
 it is in 5,5's gather, and nothing in any square's written rows covers the far side (measured
 city-wide). The cause is that `relabel` **overwrites pass 2's `("edge",)` label**, and `("edge",)` is
@@ -44,7 +44,7 @@ the one label `classify_edges` drops. Pass 2 labelled those segments `("open",)`
 into drawn boundaries, so a *drawn* edge now meets a *dropped* one at (3890.0, 4652.6) and the drawn
 one has an end in mid-air. 1,079 segments city-wide carry `("edge",)` on a side; only 5,5 has any at
 all (14 replaced there, 0 on all three reference squares - which is why they never caught it). The
-rule the code should follow is Dan's rule 2: a segment whose labels `classify_edges` will drop must
+rule the code should follow is the co-developer's rule 2: a segment whose labels `classify_edges` will drop must
 not come back as drawn ground. Not fixed yet.
 
 **Uncovered: 22.3 against 21.0** - +1.3 m2 over 131 squares, and the same square (0,3, 2.7 m2) is
@@ -69,7 +69,7 @@ measured, 0 of 729 small plot faces on 0,0 have every neighbour carrying their o
 because it is a fragment. On the plot pass 2 *wrote*, only 2 of 258 are under an absorb threshold.
 
 The fix is in the check's inputs - give `find_openings` the houses map-wide, or stop `front_edges`
-crediting a fragment to a building the square has no house for - and it is Dan's call which.
+crediting a fragment to a building the square has no house for - and it is the co-developer's call which.
 
 **Data findings: 265 -> 377.** By distinct place: 257 -> 360. New 156, gone 53. The movers are
 `edge_through_building` 22 -> 96 distinct (87 new, 75 of them `hedge_low`) and `plot_unreachable`
@@ -118,7 +118,7 @@ instead of nothing.
   p2 ~258 s). Each needs the `__main__` guard.
 - `python3 -I tools/partition/compare.py` - the three squares.
 - `python3 -I out/run_city_all.py 12 out/city3b` - the whole city, each pass timed. Needs the guard.
-- A stage-3 worktree at the merge commit is at `/Users/dan/src/cd-stage3` (`2f656ea`).
+- A stage-3 worktree at the merge commit is at `~/src/cd-stage3` (`2f656ea`).
 - `out/spy_sq.py <tag> <outdir> <ti> <tj> <once>` spies on the loose-end metric inside the build.
 - **Do not write a probe that runs `_fit_square_blocks` into `out/once-p1`**: the guard refuses, but
   do not rely on it.

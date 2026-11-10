@@ -7,6 +7,9 @@
 //
 //   cd web && npx vite build && node ../tools/fpsprobe.mjs --out probe [--secs 4] [--size 1280x720] [--noaa]
 //
+// --hops "e,n e,n ..." jumps to each spot in turn and, with the game's own building budget, times every
+// square built round it: its building on the main thread, by part, and its longest single slice.
+// --query "ground=sheet" adds to the address (ground=sheet or ground=cdt to time the two grounds).
 // --dpr 2 measures as on a Retina screen. --noaa asks for a canvas without antialiasing (to see what that costs). Writes <out>/probe.json and prints a table.
 // --route drives a fixed way from Combe Down into town and back at --speed m/s (20 by default) after
 // the spots, with the game's own building budget, and reports the frame times on the move and how
@@ -90,7 +93,7 @@ console.log("renderer:", await page.evaluate(() => { const gl = document.createE
 page.on("pageerror", (e) => { complaints.push(`error: ${e.message}`); console.log("pageerror", e.message); });
 page.on("console", (m) => { if (m.type() === "error") console.log("console", m.text().slice(0, 200)); });
 
-const q = new URLSearchParams({ map: "combe-down", time: "11:00", at: SPOTS[spots[0] ?? "combe-down"] });
+const q = new URLSearchParams({ map: "combe-down", time: "11:00", at: SPOTS[spots[0] ?? "combe-down"], ...Object.fromEntries(new URLSearchParams(opt.query ?? "")) });
 await page.goto(`http://127.0.0.1:${port}/?${q}`);
 await page.evaluate(() => { window.__budget = 40; try { localStorage.clear(); } catch {} });
 await page.waitForFunction(() => window.__dbg !== undefined, null, { timeout: 180000 });
@@ -228,13 +231,13 @@ async function apply(v) {
     if (v === "carry") { o.asked = 0; o.use(me(), true); }
   }, v);
 }
-async function settle() {
+async function settle(ms = 120000) {
   await page.evaluate(() => { window.__calm = null; });
   return page.waitForFunction(() => {
     if (window.__tilesPending !== 0) { window.__calm = null; return false; }
     const c = (window.__calm ??= { frames: 0, t: performance.now() });
     return ++c.frames >= 12 && performance.now() - c.t > 800;
-  }, null, { timeout: 120000, polling: "raf" }).then(() => true, () => false);
+  }, null, { timeout: ms, polling: "raf" }).then(() => true, () => false);
 }
 // --profile: a CPU profile of each spot's base measurement, summed by function (build with
 // `npx vite build --minify false` for readable names); --throttle 4 slows the page's CPU that many
@@ -314,6 +317,30 @@ for (const s of spots) {
   { const c = out.results[s].census; console.log(`${s} census: ${c.objects} objects, ${c.meshes} meshes (${c.shownMeshes} shown), ${c.autoMatrix} with auto matrices, ${c.lights} lights, matrix update ${c.matrixMs} ms`); for (const [k, n] of c.draws.slice(0, 25)) console.log(`   ${String(n).padStart(4)}  ${k}`); }
   await page.screenshot({ path: path.join(opt.out, `${s}.png`), timeout: 120000 }).catch(() => {});
 }
+if (opt.hops) {
+  out.hops = [];
+  for (const spot of opt.hops.trim().split(/\s+/)) {
+    await page.evaluate((at) => {
+      delete window.__budget;
+      window.__route = null; window.__at = `${at},0,0`; window.__tileStats = {}; window.__sliceMax = {};
+      const parts = (window.__parts = {}), sc = window.__game().world.scene, seen = new Set(sc.children.filter((o) => o.userData?.square).map((o) => o.userData.square.join("_")));
+      const f = () => { for (const o of sc.children) if (o.userData?.square && o.userData.buildMs && !seen.has(o.userData.square.join("_"))) parts[o.userData.square.join("_")] = { ...o.userData.buildMs }; if (window.__parts === parts) requestAnimationFrame(f); };
+      requestAnimationFrame(f);
+    }, spot);
+    const t0 = Date.now();
+    // (the game sees the move a frame or two later: wait for it to start building before waiting for it to finish)
+    await page.waitForFunction(() => window.__tilesPending > 0, null, { timeout: 15000, polling: "raf" }).catch(() => {});
+    const ok = await settle(600000);
+    const r = await page.evaluate(() => { const p = window.__parts; window.__parts = null; return { parts: p, stats: window.__tileStats, most: window.__sliceMax }; });
+    r.spot = spot; r.secs = (Date.now() - t0) / 1000; r.settled = ok;
+    out.hops.push(r);
+    console.log(`hop to ${spot}: ${Object.keys(r.parts).length} squares built in ${r.secs.toFixed(1)} s${ok ? "" : " (not settled)"}; longest slice by part ${JSON.stringify(r.most)}`);
+    for (const [k, e] of Object.entries(r.parts)) {
+      const st = r.stats[k.replace("_", ",")] ?? {}, all = Object.values(e).reduce((a, b) => a + b, 0);
+      console.log(`   square ${k.padEnd(6)} main thread ${all.toFixed(0)} ms (sheet ${((e.sheet ?? 0) + (e["sheet-triangulate"] ?? 0)).toFixed(0)} ms), longest slice ${(st.buildMax ?? 0).toFixed(1)} ms, ${st.slices ?? 0} slices`);
+    }
+  }
+}
 if (opt.route) {
   const speed = +(opt.speed ?? 20);
   // how long the browser takes to read a square's file (on the main thread, outside the building budget)
@@ -345,10 +372,14 @@ if (opt.route) {
         return `${e},${n},${Math.atan2(g.b[0] - g.a[0], g.b[1] - g.a[1]) * 180 / Math.PI},0`;
       } };
       window.__tileStats = {};
+      window.__sliceMax = {};
       const S = window.__S; S.upd = 0; S.frames = 0;
       window.__jsl = []; const iv = []; let last = performance.now();
+      const parts = (window.__parts = {}), sc = window.__game().world.scene;
       const f = () => {
         const n = performance.now(); iv.push(n - last); last = n;
+        // (squares are dropped behind as we go, so their times by part are kept as they're built)
+        for (const o of sc.children) if (o.userData?.square && o.userData.buildMs) parts[o.userData.square.join("_")] = { ...o.userData.buildMs };
         if ((n - t0) / 1000 * speed < L) return requestAnimationFrame(f);
         const js = window.__jsl; window.__jsl = null;
         const srt = [...iv].sort((a, b) => a - b), q = (p) => +srt[Math.min(srt.length - 1, Math.floor(srt.length * p))].toFixed(1);
@@ -366,6 +397,11 @@ if (opt.route) {
     console.log(`route ${dir} ${res.metres} m at ${speed} m/s: ${res.fps} fps, frame med ${res.med} p95 ${res.p95} p99 ${res.p99} worst ${res.worst} ms, ${res.over17} frames over 16.7 ms and ${res.over33} over 33 ms of ${res.frames}; js med ${res.jsMed} p95 ${res.jsP95} p99 ${res.jsP99} ms`);
     console.log("   long build slices:", JSON.stringify(await page.evaluate(() => { const l = window.__longBuild ?? []; window.__longBuild = []; return l; })));
     console.log("   long setup slices:", JSON.stringify(await page.evaluate(() => { const l = window.__longSetup ?? []; window.__longSetup = []; return l; })));
+    // each square's building time by part (world.ts's phases, tiles.ts), and the longest slice of each part
+    const parts = await page.evaluate(() => ({ parts: Object.fromEntries(Object.entries(window.__parts).map(([k, e]) => [k, Object.fromEntries(Object.entries(e).map(([p, v]) => [p || "-", +v.toFixed(1)]))])), most: window.__sliceMax }));
+    res.parts = parts.parts; res.sliceMax = parts.most;
+    console.log("   longest slice by part:", JSON.stringify(parts.most));
+    for (const [k, e] of Object.entries(parts.parts)) console.log(`   square ${k.padEnd(6)} by part: sheet ${(e.sheet ?? 0) + (e["sheet-triangulate"] ?? 0)} ms, ${JSON.stringify(e)}`);
     for (const [k, e] of sq) console.log(`   square ${k.padEnd(6)} made ${e.made.toFixed(1)} ms, setup ${e.setup.toFixed(1)} ms (longest slice ${e.setupMax.toFixed(1)}), build ${e.build.toFixed(1)} ms (longest slice ${e.buildMax.toFixed(1)}), ${e.slices} slices`);
   }
 }

@@ -11,7 +11,7 @@ point *inside* a polygon to the polygon is zero, so every free end inside counte
 and the "inside" figure could never be anything but zero. A check that cannot fail.
 
 Fixed to measure against `square.boundary` (the outline), which is what was meant. With the fix,
-the stage 1 branch's real interior loose-end counts reproduce Dan's:
+the stage 1 branch's real interior loose-end counts reproduce the co-developer's:
 
 | square | proof of concept | stage 1 (as committed) |
 |---|---|---|

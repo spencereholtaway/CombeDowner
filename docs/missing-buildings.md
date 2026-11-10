@@ -1,6 +1,6 @@
 # Missing houses in Cape Town's Newlands squares
 
-Status: **done** (3 November 2026), as the footprints layer (`tools/footprints.py`). Dan found
+Status: **done** (3 November 2026), as the footprints layer (`tools/footprints.py`). The co-developer found
 Dean Street with no houses down one side and Montrose Street missing houses on the live Cape Town
 map (fork `main` 7c215cc9). The houses were missing from the sources we built from, not dropped by
 the build. This note records what each source has there, and what the fallback layer does.

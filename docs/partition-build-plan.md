@@ -5,7 +5,7 @@ partition of the ground to all the data (the design is summarised below, and in 
 "Parcels and corridors" page in the project). It is written for an agent to work through stage
 by stage. Each stage ends in something that can be run, looked at and measured on its own, and
 nothing in stages 1 to 4 changes the game or the existing build. Read `CLAUDE.md` and
-`NOTES-FOR-AGENTS.md` first; the rules there (Dan's fork first, builds on the Mac through the
+`NOTES-FOR-AGENTS.md` first; the rules there (the fork first, builds on the Mac through the
 queue, `tools/check_map.py` before and after) all apply.
 
 ## Stage status
@@ -154,7 +154,7 @@ they are listed in `review-stage1/METRICS.md`.
 
 ## Where things stand
 
-- `tools/partition_poc.py` (branch `claude/partition-poc` on `danturn/CombeDowner`) is the proof
+- `tools/partition_poc.py` (branch `claude/partition-poc` on the fork) is the proof
   of concept: one square in, a partition of the ground out. It runs on the packed data in
   `data/combe-down/` plus the terrain tiles, takes 35 to 90 s a square on one core, and writes
   `partition.json`, `render.svg`, `evidence.svg`, `current.svg` and `metrics.json` into its
@@ -191,9 +191,9 @@ then plots dividing the blocks, then one triangulated surface with heights assig
 
 ## Conventions for all stages
 
-- Work on `danturn/CombeDowner`, branch `claude/partition-<stage>` off `claude/partition-poc`
+- Work on the fork, branch `claude/partition-<stage>` off `claude/partition-poc`
   (rebase onto the fork's `main` first). Merge each stage into the fork's `main` only after
-  Dan has looked at it. Nothing goes to Spencer's `main` until the switch in stage 6.
+  the co-developer has looked at it. Nothing goes to the maintainer's `main` until the switch in stage 6.
 - The new code lives in `tools/partition/` as a package (split `partition_poc.py` into modules in
   stage 1: `buildings.py`, `graph.py`, `corridors.py`, `plots.py`, `surface.py`, `render.py`,
   `metrics.py`, `__main__.py`), keeping `partition_poc.py` as a thin wrapper until stage 4
@@ -307,7 +307,7 @@ on a download and a licence read.
 
 One thing the plan got wrong, found in review: item 3's "a parcel edge with no building on either
 side still cuts open land into fields" was first built as written, drawing a hedge along such an
-edge. Dan's review pointed out that a title line across two fields of one farm, or across a lawn,
+edge. The co-developer's review pointed out that a title line across two fields of one farm, or across a lawn,
 is not a hedge, so the boundary was being invented. It is now drawn only where something really
 stands along it (see the two bullets above), and is nothing otherwise. The parcel edge still
 divides the block — the faces are cut either way — so nothing else moved: on the three squares
@@ -344,7 +344,7 @@ Goal: every square built the new way, and the bad data found. About 2 days.
 3. **Bad data.** The checks that point at data rather than code: a corridor narrower than its
    class minimum (a footprint or a centre line is wrong), a plot with no front on any street (a
    missing path or drive), a building the corridor cuts (a centre line through a building). Write
-   each as a line in the summary with its square and position, as `check_map.py` does, so Dan can
+   each as a line in the summary with its square and position, as `check_map.py` does, so the co-developer can
    look at them in the game. Fix the ones that are code; list the ones that are data.
 4. **Held-out widths** across the whole city (every tagged street, fitted with its tag hidden).
    Report the distribution. Below 60% within a metre, look at the worst ones before going on;
@@ -489,7 +489,7 @@ The misses, each measured rather than guessed:
   fragment.) The `D_same_label` exit is also a **no-op**: `make_plots` ends by grouping faces by
   label and unioning each group, so a small face whose neighbour carries its label is merged by that
   step regardless — measured, 0 of 729 small plot faces on 0,0 have every neighbour carrying their
-  own label. The fix is in the check's *inputs*, and it is Dan's call which way:
+  own label. The fix is in the check's *inputs*, and it is the co-developer's call which way:
   give `find_openings` the houses map-wide, or stop `front_edges` crediting a fragment to a building
   the square has no house for.
 - **Data findings 265 → 377** (distinct places 257 → 360: 156 new, 53 gone). The movers are
@@ -636,7 +636,7 @@ drawn.
    Compare against the same views of the current build.
 
 Acceptance: the game runs on the new city with the old engine; the pictures show continuous
-pavements, no loose fences, gates in walls; the clash check is better on every rule; Dan has
+pavements, no loose fences, gates in walls; the clash check is better on every rule; the co-developer has
 walked it.
 
 ## Stage 5: one surface in the game
@@ -675,7 +675,7 @@ walk log shows no jumps.
    partition no longer has, so the first partition tile leaves `dv` empty. The work is a rule: a drive
    is where a service way or track crosses a plot front, which `find_openings` already looks for and
    does not yet record.
-2. Dan's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
+2. The co-developer's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
    case.
 3. **The majority-label wrinkle in `assemble.relabel`.** Pass 3 reads the two sides of a segment
    from the faces of the worked area, but a segment written by pass 2 is not itself noded against
@@ -697,8 +697,8 @@ walk log shows no jumps.
    partition's order; `NOTES-FOR-AGENTS.md` updated.
 6. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
    replaced, once nothing reads them.
-7. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
-   `main` with Dan's approval quoted, as the project rules require.
+7. Merge to the fork's `main`, full build and check on the Mac, then a pull request to the maintainer's
+   `main` with the co-developer's approval quoted, as the project rules require.
 
 ## Risks and what to do about them
 

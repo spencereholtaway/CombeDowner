@@ -3,7 +3,7 @@
 Usage: python3 -I tools/partition/check_city.py <tiles dir> [--city dir] [--jobs n]
 
 The three checks are the stage-4 gate for one square; this runs them on the whole set, so a defect
-that is rare per square but certain somewhere in 122 of them is found before Dan walks it, not after.
+that is rare per square but certain somewhere in 122 of them is found before the co-developer walks it, not after.
 `check_tile.py` prints per square and is meant to be read; this aggregates and lists the worst.
 
 The same three rules:

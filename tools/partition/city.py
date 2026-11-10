@@ -27,7 +27,7 @@ Then the city-wide things, which only make sense across squares:
 - **the held-out widths**: every street with a width tag, fitted with the tag hidden, over the whole
   city. A square only reports the streets inside it, so a street crossing a square's edge is
   reported once, by the square holding its middle.
-- **the data findings**: every check's lines, with square and position, so Dan can look at them in
+- **the data findings**: every check's lines, with square and position, so the co-developer can look at them in
   the game.
 
 A square that fails is reported and the run carries on: one bad square in 131 should not lose the

@@ -102,7 +102,7 @@ class WorkedBlockTest(unittest.TestCase):
 
     The outline claim is what makes two squares agree about a block: it is a function of the whole
     building and corridor sets (pass 2 computes it once and writes it), not of the window a square
-    happens to be dividing. The labelling claim is Dan's: beyond a *piece* is the rest of the parent
+    happens to be dividing. The labelling claim is the co-developer's: beyond a *piece* is the rest of the parent
     block, which is open land."""
 
     def test_every_worked_block_is_within_reach_grow_of_a_building(self):

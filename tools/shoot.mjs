@@ -26,7 +26,9 @@
 // installed where node can find it; CHROME=<a Chrome or Chromium> to use that one.
 //
 // Writes <out>/<name>[-<tag>].png for each view, and <out>/shots.json with how long each took,
-// the frame rate, what the last frame drew and anything the page complained about.
+// the longest slice each part of building a square took, the frame rate, what the last frame drew (in all, and square by square for the main view: the
+// ground, the street and path faces, water, structures and the rest) and anything the page
+// complained about.
 import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
@@ -94,6 +96,8 @@ const context = await browser.newContext({ viewport: { width: W, height: H } });
 await silenceContext(context);
 const page = await context.newPage();
 await silence(page);
+// (the longest slice of each part of building a square, tiles.ts)
+await page.addInitScript(() => { window.__sliceMax = {}; });
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") complaints.push(`${m.type()}: ${m.text().slice(0, 200)}`); });
@@ -114,14 +118,17 @@ for (const v of views) {
   const file = path.join(opt.out, `${v.name}${opt.tag ? "-" + opt.tag : ""}.png`);
   await page.screenshot({ path: file });
   const fps = await page.evaluate(() => window.__fps);
-  // what the frame cost: triangles and draw calls drawn, models held, and the page's memory
-  const drawn = await page.evaluate(() => window.__gl && { triangles: window.__gl.render.triangles, calls: window.__gl.render.calls, geometries: window.__gl.memory.geometries, heapMB: Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1048576) });
+  // what the frame cost: triangles and draw calls drawn, models held, and the page's memory; and
+  // the main view's draws square by square and by class (debug.ts squareCounts)
+  const drawn = await page.evaluate(() => window.__gl && { triangles: window.__gl.render.triangles, calls: window.__gl.render.calls, geometries: window.__gl.memory.geometries, heapMB: Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1048576),
+    squares: window.__squareCounts?.() });
   const secs = (Date.now() - s0) / 1000;
   log.shots.push({ name: v.name, at: v.at, look: v.look, time, file, seconds: secs, ready, fps, drawn });
   console.log(`shot ${v.name} in ${secs.toFixed(1)}s${ready ? "" : " (NOT fully loaded: timed out)"}`);
 }
 log.seconds = (Date.now() - t0) / 1000;
 log.complaints = [...new Set(complaints)];
+log.longestSlices = await page.evaluate(() => window.__sliceMax);
 fs.writeFileSync(path.join(opt.out, "shots.json"), JSON.stringify(log, null, 1));
 console.log(`${views.length} views in ${log.seconds.toFixed(1)}s; ${log.complaints.length} page complaints (in ${opt.out}/shots.json)`);
 console.log(await silenceNote(page));

@@ -49,7 +49,7 @@ export const WEARABLES: Wearable[] = [
   { id: "lockcap", slot: "head", name: "Lock-keeper's peaked cap", how: "Gold on the Lock Run" },
   { id: "party", slot: "head", name: "Party hat", how: "Set the last strange object in a structure and open a new zone" },
   { id: "lplate", slot: "face", name: "L-plate on a string", how: "Pass the driving test" },
-  { id: "dazzle", slot: "face", name: "Dazzled by a speed camera", how: "Get clocked at 60 km/h by a speed trap" },
+  { id: "dazzle", slot: "face", name: "Dazzled by a speed camera", how: "Get clocked at 40 mph by a speed trap" },
   { id: "goggles", slot: "face", name: "Swimming goggles", how: "End up in the water ten times" },
   { id: "guard", slot: "face", name: "Foam mouth guard", how: "Win a penalty shoot-out" },
   { id: "froth", slot: "face", name: "Pint-froth moustache", how: "Pop into ten different pubs" },

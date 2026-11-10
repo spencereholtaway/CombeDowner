@@ -31,7 +31,7 @@ OUTLINES = ("https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/
 TS044 = "https://www.nomisweb.co.uk/api/v01/dataset/NM_2062_1.data.csv"
 # TS044's categories 1 to 8, in order: what each area's "hh" counts
 TYPES = ("detached", "semi", "terraced", "flats", "converted_house", "converted_other", "commercial", "caravan")
-UA = {"User-Agent": "CombeDowner map builder (github.com/danturn/CombeDowner)"}
+UA = {"User-Agent": "CombeDowner map builder (https://combedowner.com)"}
 
 
 def get(url, tries=4):

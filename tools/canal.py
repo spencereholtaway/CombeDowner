@@ -26,6 +26,8 @@ centre and heights in metres above sea level:
   ends are where it meets a lock's gates, another run, or nothing. Each bank is level, just above
   the water, from the water's edge out to its width (the towpath's side wider; in a tunnel, the
   towpath's ledge through it, or nothing), then its verge reaches the ground (web/src/works.ts).
+  "x", where an end opens into a river: [[x, y, nx, ny], ...], the river's edge there (a point on it
+  and the way into the river); the canal stops at that line.
 - locks: {"n": name, "no": its number, "lo": [x, y] the lower gates, "hi": [x, y] the upper,
   "zl", "zh": the water below and above, "tl": how far its wing walls run on below the lower gates,
   with the towpath coming down beside them from the top of the lock to the bank of the pound below
@@ -200,6 +202,35 @@ def basin_boats(basins, seen, corridor, infra_file, proj, circle, ways):
                     d += 3.0
     if out: print(f"basins: {len(out)} boats moored in them")
     return out
+
+
+def river_mouth(pts, end, rivers):
+    """Where a run's end opens into a river: the river's edge there, as [x, y, nx, ny], a point on
+    it and the way into the river. The canal's water, banks and verges stop at that line (works.ts,
+    canal.ts): squared off at the run's end, a corner of them stood out in the river. Else None."""
+    e, f = pts[end], pts[-2 if end == -1 else 1]
+    tx, ty = e[0] - f[0], e[1] - f[1]
+    tl = math.hypot(tx, ty) or 1
+    tx, ty = tx / tl, ty / tl
+    reach = max(e[2] + e[7] + e[9], e[2] + e[8] + e[10]) + 3
+    for r in rivers:
+        if not r.geom_type.endswith("Polygon") or r.distance(Point(e[:2])) > 1 or not r.contains(Point(e[0] + tx * 2, e[1] + ty * 2)):
+            continue
+        edge = r.boundary.intersection(Point(e[:2]).buffer(reach))
+        piece = min(getattr(edge, "geoms", [edge]), key=lambda g: g.distance(Point(e[:2])), default=None)
+        if piece is None or piece.is_empty or piece.length < 1: continue
+        (ax, ay), (bx, by) = piece.coords[0], piece.coords[-1]
+        dl = math.hypot(bx - ax, by - ay) or 1
+        nx, ny = -(by - ay) / dl, (bx - ax) / dl
+        if nx * tx + ny * ty < 0: nx, ny = -nx, -ny
+        on = piece.interpolate(piece.project(Point(e[:2])))
+        # (set back to where the river's edge comes furthest towards the canal within reach, so a
+        # bank that curves in beside the mouth lies beyond the line too)
+        near = r.intersection(Point(e[:2]).buffer(reach))
+        back = min([0.0] + [(x - on.x) * nx + (y - on.y) * ny for g in getattr(near, "geoms", [near])
+                            if g.geom_type == "Polygon" for x, y in g.exterior.coords])
+        return [r1(on.x + nx * back), r1(on.y + ny * back), round(nx, 3), round(ny, 3)]
+    return None
 
 
 def main():
@@ -679,6 +710,9 @@ def main():
 
     moor += basin_boats(basins, seen, corridor, os.path.join(src, "infrastructure.geojson"), proj, circle, ways)
 
+    for run in runs:
+        mouths = [m for m in (river_mouth(run["p"], e, rivers) for e in (0, -1)) if m]
+        if mouths: run["x"] = mouths
     out_d = dict(
         runs=runs,
         locks=[dict(n=lk["n"], no=lk["no"], lo=[r1(v) for v in lk["lo"]], hi=[r1(v) for v in lk["hi"]],

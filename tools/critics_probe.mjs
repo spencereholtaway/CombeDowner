@@ -269,7 +269,7 @@ const group = ["House", "Laboured house", "Trees", "Red bus", "Penis at 40°"].m
 let room = null;
 if (group.length === 5) {
   const copy = group[0].px.slice(); for (let i = 0; i < 400; i++) copy[i * 7] = C.black;
-  const ps = [...group.map((r, i) => ({ id: "p" + i, name: ["Ada", "Bert", "Cleo", "Dan", "Eve"][i], px: r.px, strokes: 30 })), { id: "p5", name: "Fay", px: copy, strokes: 30 }];
+  const ps = [...group.map((r, i) => ({ id: "p" + i, name: ["Ada", "Bert", "Cleo", "Dot", "Eve"][i], px: r.px, strokes: 30 })), { id: "p5", name: "Fay", px: copy, strokes: 30 }];
   const theme = K.THEMES.find((t) => t.t === "{place} on a Tuesday");
   const sh = K.stageShow(ps, theme, "Combe Down on a Tuesday", 99, () => [0, 0], [0, 0]);
   const v = K.verdict(sh, ps, ps.map(() => 0), 99);
@@ -369,7 +369,7 @@ if (!opt.only && CAL.length) {
     const ps = Array.from({ length: n }, (_, i) => {
       const s = CAL[(i * 5 + n) % CAL.length], px = canvas();
       for (const layer of s.layers) layer(px);
-      return { id: "p" + i, name: ["Ada", "Bert", "Cleo", "Dan", "Eve", "Fay", "Gus", "Hal"][i], px, strokes: s.strokes, ...(s.how ? { how: s.how } : {}) };
+      return { id: "p" + i, name: ["Ada", "Bert", "Cleo", "Dot", "Eve", "Fay", "Gus", "Hal"][i], px, strokes: s.strokes, ...(s.how ? { how: s.how } : {}) };
     });
     const theme = K.THEMES.find((t) => t.t === CAL[n % CAL.length].theme);
     const sh = K.stageShow(ps, theme, theme.t.replace("{pub}", "the Hadley Arms"), 777 + n, (p) => [(p % 4 - 1.5) * 4.5, p < 4 ? -5 : 5], [10, 0]);

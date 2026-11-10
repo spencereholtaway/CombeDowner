@@ -1,6 +1,6 @@
 # Notes for agents
 
-Spencer and Dan each run their own Claude agents on this repo, and the agents can't message each
+The maintainer and the co-developer each run their own Claude agents on this repo, and the agents can't message each
 other. This file is how they say what they're changing so they don't trip over each other.
 
 **Before you start:** read this file and check whether someone is already in the area you're about
@@ -19,7 +19,43 @@ Updated 2026-10-13.
 `speechSynthesis`. Don't write your own copy of the guards — one copy, in that file. See "Running
 the game locally, without the sound" in `CLAUDE.md`.
 
-### Dan's agents
+### The co-developer's agents
+
+- **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
+  themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
+  doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
+  street faces cut along their outline as it's written (`tools/partition/setpiece_cuts.py`,
+  `write_tile.street_surfaces`, keyed in `stage.py`). Proved on square 0,3 only.
+
+- **The maintainer's main merged into the fork (branch `claude/spencer-merge`):** the map rebuilt with
+  his running tracks and pitches; `drapeBarriers` (`web/src/map.ts`) now leaves a stretch alone where
+  the ground strays no more than the build's own limits (0.1 m below, 0.2 m above), so it no longer
+  re-cuts the walls `tools/partition/write_tile.py` already laid on the ground. Removed once on main.
+
+- **Three map branches merged, waiting for the co-developer (branch `claude/map-merge`):** `claude/map-fixes`
+  (checks rules 39-45, walls follow the ground, hairline needles off pavements and streets, set
+  pieces clear the map's paving), `claude/stable-ids` (edges named from their own geometry,
+  `once.edge_id`; blocks joined 250 m at a time in one settled form; `grading.TIE`) and
+  `claude/construction-roads` (`graph.as_built`: ways still being built drawn as what they will be).
+  Touches `tools/partition/`, `tools/check_map.py`, `check_more.py`, `ground_seams.mjs`, `grading.py`, `osm.py`,
+  `web/src/map.ts`, `world.ts`, `landmarks/setpieces.ts` + `shape.ts`, and rebuilds every square.
+
+- **Map rebuilds rewrite only the squares a change reaches (branch `claude/slice-keys`):** each
+  square's write and division are keyed on their own slice of the passes' city-wide files
+  (`pipeline.Slices`: corridors, road heights, footprints, parent blocks near the square), not the
+  whole files. Keying only: touches `tools/partition/pipeline.py`.
+
+- **The ground triangulated round the faces, now the default (branch `claude/ground-cdt`, waiting for the co-developer):**
+  the sheet's open ground is one constrained triangulation (`web/src/sheet.ts` `buildSheetCdtGen`,
+  built a few milliseconds at a time, Delaunator in a worker: `delaunay.ts`; npm `delaunator`,
+  `@kninnug/constrainautor`). `?ground=sheet` is the cell-by-cell sheet as before, `?ground=old` the
+  old grid. The checks follow the game: `CD_GROUND` defaults to `cdt` (`tools/check_more.py`, via
+  `tools/sheet_cdt.mjs`); `CD_GROUND=sheet` / `old` for the others.
+
+- **Ground plan stage 3, the ground sheet (branch `claude/ground-sheet`):** a new `gs` key in each
+  square (`tools/partition/sheet.py`, written by `write_tile.build_tile`), drawn and walked with
+  `?ground=sheet` (`web/src/sheet.ts`, `world.ts`, `sfpack.ts`, `map.ts`); `tools/check_more.py`
+  measures it with `CD_GROUND=sheet`. Default drawing unchanged.
 
 - **Packed map files (branch `claude/pack-squares`):** the game downloads each square, `-wide` and
   `-ground` as a `.pack.gz` (`web/src/pack.ts`), packed from the JSON in every build by
@@ -48,7 +84,7 @@ the game locally, without the sound" in `CLAUDE.md`.
   backdrop so big mountains show past the fog; the Table Mountain cableway (`tools/cableway.py`).
   Bath's own files are unchanged.
 
-- **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
+- **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on the
   fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
   `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so
   a train runs towards Bradford-on-Avon, with doors, boarding and the black-screen travel
@@ -63,13 +99,13 @@ the game locally, without the sound" in `CLAUDE.md`.
   `web/src/show.ts`, which asks the element itself whether it has changed, so a new game's first
   write always lands (as `daily.ts`'s panel already did). Checks the prompt: `tools/travel_probe.mjs`.
 
-- **Frame rate, round 2 (steps 1-3, branch `claude/fps-round2` on Dan's fork):** pickups merged into
+- **Frame rate, round 2 (steps 1-3, branch `claude/fps-round2` on the fork):** pickups merged into
   one mesh per look, shadows drawn every other frame, and (step 3) landmarks drawn in fewer pieces
   (`web/src/landmarks/kit.ts` `mergeStatic` and `Kit.build()`, called from `landmarks/index.ts`):
   a set piece's stone in several tints is one draw via vertex colours, and the village's plain
   landmarks merge the same way. Town `landmarks-tunnels` draws fall 106 to 81. Steps 4 and 5 (split
   the long building slices; bake squares at build time) are still to do. Nothing merged without
-  Dan's say-so.
+  the co-developer's say-so.
 
 - **Village built as 9 normal squares (done, on main):** the whole map, village included, is now
   built by `tools/prep_tiles.py` in one parallel run: the village is squares 0-2 each way, kept in
@@ -89,7 +125,7 @@ the game locally, without the sound" in `CLAUDE.md`.
   network with gates kept in their walls (`tools/gardens.py`), walls opened only where a path or
   street crosses them, nothing small left standing on a wall (`tools/prep_map.py`), kerb-high
   pavements (`web/src/world.ts`), climbing over walls, and a clash check (rule 9 in
-  `tools/check_map.py`). Branch `dan/lidar-walls`, on Dan's fork (`danturn/CombeDowner`) only for
+  `tools/check_map.py`). Branch `dan/lidar-walls`, on the fork only for
   testing, not on this `main` yet.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
   river by Bath Spa.
@@ -98,16 +134,16 @@ the game locally, without the sound" in `CLAUDE.md`.
   daft wearables earned from jobs, the deli, cats and tummy time (`web/src/wardrobe.ts`, drawn by
   `avatar.ts`, sent in the hello as `wr`, a Wardrobe button in the pause menu). Jobs can now offer
   things to shoot at (`hit`/`shoot`/`bossBar` on `Job` in `quests.ts`) and hand out wearables
-  (`done.wear`). Branch `claude/seagulls`, on Dan's fork for testing first.
+  (`done.wear`). Branch `claude/seagulls`, on the fork for testing first.
 
 - **Ladders:** a ladder you pick up, put up against a building with E and climb onto its roof
   (`web/src/ladders.ts`, climbing in `player.ts`, hooks in `game.ts`, `pickups.ts`, `avatar.ts`, `ldr`/`lds`
-  in `net.ts`). On Dan's fork `main` (branch `claude/ladder`), not this `main` yet.
+  in `net.ts`). On the fork `main` (branch `claude/ladder`), not this `main` yet.
 - **Straight, joined-up garden fences, benches and signs:** garden side and back boundaries laid as
   one network, squared to their houses, tidied (no footpath fences, no jogs, no loose bits), and
   corners kept when walls are laid on the ground (`tools/gardens.py`, `tools/prep_map.py`); benches
   face away from buildings and signs run along the kerb (`tools/streets.py`). Branch
-  `claude/square-gardens`, going to Dan's fork `main` after a full rebuild, not this `main` yet.
+  `claude/square-gardens`, going to the fork `main` after a full rebuild, not this `main` yet.
 
 - **Climbing Bath Abbey:** always-on free play at the Abbey (`web/src/climb.ts`), up the real
   ladder of angels on the north turret (`web/src/abbeyclimb.ts`), then the ledge round the tower
@@ -118,14 +154,21 @@ the game locally, without the sound" in `CLAUDE.md`.
   with the guitar in their hands), `wardrobe.ts` (a halo) and `audio.ts` (`guitarLead`). Also
   `landmarks/shape.ts`: sloped roofs are smooth to walk on (each surface keeps its slope), and two
   walls on one line with air between them stay two. Branch `claude/abbey-climb`,
-  merged into Dan's fork `main` after a pass on his Mac; not on this `main` yet.
+  merged into the fork `main` after a pass on his Mac; not on this `main` yet.
 
-### Spencer's agents
+### The maintainer's agents
 
 - **Hackney test map:** a second map, 1 km round the Pembury Tavern (`pembury` in `tools/area.py`
   and `web/src/maps.ts`, built with `prep_map.py` into `web/public/maps/pembury.json`), with a
   `london` zone in `tools/buildings.py`, `gardens.py` and `walls.py`. On `main` as a test, on its
   own page (`pembury.html`), kept out of the main menu (`hidden` in `maps.ts`).
+
+- **Ground plan stage 2 (the co-developer's, branch `claude/ground-stage2` on the fork, not merged):** paths
+  written level across (`sf.pl`, `world.ts`), steps sunk and landing on faces, digging under short
+  spans, no walls on the towpath or paths, churches by OSM/Wikidata form (`tools/worship.py`).
+  **The maintainer, the canal:** `tools/canal.py` adds an optional `x` to a run that opens into a river, and
+  `canal.ts`/`works.ts` cut the water, banks and verges off past it (`clipMouths`); nothing else of
+  the canal or the locks changes.
 
 ## Parked
 

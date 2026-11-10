@@ -161,12 +161,13 @@ registerFree({
       if (t.cool > 0 || speed < 3 || !open(w, t) || Math.hypot(t.x - me.x, t.z - me.z) > t.reach + moved) continue;
       if (!crosses(t, was.x, was.z, me.x, me.z)) continue;
       t.cool = 6;
-      const kmh = Math.round(speed * 3.6), b = best("trap-" + t.name);
-      note("trap", kmh);
-      if (kmh >= 60) earn("dazzle");
-      if (kmh > b) keep("trap-" + t.name, kmh);
-      w.toast(`Speed trap, ${t.name}: ${kmh} km/h${kmh > b ? (b ? `, a best (was ${b})` : "") : ` (best ${b})`}`);
-      if (kmh > b) SFX.pip(true); else SFX.tick();
+      // in mph, like the car's speedo; bests kept from when traps read km/h are carried over
+      const mph = Math.round(speed * 2.237), b = best("trapmph-" + t.name) || Math.round(best("trap-" + t.name) / 1.609);
+      note("trap", mph);
+      if (mph >= 40) earn("dazzle");
+      if (mph > b) keep("trapmph-" + t.name, mph);
+      w.toast(`Speed trap, ${t.name}: ${mph} mph${mph > b ? (b ? `, a best (was ${b})` : "") : ` (best ${b})`}`);
+      if (mph > b) SFX.pip(true); else SFX.tick();
     }
     // a manual down Milsom Street: timed while you're on it and on the street
     along ??= streetOf(w);

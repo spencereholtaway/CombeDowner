@@ -21,7 +21,7 @@ are kept, and squares already built are not built again.
 
 | IF you see | THEN |
 |---|---|
-| `FAIL no place found` | Try the name with the county or country after it: `"<name>, Wiltshire"`, `"<name>, France"`. Still none: STOP. |
+| `FAIL no place found` | The finder wants a place's own name and at most one region after it. If the name has more than one comma, keep only the first part and the country (`"<name>, <area>, <country>"` → `"<name>, <country>"`). If it has none, add the county or country: `"<name>, Wiltshire"`, `"<name>, France"`. Try each once. Still none: STOP. |
 | `HTTP Error 429` or `HTTP Error 403` (Nominatim) | Wait two minutes, rerun once. Still failing: STOP. |
 | `WARN could not reach Nominatim to check the country: assuming NON-UK` | Run `python3 -I tools/new_area.py remove <id>`, wait two minutes, then repeat Step 4. |
 | `FAIL '<id>' is already in tools/area.py` | Ask the user for another id. |

@@ -14,6 +14,11 @@
 // of device, the model of its graphics chip as the browser names it, the frame rate and draw calls,
 // whether it was in safe graphics, and the draw distance the automatic settings chose and how far
 // they had to ease back.
+// The start also says the browser's time zone and language, the site that linked to the game (its
+// host only, and nothing when it is this site), a coarse screen size and whether the player is on a
+// keyboard and mouse, a touch screen or a controller. The server records the connection's IP
+// address with the session, along with a coarse location (country, region and town) worked out
+// from it. ?telemetry=0 turns all of it off.
 // In a multiplayer room it also says how the network treated the player (netcheck.ts): whether
 // the relays that find other players answered, who was found, and what routes a link could take.
 // Positions are only a coarse square (50 m) on the map, every half
@@ -84,6 +89,48 @@ function device(): "phone" | "tablet" | "desktop" {
   return !touch ? "desktop" : small < 600 ? "phone" : "tablet";
 }
 
+// The last kind of input the player used, watched from the start so the menus count. A pad's own
+// presses come in as made-up key events (gamepad.ts), which the browser marks as not from the person.
+let input: "keyboard" | "touch" | "controller" | undefined;
+if (URL_) {
+  try {
+    const by = (kind: typeof input) => (e: Event) => { if (e.isTrusted) input = kind; };
+    addEventListener("keydown", by("keyboard"), { capture: true, passive: true });
+    addEventListener("pointerdown", (e) => { if (e.isTrusted) input = e.pointerType === "touch" ? "touch" : "keyboard"; }, { capture: true, passive: true });
+    addEventListener("gamepadconnected", () => { input = "controller"; });
+  } catch { /* never reaches the game */ }
+}
+
+function mainInput(): string {
+  if (input) return input;
+  try { if (Array.from(navigator.getGamepads?.() ?? []).some((p) => p?.connected)) return "controller"; } catch { /* not allowed */ }
+  return matchMedia("(pointer: coarse)").matches ? "touch" : "keyboard";
+}
+
+/** The screen's longer side, in bands too wide to tell one machine from another. */
+function screenBand(): string {
+  const w = Math.max(screen.width, screen.height);
+  return w < 1000 ? "<1000" : w < 1400 ? "1000-1399" : w < 1920 ? "1400-1919" : w < 2560 ? "1920-2559" : "2560+";
+}
+
+/** Who linked here: the host only, and nothing when it's this site (moving between its own pages). */
+function referrer(): string | undefined {
+  try {
+    if (!document.referrer) return undefined;
+    const host = new URL(document.referrer).hostname.toLowerCase();
+    return host && host !== location.hostname.toLowerCase() ? host.slice(0, 100) : undefined;
+  } catch { return undefined; }
+}
+
+function details(): Record<string, string> {
+  const d: Record<string, string> = { screen: screenBand(), input: mainInput() };
+  try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (tz) d.tz = tz; } catch { /* old browser */ }
+  if (navigator.language) d.lang = navigator.language;
+  const ref = referrer();
+  if (ref) d.ref = ref;
+  return d;
+}
+
 function name(): string | undefined {
   try { return localStorage.getItem("cd-name")?.trim().slice(0, 24) || undefined; } catch { return undefined; }
 }
@@ -145,7 +192,7 @@ export function play(id: string) {
   init();
   if (!on) return;
   map = id;
-  try { add("start", { map, name: name(), device: device(), v: String(__BUILD__) }); } catch { /* never reaches the game */ }
+  try { add("start", { map, name: name(), device: device(), v: String(__BUILD__), ...details() }); } catch { /* never reaches the game */ }
 }
 
 const PICTURE_SETTLE_MS = 20_000, PICTURE_RETRY_MS = 10_000, PICTURE_TRIES = 30, PICTURE_SIZE = 2048;

@@ -5,8 +5,8 @@ open data. There is also a co-op dungeon crawl in the stone mines under the vill
 Down"). `README.md` is the short front page and `docs/playing.md` describes the game from the
 player's side; this file is for agents working on the code.
 
-Two people work on this repo at the same time, each with their own agents: **Spencer**
-(spencereholtaway, who owns the repo) and **Dan** (danturn). Read "Working alongside each other"
+Two people work on this repo at the same time, each with their own agents: **the maintainer**,
+who owns the main repo, and **the co-developer**, who works from a fork. Read "Working alongside each other"
 below before you merge anything.
 
 Also read `NOTES-FOR-AGENTS.md` before you start: it lists what each person's agents are changing
@@ -37,12 +37,12 @@ just in Combe Down.
 
 ## Working alongside each other
 
-- `main` on `spencereholtaway/CombeDowner` is the one true copy, and it is what's live. Both people
+- `main` on the main repo is the one true copy, and it is what's live. Both people
   push to it, often several times a day, so **fetch `origin/main` when you start and again just
   before you merge**. Never force-push `main`, and never rewrite history someone else has pushed.
-- Branch names: Dan's work goes on `dan/<topic>` and agents' work on `claude/<topic>`. Dan
-  sometimes works from his fork (`danturn/CombeDowner`) and merges in through a pull request; if
-  you're in the fork, `main` there is not the live one, so bring in Spencer's `main` too.
+- Branch names: the co-developer's work goes on `dev/<topic>` and agents' work on `claude/<topic>`. The
+  co-developer sometimes works from the fork and merges in through a pull request; if
+  you're in the fork, `main` there is not the live one, so bring in the maintainer's `main` too.
 - When you resolve a conflict, keep both sides' features. Never drop, revert or quietly rewrite
   something the other person built to make your change fit: if the two really can't live together,
   stop and ask the user. `git log -- <file>` shows who last worked on what.
@@ -50,9 +50,9 @@ just in Combe Down.
   `web/src/net.ts` (the `MESSAGE_TYPES` list), `web/src/main.ts`, `web/index.html`,
   `web/src/style.css`, `README.md` and `docs/playing.md`. Make small, local edits there rather
   than reshuffling.
-- Anyone can work anywhere, but expect the other person to have work in progress. Dan has done a
+- Anyone can work anywhere, but expect the other person to have work in progress. The co-developer has done a
   lot of the mines (`web/src/mines/`, `web/mines.html`), traffic and the building and roof work.
-  Check `git log origin/main -- <path>` and the open `dan/*` and `claude/*` branches
+  Check `git log origin/main -- <path>` and the open `dev/*` and `claude/*` branches
   (`git branch -r`) before you make big changes to an area.
 - Don't commit build output, `node_modules`, logs or raw map downloads (`data/raw/` is ignored).
   The map's inputs *are* kept, compactly, in `data/combe-down/` (`tools/mapdata.py`): rebuild from
@@ -69,9 +69,9 @@ npm run build        # tsc --noEmit then vite build: this is the check before me
 
 There are no unit tests: the build's typecheck is the gate, then play it.
 
-**Spencer doesn't want screenshots.** For Spencer's work, don't drive the game in a headless
-browser to take screenshots (it's slow): once the build passes, merge and push, and Spencer
-checks it by eye. Only use screenshots when Spencer has looked at something and asked for more
+**The maintainer doesn't want screenshots.** For the maintainer's work, don't drive the game in a headless
+browser to take screenshots (it's slow): once the build passes, merge and push, and the maintainer
+checks it by eye. Only use screenshots when the maintainer has looked at something and asked for more
 work on it. Useful URL options:
 
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
@@ -94,7 +94,8 @@ work on it. Useful URL options:
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - `?progression=1|0` switches the zones, the strange objects and structures, and the team challenges
   on or off together for one visit (`web/src/features.ts`). By default they're on at
-  danturn.github.io and on a local copy, and off on Spencer's live site. In a room, the host's say
+  the test copies (the fork's GitHub Pages site and test.combedowner.pages.dev) and on a local copy,
+  and off on the live site. In a room, the host's say
   counts for everyone; new code for any of the three should check `feature()` rather than assume
   it's on.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
@@ -142,7 +143,7 @@ nine go together) and prints the two commands: rebuild just those squares
 (`tools/prep_tiles.py ... --only ti,tj ...`), then shoot the view. Rebuild the whole map, and
 run the clash check (`tools/check_map.py`), once the change is right.
 
-Spencer reports what's wrong with the map with the drone (`/drone` on the chat phone,
+The maintainer reports what's wrong with the map with the drone (`/drone` on the chat phone,
 `web/src/drone.ts`): he flies to it, shoots to snap, notes it, and pastes `/drone copy`'s text
 and contact sheet to you. Each `#n` line's `at=` is the camera (east, north, bearing, tilt, height
 off the ground), ready for `npm run shoot` and `square_at.py`; `aim=` is the point under the
@@ -150,13 +151,13 @@ crosshair (east, north, height off the ground there, and how far); `square` is t
 `hit` is what the game's solid ray met there (so "ground" under something that looks solid means
 it isn't in the collision). The sheet's pictures carry the same numbers, crosshair on the spot.
 
-On Dan's fork, Dan's agents run full map builds and screenshots on Dan's Mac, through the
+On the fork, the co-developer's agents run full map builds and screenshots on the build Mac, through the
 project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check]
 [--shots views.json] [--push <branch>]`. It waits for any other build to finish, builds in a
 throwaway worktree, reuses a commit it has already built (`--cold` builds the partition from an
 empty store), and writes the timings, what each partition stage took from its store (`cache.txt`),
 changed files, clash check and shots to one report folder. A cloud container has no graphics card,
-so take one frame there at most. Before each big merge into Spencer's main, run
+so take one frame there at most. Before each big merge into the maintainer's main, run
 `tools/mac_build.sh <commit> --verify`: it builds the map from the store and again from an empty
 one, and fails, naming the first stage that differs, unless every map file is the same.
 
@@ -179,7 +180,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.
-  The exceptions are `web/Record player/`: MIDI files Spencer adds there, which the record
+  The exceptions are `web/Record player/`: MIDI files the maintainer adds there, which the record
   player on Solsbury Hill plays (`recordplayer.ts`, `midiplayer.ts`) (leave what's in it alone), and
   the station announcer's voice, `web/public/sounds/station.mp3` and `.json`: every piece the
   announcements are stitched from, said once by a recorded voice so they can go through the tannoy

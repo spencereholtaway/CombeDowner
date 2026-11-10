@@ -10,7 +10,8 @@ Reads the railway lines from Overture's segment layer (segment.geojson), keeping
 and the stations and platforms from its infrastructure layer (infrastructure.geojson). Heights
 come from the same terrain tiles as the map (tools/terrain.py): the track follows the ground as a
 railway is built over it, evened out, never steeper than 1 in 50, and carried straight from end to
-end of each bridge and tunnel Overture marks (tools/profiles.py).
+end of each bridge and tunnel Overture marks (tools/profiles.py). Tracks side by side then agree,
+so the bed they share is level across or falls gently (share_beds).
 
 Trains run along routes: a route is the track followed from one edge of the circle to another,
 going straight on at each set of points. Trains in Britain keep left, so where there are two
@@ -220,6 +221,57 @@ def share_decks(tracks):
             ws = [(1.0, q[2])] + [(min(1.0, (DECK_APART - dd) / (DECK_APART - DECK_SHARED)), z) for dd, z in best.values()]
             new[(ti, k)] = sum(w * z for w, z in ws) / sum(w for w, _ in ws)
     for (ti, k), z in new.items(): tracks[ti]["p"][k][2] = z
+
+
+BALLAST_TOP = 1.6     # metres either side of a track its ballast's level top reaches (railway.ts)
+BED_APART = 5.8       # metres apart within which two tracks' beds run together (write_tile: RAIL_BED 2.3 each side, BED_JOIN 1.2)
+BED_RAMP = (0.5, 1.0)  # metres two tracks differ by where their beds are wholly matched, and no longer at all
+CROSSFALL = 1 / 20    # the steepest the shared bed may slope between two tracks' ballast, as a formation's drainage fall
+
+
+def share_beds(tracks):
+    """Tracks side by side on one bed agree in height: where their ballast tops meet or overlap they
+    are at one height, and further apart the bed between them falls no steeper than CROSSFALL. Each
+    track's own profile is evened out on its own, so two tracks a few metres apart came out up to
+    35 cm different, and their ballast stood as a step. Only tracks alike (both on the ground, both
+    on a bridge, both in a tunnel, or one at the other's end of a bridge or a tunnel) are matched."""
+    segs = [(ti, k, t["p"][k], t["p"][k + 1]) for ti, t in enumerate(tracks) for k in range(len(t["p"]) - 1)]
+    if not segs: return 0.0
+    tree = shapely.STRtree([LineString([a[:2], b[:2]]) for _, _, a, b in segs])
+    pairs = []
+    for ti, t in enumerate(tracks):
+        for k, q in enumerate(t["p"]):
+            best = {}
+            for j in tree.query(Point(q[:2]).buffer(BED_APART)):
+                tj, kj, a, b = segs[int(j)]
+                if tj == ti or q[3] not in (a[3], b[3]): continue
+                vx, vy = b[0] - a[0], b[1] - a[1]
+                f = min(1, max(0, ((q[0] - a[0]) * vx + (q[1] - a[1]) * vy) / ((vx * vx + vy * vy) or 1)))
+                dist = math.hypot(a[0] + vx * f - q[0], a[1] + vy * f - q[1])
+                dz = abs(a[2] + (b[2] - a[2]) * f - q[2])
+                if dist < BED_APART and dz < BED_RAMP[1] and (tj not in best or dist < best[tj][0]):
+                    best[tj] = (dist, kj, f, dz)
+            for tj, (dist, kj, f, dz) in best.items():
+                # (a track climbing away from its neighbour to a flyover or a dive keeps its own
+                # height: the matching fades out as the two part, so it never jumps)
+                w = min(1.0, max(0.0, (BED_RAMP[1] - dz) / (BED_RAMP[1] - BED_RAMP[0])))
+                pairs.append((ti, k, tj, kj, f, max(0.0, dist - 2 * BALLAST_TOP) * CROSSFALL + (1 - w) * dz))
+    # (each pass moves both ends of a pair half way to what the fall allows, all at once, so a track
+    # between two others settles between them)
+    worst = 0.0
+    for _ in range(12):
+        moves = {}
+        for ti, k, tj, kj, f, allow in pairs:
+            a, b = tracks[tj]["p"][kj], tracks[tj]["p"][kj + 1]
+            dz = tracks[ti]["p"][k][2] - (a[2] + (b[2] - a[2]) * f)
+            excess = abs(dz) - allow
+            if excess <= 0.005: continue
+            worst = max(worst, excess)
+            m = moves.setdefault((ti, k), [0.0, 0])
+            m[0] -= math.copysign(excess / 2, dz); m[1] += 1
+        if not moves: break
+        for (ti, k), (dz, c) in moves.items(): tracks[ti]["p"][k][2] += dz / c
+    return worst
 
 
 def main():
@@ -452,6 +504,8 @@ def main():
                 q = p[i]
                 q[2] = z + (q[2] - z) * f_ * f_ * (3 - 2 * f_)
         print(f"  {key if isinstance(key, str) else 'a platform'}: the track laid level at {z:.2f} m along {len(alongside)} points")
+    worst = share_beds(tracks)
+    if worst: print(f"railways: tracks side by side brought to one bed (most apart before: {worst:.2f} m past the fall allowed)")
 
     # ---- routes: edge to edge, straight on at the points --------------------------------------
     key = lambda x, y: (round(x), round(y))

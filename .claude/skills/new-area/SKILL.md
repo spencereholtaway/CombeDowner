@@ -53,8 +53,9 @@ exactly as written, replacing only the placeholders in angle brackets:
 
 Ask exactly these, with these defaults:
 
-1. **Place**: "Which place? A name is enough. A pub, green or church in the middle is better than
-   a town's name." (no default: you must have an answer)
+1. **Place**: "Which place? A name is enough (a pub, green or church in the middle is better than a
+   town's name), or the coordinates of the middle as latitude, longitude." (no default: you must
+   have an answer)
 2. **Radius**: "How big, as a radius in metres? 600 is a village, 1500 a small town (default 1500,
    allowed 400 to 4000)."
 3. **Map id**: "A short id for the address, lower case with dashes (default: the place name in lower
@@ -93,11 +94,21 @@ Success: the last line is exactly `CHECK PASS`, and every line above it starts w
 python3 -I tools/new_area.py find "<name>"
 ```
 
+If the user gave coordinates, run `find "<lat>, <lon>"` with them instead. It prints the named place
+nearest them: take its `BRANCH:`, and for `<title>` ask the user what the game should call the map
+(default: that match's first part). Keep the user's own `<lat>` and `<lon>` for every later step, not
+the match's. Skip the rest of this step and go to Step 3.
+
+If it prints `FAIL no place found`, follow that row of `troubleshooting.md` (a shorter name) before
+anything else.
+
 It prints up to five numbered matches, each with a `kind:`, `region:`, `BRANCH:` and a
 `--lat ... --lon ...` line. Pick the match:
 
 1. Keep only matches whose first line names the place and county or country the user meant.
 2. Of those, prefer a `kind:` of `place/...` (village, town, suburb) over `boundary/administrative`.
+   A lake, reservoir, hill or other feature the user named is a fine centre: its `kind:` is
+   `water/...` or `natural/...`, and that is the match to keep.
 3. If more than one is left, take the lowest number.
 4. If none is left: STOP and show the user the list.
 

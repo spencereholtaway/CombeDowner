@@ -33,6 +33,7 @@ ran or in what order.
 import collections
 import copy
 import glob
+import hashlib
 import json
 import os
 import time
@@ -47,7 +48,7 @@ from . import MARGIN, Q, evidence_of, lap, zone_at
 from .buildings import clean_buildings
 from .corridors import CORNERED, PATHS, PATHW, REACH, fit_cross_section, line_corners, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
-from .graph import street_graph
+from .graph import as_built, street_graph
 from structures import match_structures, osm_structures
 from maxspeed import resolve as speed_limits
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
@@ -346,6 +347,7 @@ def build_graph(out, raw, log=print):
         for l in (g.geoms if hasattr(g, "geoms") else [g]):
             if l.geom_type == "LineString" and l.length > 0.5:
                 roads.append((l, p))
+    roads = as_built(roads)
     log(f"  {len(roads)} road pieces over the whole map")
     # each way's speed limit rides along in its tags, as "_ms", to the squares' streets
     limits, _ = speed_limits(roads, log=log)
@@ -353,15 +355,11 @@ def build_graph(out, raw, log=print):
         if p.get("osm") in limits:
             p["_ms"] = limits[p["osm"]]
     edges = street_graph(roads, bb, log=log)
-    # a stable id and order: sorted by the line's own bounding box, a geometric key, so the same
-    # edge keeps the same id however the ways were read and however many processes ran
+    # sorted by a geometric key, so the file is the same however the ways were read
     edges.sort(key=lambda e: (round(e["line"].bounds[0], 3), round(e["line"].bounds[1], 3),
                               round(e["line"].bounds[2], 3), round(e["line"].bounds[3], 3),
                               e["cls"], e.get("name", "")))
-    # the id is the edge's place in that sorted order, and the same ids go to the file and back to
-    # the caller, so the owner and the other passes agree on what "edge 18729" is
-    for i, e in enumerate(edges):
-        e["id"] = i
+    assign_ids(edges)
     # the bridges and tunnels, from the OSM ways' own tags and from Overture's flags, laid on now the
     # ids are fixed, so the profile pass and the writer find them on the edge they belong to
     segments = [(g, p) for g, p in D.near(bb, "segment") if p.get("subtype") == "road" and p.get("road_flags")]
@@ -376,6 +374,26 @@ def build_graph(out, raw, log=print):
     log(f"  {len(marked)} edges carry a bridge or a tunnel, from {len(segments)} flagged segments")
     log(f"  {len(edges)} street graph edges -> {os.path.basename(graph_path(out))}")
     return edges
+
+
+def edge_id(e):
+    """An edge's name, made from the edge itself: its class, its two ends to the centimetre and its
+    length to the decimetre. Not its place in the list, which every edge added or taken away
+    anywhere in the city would shift, and with it every choice made from the number."""
+    a, b = (tuple(round(v, 2) for v in e["line"].coords[k][:2]) for k in (0, -1))
+    a, b = min(a, b), max(a, b)
+    text = f"{e['cls']} {a[0]:.2f} {a[1]:.2f} {b[0]:.2f} {b[1]:.2f} {round(e['line'].length, 1):.1f}"
+    return hashlib.sha1(text.encode()).hexdigest()[:12]
+
+
+def assign_ids(edges):
+    """Each edge's `id` (`edge_id`); two edges that would share one, which only an edge drawn twice
+    can, are told apart by their order in the sorted list."""
+    seen = collections.Counter()
+    for e in edges:
+        k = edge_id(e)
+        seen[k] += 1
+        e["id"] = k if seen[k] == 1 else f"{k}.{seen[k]}"
 
 
 def read_graph(out):
@@ -405,12 +423,17 @@ def pass_streets(out, raw, jobs=4, log=print):
     clear_owned(out, "corridors.json", "held-out.json")
     edges = build_graph(out, raw, log=log)
     bb = map_bbox()
+    tasks = [(ti, tj, ids, out, raw, bb) for (ti, tj), ids in owned_edges(edges)]
+    log(f"  pass 1: {len(tasks)} squares own edges")
+    return _run_pool(_fit_square_edges, tasks, jobs, log, "pass 1")
+
+
+def owned_edges(edges):
+    """[((ti, tj), the ids of the edges that square owns, in graph order)], by square."""
     owned = collections.defaultdict(list)
     for e in edges:
         owned[owner_of(e["line"].bounds)].append(e["id"])
-    tasks = [(ti, tj, sorted(ids), out, raw, bb) for (ti, tj), ids in sorted(owned.items())]
-    log(f"  pass 1: {len(tasks)} squares own edges")
-    return _run_pool(_fit_square_edges, tasks, jobs, log, "pass 1")
+    return sorted(owned.items())
 
 
 def structures_path(out):
@@ -460,7 +483,7 @@ def pass_structures(out, raw, terrain, log=print):
 
 def read_structures(out):
     path = structures_path(out)
-    return {int(k): v for k, v in json.load(open(path)).items()} if os.path.exists(path) else {}
+    return json.load(open(path)) if os.path.exists(path) else {}
 
 
 def edge_window(lines):
@@ -579,8 +602,9 @@ def held_out_checks(e, ts, L, R):
 
 def _fit_square_edges(ti, tj, ids, out, raw, bb):
     """Fit the edges this square owns. One task of pass 1."""
-    edges = read_graph(out)
-    win = edge_window([edges[i]["line"] for i in ids])
+    by_id = {e["id"]: e for e in read_graph(out)}
+    edges = [by_id[i] for i in ids]
+    win = edge_window([e["line"] for e in edges])
     D = Data(raw, bb, log=lambda *_: None)
     bpolys, _evidence, obstacles, otree = obstacles_for(D, win)
     hobs, htree = hard_obstacles(D, win, bpolys)
@@ -588,8 +612,7 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
     rows, held = [], []
-    for i in ids:
-        e = edges[i]
+    for e in edges:
         if e["cls"] in PATHS:
             rows.append(fit_edge(e, otree, obstacles))
             continue                    # a path has no carriageway: no width to hold out
@@ -608,6 +631,9 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
 
 # ---- pass 2: blocks, once ------------------------------------------------------------------------
 
+CELL = 250.0            # metres: the squares the corridors are joined in before the city's blocks
+                        # are cut from them (`worked_pieces`)
+HAIR = 1e-5             # metres: past the micrometre a settled block's corners can move (`_exact_block`)
 BLOCK_CAP = 2000.0      # metres across: a worked block bigger than this is reported (plan, stage 3b)
 MIN_BLOCK = 5.0         # m^2: the plan's own floor for ground worth calling a worked block, the
                         # same threshold the build uses for a block (`build`: "area > 5")
@@ -656,14 +682,38 @@ def _parts(g):
     return list(g.geoms) if hasattr(g, "geoms") else [g]
 
 
-def _block_pieces(blk, buildings, btree, corner, ctree, cap):
-    """One block's worked pieces, as [(piece, over_cap)] (see `worked_pieces`)."""
+def _exact_block(blk, buildings, btree, corner, ctree, frame):
+    """A settled block (`_settled`) given back its edges exactly: grown by a hair past the
+    micrometre it may have moved, then the corridors and buildings round it taken out again, so it
+    meets them corner for corner as the ground divided from it must."""
+    grown = blk.buffer(HAIR, join_style="mitre").intersection(frame)
+    # (only what touches it: a far corridor whose box happens to overlap would join the union, and a
+    # union's last digits depend on everything in it)
+    nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown, predicate="intersects")))]
+    nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(grown, predicate="intersects")))]
+    g = grown.difference(unary_union(nc) if nc else Polygon()).difference(unary_union(nb) if nb else Polygon())
+    if not g.is_valid:
+        g = g.buffer(0)
+    parts = [q for q in _parts(g) if q.geom_type == "Polygon" and q.area > MIN_BLOCK]
+    return parts[0] if len(parts) == 1 else unary_union(parts) if parts else Polygon()
+
+
+def _block_pieces(blk, buildings, btree, corner, ctree, cap, frame):
+    """One block's outline (`_exact_block`) and its worked pieces, as (block, [(piece, over_cap)])
+    (see `worked_pieces`)."""
+    blk = _exact_block(blk, buildings, btree, corner, ctree, frame)
+    return blk, _pieces_of(blk, buildings, btree, corner, ctree, cap)
+
+
+def _pieces_of(blk, buildings, btree, corner, ctree, cap):
     out = []
+    if blk.is_empty:
+        return out
     # only the buildings that can reach this block, and the corridors that can carve it
     near = blk.buffer(REACH_GROW)
     # in index order: `bunion` is a unary_union of these, and a union's noding can depend on the
     # order of its inputs (an STRtree's `query` order depends on how the index was built)
-    nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(near)))]
+    nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(near, predicate="intersects")))]
     if not nb:
         return []                           # no building near: no worked block, just open land
     # The plan's definition, kept exactly: `block ∩ buffer(buildings, REACH_GROW)`, then the
@@ -673,7 +723,7 @@ def _block_pieces(blk, buildings, btree, corner, ctree, cap):
     # (measured: 195,471 pieces and 420 km2 against 6,691 and 39.98 km2).
     bunion = unary_union(nb)
     grown = bunion.buffer(REACH_GROW).intersection(blk)
-    nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown)))]
+    nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown, predicate="intersects")))]
     W = grown.difference(unary_union(nc) if nc else Polygon()).difference(bunion)
     pieces = [p for p in _parts(W) if p.area > MIN_BLOCK]
     for p in pieces:
@@ -695,12 +745,28 @@ def _block_pieces(blk, buildings, btree, corner, ctree, cap):
 _WP = {}
 
 
-def _wp_init(buildings, corner):
-    _WP.update(b=buildings, c=corner, bt=STRtree(buildings), ct=STRtree(corner))
+def _cell_union(geoms):
+    """The union of `geoms`, joined within each CELL square (by the square holding each one's
+    representative point) and then the squares' unions at once."""
+    groups = collections.defaultdict(list)
+    for g in geoms:
+        p = g.representative_point()
+        groups[(int(p.x // CELL), int(p.y // CELL))].append(g)
+    return unary_union([unary_union(v) for _k, v in sorted(groups.items())])
+
+
+def _settled(g):
+    """A block as one form whatever produced it: corners on a micrometre grid, rings starting at the
+    same corner and running the same way."""
+    return shapely.normalize(shapely.set_precision(g, 1e-6))
+
+
+def _wp_init(buildings, corner, frame):
+    _WP.update(b=buildings, c=corner, bt=STRtree(buildings), ct=STRtree(corner), f=frame)
 
 
 def _wp_block(blk, cap):
-    return _block_pieces(blk, _WP["b"], _WP["bt"], _WP["c"], _WP["ct"], cap)
+    return _block_pieces(blk, _WP["b"], _WP["bt"], _WP["c"], _WP["ct"], cap, _WP["f"])
 
 
 def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print, jobs=1):
@@ -723,26 +789,35 @@ def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print, jobs=1):
     from one union of the corridors and one of the buildings, neither of which is the expensive part
     (752 MB and 782 MB)."""
     corner = [g for _e, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
-    cor_union = unary_union(corner)
+    # The corridors are joined square by square of CELL, and then those, so a street changed in one
+    # place changes the join only in its own cell: joined all at once, the order the pieces were
+    # combined in (and with it each far block's corners, to the last digit, and where its outline
+    # starts) moved wherever any street was added or taken away, and every block divided after it
+    # came out a little differently across the whole city.
+    cor_union = _cell_union(corner)
     bld_union = unary_union(buildings)
     W0 = box(*bb).difference(cor_union).difference(bld_union)
-    blocks = [p for p in _parts(W0) if p.area > MIN_BLOCK]
+    blocks = [b for b in (_settled(p) for p in _parts(W0) if p.area > MIN_BLOCK) if not b.is_empty]
     log(f"  pass 2: {len(blocks)} blocks")
 
-    out = []
+    out, done = [], []
+    frame = box(*bb)
     if jobs > 1:
         from concurrent.futures import ProcessPoolExecutor
         # the blocks are independent, and their pieces are put back in block order
-        with ProcessPoolExecutor(jobs, initializer=_wp_init, initargs=(buildings, corner)) as pool:
+        with ProcessPoolExecutor(jobs, initializer=_wp_init, initargs=(buildings, corner, frame)) as pool:
             order = sorted(range(len(blocks)), key=lambda k: -shapely.get_num_coordinates(blocks[k]))
             futures = {k: pool.submit(_wp_block, blocks[k], cap) for k in order}
-            for k in range(len(blocks)):
-                out += futures[k].result()
+            results = [futures[k].result() for k in range(len(blocks))]
     else:
         btree = STRtree(buildings)
         ctree = STRtree(corner)
-        for blk in blocks:
-            out += _block_pieces(blk, buildings, btree, corner, ctree, cap)
+        results = [_block_pieces(blk, buildings, btree, corner, ctree, cap, frame) for blk in blocks]
+    for blk, pieces in results:
+        if not blk.is_empty:
+            done.append(blk)
+        out += pieces
+    blocks = done
     n_over = sum(1 for _p, over in out if over)
     if n_over:
         log(f"  pass 2: {n_over} worked blocks are over the {cap:.0f} m cap and are still built")

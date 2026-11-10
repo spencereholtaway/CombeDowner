@@ -31,7 +31,7 @@
 // left out. Samples of one kind next to each other on one street are one place.
 //
 //   cd web && npx vite build && cd .. && node tools/overroad.mjs [--map combe-down] [--maps web/public/maps]
-//       [--only "ti,tj ..."] [--out overroad.json]
+//       [--only "ti,tj ..."] [--out overroad.json] [--query "ground=sheet"]
 // Prints the places as one JSON list ({rule, score, x, y, what}) on stdout, as tools/watertight.ts
 // does, and a summary by rule and street on stderr. PW=<playwright> and CHROME=<a Chrome> as for shoot.mjs.
 import { createRequire } from "module";
@@ -81,7 +81,7 @@ await silence(page);
 // (the squares keep their models' arrays, to be read here, instead of letting them go once drawn)
 await page.addInitScript(() => { globalThis.__keepArrays = true; });
 const at = (b) => `${(b[0] + b[2]) / 2},${(b[1] + b[3]) / 2},0,-30,40`;
-await page.goto(`http://127.0.0.1:${server.address().port}/?map=${opt.map}&at=${at(quarters[0].box)}`);
+await page.goto(`http://127.0.0.1:${server.address().port}/?map=${opt.map}&at=${at(quarters[0].box)}${opt.query ? "&" + opt.query : ""}`);
 await page.evaluate(() => { window.__budget = 40; });
 await page.waitForFunction(() => window.__map && window.__map() && window.__renderer, null, { timeout: 120000 });
 await page.evaluate(() => {

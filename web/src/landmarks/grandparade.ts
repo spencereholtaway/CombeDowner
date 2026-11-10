@@ -28,6 +28,10 @@ import * as TX from "../textures";
 // ---- Grand Parade ---------------------------------------------------------------------------------
 
 const P0 = 6, P1 = 103;           // the river wall's ends along the street
+// where Pulteney Bridge's south pavilion stands (its wall 1.9 m along at the street, 3.1 m at the
+// river): the wall, its pavement and balustrade run on back to it from the first bay, so there is
+// no gap between them to drop into
+export const BRIDGE = 1.9;
 const COLS = 40, BAYW = 4.6;      // the colonnade from here, its bays this wide (thirteen of them to P1)
 const FACE = -11.0;               // the wall's face to the river
 const BAL = -12.0;                // the balustrade, at the colonnade's front
@@ -67,11 +71,11 @@ export function colonnade(args: (number | string)[]): THREE.Object3D {
   const iron = plain("#1d2023"), lamp = plain("#fff0c4", { emissive: "#ffd27a", emissiveIntensity: 0 }), paving = stone("#bdb3a2");
   const floorY = water + 2.6;          // the colonnade's floor, above the river
   for (let x = P0; x < P1 - 0.01; x += BAYW) {
-    const x1 = Math.min(P1, x + BAYW), xm = (x + x1) / 2, y = road(xm);
+    const x1 = Math.min(P1, x + BAYW), xm = (x + x1) / 2, y = road(xm), x0 = x < P0 + 0.01 ? BRIDGE : x;
     // the river wall, the colonnade's floor, and the wall behind it with an arch in each bay
-    k.slab(R, x, x1, water - 2, floorY, FACE - 0.6, FACE + 1.4, 3);
-    k.slab(S2, x, x1, floorY - 0.3, floorY, FACE - 1.4, FACE, 1.5);
-    k.slab(S, x, x1, floorY, y, FACE, FACE + 1.4, 3);
+    k.slab(R, x0, x1, water - 2, floorY, FACE - 0.6, FACE + 1.4, 3);
+    k.slab(S2, x0, x1, floorY - 0.3, floorY, FACE - 1.4, FACE, 1.5);
+    k.slab(S, x0, x1, floorY, y, FACE, FACE + 1.4, 3);
     const open = x >= COLS - 0.01;
     k.quad(arched, xm, floorY + (y - 1.6 - floorY) * 0.48, FACE - 0.02, BAYW * 0.62, (y - 1.6 - floorY) * 0.86, Math.PI);
     // a Tuscan column in front (the colonnade), or a pilaster on the wall (on towards the bridge)
@@ -81,12 +85,12 @@ export function colonnade(args: (number | string)[]): THREE.Object3D {
       k.slab(S2, x - 0.45, x + 0.45, y - 2.1, y - 1.6, FACE - 1.25, FACE - 0.35, 1);
     } else k.slab(S2, x - 0.35, x + 0.35, floorY, y - 1.6, FACE - 0.25, FACE, 1);
     // the entablature, and the balustrade along the top with a pedestal every other bay
-    k.slab(S2, x, x1, y - 1.6, y - 0.05, FACE - 1.45, FACE + 1.4, 1.5);
-    k.quad(bal, xm, y + 0.65, BAL, x1 - x, 1.0, Math.PI, 0, 0, (x1 - x) / 1.6, 1);
-    k.slab(S2, x, x1, y + 1.15, y + 1.3, BAL - 0.2, BAL + 0.2, 1);
+    k.slab(S2, x0, x1, y - 1.6, y - 0.05, FACE - 1.45, FACE + 1.4, 1.5);
+    k.quad(bal, (x0 + x1) / 2, y + 0.65, BAL, x1 - x0, 1.0, Math.PI, 0, 0, (x1 - x0) / 1.6, 1);
+    k.slab(S2, x0, x1, y + 1.15, y + 1.3, BAL - 0.2, BAL + 0.2, 1);
     // the pavement out to it, level, from the carriageway's kerb
-    const zk = Math.min(kerb(x), kerb(x1));
-    if (zk - BAL > 0.6) k.slab(paving, x, x1, y - 0.3, y + 0.15, BAL - 0.2, zk - 0.05, 2);
+    const zk = Math.min(kerb(x0), kerb(x1));
+    if (zk - BAL > 0.6) k.slab(paving, x0, x1, y - 0.3, y + 0.15, BAL - 0.2, zk - 0.05, 2);
     const bay = Math.round((x - P0) / BAYW);
     if (bay % 2 === 0) {
       k.slab(S2, x - 0.35, x + 0.35, y + 0.15, y + 1.45, BAL - 0.35, BAL + 0.35, 1);
