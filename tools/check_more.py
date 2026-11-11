@@ -234,30 +234,41 @@ def _railway_check(script, root, map_id, canvas="({})"):
 def roofs_solid(root, map_id, only=None):
     """Rule 22's findings over the squares given (all if None), from tools/roof_probe.mjs; none if
     it can't be run. Called once before the squares are checked."""
-    if os.environ.get("CD_ROOFS") == "0": return []
+    args = _roofs_args(root, map_id)
+    if args is None: return []
+    return _node_json(args + (["--squares", " ".join(t.replace("_", ",") for t in only)] if only else [])) or []
+
+
+def _roofs_args(root, map_id):
+    if os.environ.get("CD_ROOFS") == "0": return None
     here = os.path.dirname(os.path.abspath(__file__))
-    args = ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
+    return ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
             "--per", os.environ.get("CD_ROOFS_PER", "40")]
-    if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
-    try:
-        return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
-    except (OSError, subprocess.CalledProcessError, ValueError):
-        return []
 
 
 @functools.lru_cache(maxsize=2)
 def ground_seams(root, map_id, only=None):
     """Rule 38's cracks over the squares given (all if None), from tools/ground_seams.mjs building each
     square's ground and faces as the game does; none if it can't be run. CD_SEAMS=0 leaves it out."""
-    if os.environ.get("CD_SEAMS") == "0": return []
+    args = _seams_args(root, map_id)
+    if args is None: return []
+    return _node_json(args + (["--squares", " ".join(t.replace("_", ",") for t in only)] if only else [])) or []
+
+
+def _seams_args(root, map_id):
+    if os.environ.get("CD_SEAMS") == "0": return None
     here = os.path.dirname(os.path.abspath(__file__))
     args = ["node", os.path.join(here, "ground_seams.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--rules"]
-    if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
     if GROUND != "cdt": args += ["--query", f"ground={GROUND}"]
+    return args
+
+
+def _node_json(args):
+    """What a tool prints as JSON, or None if it can't be run."""
     try:
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
-        return []
+        return None
 
 
 @functools.lru_cache(maxsize=2)
@@ -280,30 +291,127 @@ def overroad(root, map_id, only=None):
         return []
 
 
+# The passes over the whole map, by name, as the squares read them.
+PASSES = {"watertight": lambda root, map_id: watertight(root, map_id),
+          "trackclear": lambda root, map_id: trackclear(root, map_id),
+          "overroad": lambda root, map_id: overroad(root, map_id, OVERROAD_ONLY[0]),
+          "roofs_solid": lambda root, map_id: roofs_solid(root, map_id, OVERROAD_ONLY[0]),
+          "ground_seams": lambda root, map_id: ground_seams(root, map_id, OVERROAD_ONLY[0]),
+          "tunnel_mesh": lambda root, map_id: tunnel_mesh(root, map_id)}
+# check_map.py runs the passes alongside the squares (run_passes) and sets this: each square then
+# leaves a place-holder in its findings where it would have read them, filled in afterwards (passes_found)
+LATER = [False]
+
+
+def _passes_in(names, root, map_id, b, tag, note):
+    """The findings of the passes `names` in square b, noted in turn."""
+    if LATER[0]:
+        note(None, 0, tag, (names, tuple(b)))
+        return []
+    sq = box(*b)
+    found = [w for n in names for w in PASSES[n](root, map_id) if sq.contains(Point(w["x"], w["y"]))]
+    for w in found: note(w["rule"], w["score"], (tag, round(w["x"]), round(w["y"])), w["what"])
+    return found
+
+
+def passes_found(found, got):
+    """A square's findings with each place-holder _passes_in left replaced by the passes' findings in
+    it, from got (name: findings)."""
+    out = []
+    for rule, score, where, what in found:
+        if rule is not None:
+            out.append((rule, score, where, what)); continue
+        names, b = what
+        sq = box(*b)
+        out += [(w["rule"], w["score"], (where, round(w["x"]), round(w["y"])), w["what"])
+                for n in names for w in got[n] if sq.contains(Point(w["x"], w["y"]))]
+    return out
+
+
+def _parts(root, map_id, only, n, ordered=False):
+    """The squares a pass looks at, as `n` runs of squares in the order it takes them, each run about
+    as much map as the others; None where the pass must look at the whole map in one go."""
+    index = os.path.join(root, map_id, "tiles.json")
+    if only: tags = list(only)
+    elif os.path.exists(index): tags = [f"{i}_{j}" for i, j in json.load(open(index))["tiles"]]
+    else: return None
+    if ordered: tags.sort(key=lambda t: tuple(int(v) for v in t.split("_")))
+    size = [os.path.getsize(p) if os.path.exists(p) else 0 for p in (os.path.join(root, map_id, f"{t}.json") for t in tags)]
+    whole, out, run, got = sum(size) or 1, [], [], 0
+    for t, s in zip(tags, size):
+        run.append(t); got += s
+        if got >= whole * (len(out) + 1) / n and len(out) < n - 1: out.append(run); run = []
+    return [r for r in out + [run] if r]
+
+
+def run_passes(root, map_id, jobs):
+    """Every pass over the whole map, `jobs` at once, roof_probe's and ground_seams' split into runs of
+    squares (each square's findings are its own, so the runs joined in order are what one run finds):
+    name -> findings."""
+    from concurrent.futures import ThreadPoolExecutor
+    only = OVERROAD_ONLY[0]
+    work = [("overroad", lambda: PASSES["overroad"](root, map_id))]
+    split = {}
+    for name, args, ordered in (("ground_seams", _seams_args(root, map_id), False), ("roofs_solid", _roofs_args(root, map_id), True)):
+        if args is None: work.append((name, lambda: [])); continue
+        # (roof_probe tests the map's own first area's buildings too when given no squares)
+        head = os.path.join(root, f"{map_id}.json")
+        own = name == "roofs_solid" and not only and os.path.exists(head) and json.load(open(head)).get("bl")
+        runs = None if own else _parts(root, map_id, only, max(1, jobs), ordered)
+        if runs is None: runs = [None if not only else list(only)]
+        split[name] = len(runs)
+        for k, run in enumerate(runs):
+            work.append(((name, k), lambda a=args + (["--squares", " ".join(t.replace("_", ",") for t in run)] if run else []): _node_json(a)))
+    work += [(n, lambda n=n: PASSES[n](root, map_id)) for n in ("watertight", "tunnel_mesh", "trackclear")]
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
+        done = {name: ex.submit(fn) for name, fn in work}
+        got = {name: f.result() for name, f in done.items()}
+    for name, n in split.items():
+        runs = [got.pop((name, k)) for k in range(n)]
+        got[name] = [] if any(r is None for r in runs) else [w for r in runs for w in r]
+    return got
+
+
 def _unmask(m, pieces):
     """The square as the game shows it: what a set piece hides taken out."""
     if not pieces: return
     sq = box(*m["b"]).buffer(200)
     near = [p for p in pieces if p.intersects(sq)]
     if not near: return
-    hide = lambda x, y: any(p.contains(Point(x, y)) for p in near)
+    def hidden(xy):
+        xy = np.asarray(xy, float).reshape(-1, 2)
+        out = np.zeros(len(xy), bool)
+        for p in near: out |= shapely.contains_xy(p, xy[:, 0], xy[:, 1])
+        return out
     mid = lambda ring: (sum(q[0] for q in ring) / len(ring), sum(q[1] for q in ring) / len(ring))
-    gone = [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if hide(*mid(b["r"][0]))]
-    m["bl"] = [b for b in m.get("bl") or [] if not hide(*mid(b["r"][0]))]
-    m["wp"] = [w for w in m.get("wp") or [] if w.get("c") == "canal" or not all(hide(q[0], q[1]) for q in w["r"][0])]
+    bl = m.get("bl") or []
+    hid = hidden([mid(b["r"][0]) for b in bl])
+    gone = [LineString(b["r"][0] + b["r"][0][:1]) for b, h in zip(bl, hid) if h]
+    m["bl"] = [b for b, h in zip(bl, hid) if not h]
+    m["wp"] = [w for w in m.get("wp") or [] if w.get("c") == "canal" or not hidden([q[:2] for q in w["r"][0]]).all()]
     # (a hidden building's door, bay window and sign go with it: setpieces.ts GONE_REACH)
     kept = [LineString(b["r"][0] + b["r"][0][:1]) for b in m["bl"]]
+    kept_tree = shapely.STRtree(kept) if gone else None
     def on_gone(x, y):
         g = min((r.distance(Point(x, y)) for r in gone), default=9)
-        return g < 0.6 and not any(r.distance(Point(x, y)) < g for r in kept)
+        return g < 0.6 and not any(kept[int(k)].distance(Point(x, y)) < g for k in kept_tree.query(Point(x, y), predicate="dwithin", distance=g))
     for k in ("tr", "sb", "rk", "dr", "by", "sh"):
-        if m.get(k): m[k] = [q for q in m[k] if not hide(+q[0], +q[1]) and not (k in ("dr", "by", "sh") and on_gone(+q[0], +q[1]))]
+        if m.get(k):
+            hid = hidden([(+q[0], +q[1]) for q in m[k]])
+            m[k] = [q for q, h in zip(m[k], hid) if not h and not (k in ("dr", "by", "sh") and on_gone(+q[0], +q[1]))]
     m["sp"] = [list(p.exterior.coords) for p in near for p in getattr(p, "geoms", [p])]
+
+
+@functools.lru_cache(maxsize=8)
+def _square_file(path):
+    """A square's file, read once for the several rules that look at it from the squares beside it.
+    Shared: whoever changes what it holds works on a copy."""
+    return json.load(open(path))
 
 
 @functools.lru_cache(maxsize=12)
 def _terrain_of(path):
-    return terrain(json.load(open(path))["t"]) if os.path.exists(path) else None
+    return terrain(_square_file(path)["t"]) if os.path.exists(path) else None
 
 
 def beyond(f, m, ground):
@@ -332,7 +440,7 @@ def beyond(f, m, ground):
 def _buildings_of(path, centre):
     """A square's buildings as the game shows them, with their outlines, for the squares beside one."""
     if not os.path.exists(path): return []
-    n = json.load(open(path))
+    n = dict(_square_file(path))
     if centre: _unmask(n, _set_pieces(centre))
     return [(b, _poly(b["r"][0], b["r"][1:])) for b in n.get("bl") or [] if len(b["r"][0]) >= 3]
 
@@ -354,7 +462,7 @@ def next_door(f, m):
 def _edge_of(path):
     """A neighbouring square's ground and street ends, for the seams."""
     if not os.path.exists(path): return None
-    n = json.load(open(path))
+    n = _square_file(path)
     if "t" not in n: return None
     ends = [(q[0], q[1], q[2], len(q) > 3 and q[3]) for r in n.get("rd") or [] if len(r["p"]) > 1 for q in (r["p"][0], r["p"][-1])]
     return n["t"], np.asarray([e[:3] for e in ends], float).reshape(-1, 3), n["b"]
@@ -465,10 +573,8 @@ def square(m, tag, note, f):
             dz = q[2] - (min(foot, key=lambda z: abs(z - q[2])) if foot else float(ground(ox, oy)))
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
-    for w in watertight(root, map_id) + trackclear(root, map_id):
-        if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
-    for w in overroad(root, map_id, OVERROAD_ONLY[0]) + roofs_solid(root, map_id, OVERROAD_ONLY[0]) + ground_seams(root, map_id, OVERROAD_ONLY[0]):
-        if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
+    _passes_in(("watertight", "trackclear"), root, map_id, m["b"], tag, note)
+    _passes_in(("overroad", "roofs_solid", "ground_seams"), root, map_id, m["b"], tag, note)
     street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
     ground_measures(m, tag, note, f)
@@ -725,10 +831,14 @@ def longest_run(lines):
     return max((g.length for g in getattr(parts, "geoms", [parts])), default=0.0)
 
 
+_FACES = [None, None]    # the last square's faces: several rules ask for them in turn
+
+
 def faces_of(m):
     """The streets' faces (sf) as the game draws them: each kind's triangles, unioned."""
     sf = m.get("sf")
     if not sf or "o" not in sf: return {}
+    if _FACES[0] is sf: return _FACES[1]
     v = np.cumsum(np.asarray(sf["v"], float).reshape(-1, 3), axis=0) / 100 + [sf["o"][0], sf["o"][1], 0]
     out = {}
     for k in FACE_KINDS:
@@ -736,6 +846,7 @@ def faces_of(m):
         tri = np.cumsum(np.asarray(sf[k], np.int64)).reshape(-1, 3)
         polys = shapely.polygons(np.stack([v[tri[:, 0], :2], v[tri[:, 1], :2], v[tri[:, 2], :2]], axis=1))
         out[k] = shapely.union_all(shapely.make_valid(polys[shapely.area(polys) > 1e-6]))
+    _FACES[:] = [sf, out]
     return out
 
 
@@ -1044,15 +1155,18 @@ class Sheet:
         self.tree = shapely.STRtree(self.polys)
         self.edges = [(e["c"] if e["c"] in FACE_LIFT else "road", np.cumsum(np.asarray(e["i"], np.int64))) for e in sf.get("e") or []]
         self.left = bool(sf.get("l"))
+        self.unions = {}
 
     def kind_mask(self, kinds):
         return np.isin(self.K, [FACE_KINDS.index(k) for k in kinds])
 
     def union(self, kinds):
-        sel = self.kind_mask(kinds)
-        p = self.polys[sel]
-        p = p[shapely.area(p) > 1e-6]
-        return shapely.union_all(shapely.make_valid(p)) if len(p) else Polygon()
+        key = frozenset(kinds)
+        if key not in self.unions:
+            p = self.polys[self.kind_mask(kinds)]
+            p = p[shapely.area(p) > 1e-6]
+            self.unions[key] = shapely.union_all(shapely.make_valid(p)) if len(p) else Polygon()
+        return self.unions[key]
 
     def hit(self, x, y, kinds=None):
         """For each point, the triangle under it (-1 for none) and the plane's height there."""
@@ -2121,10 +2235,8 @@ def ground_measures(m, tag, note, f, off_deck=None):
     # (a deck's end comes down to the survey's grid as the game reads it, map.ts trueGround: the
     # sheet's carving is drawing only)
     bridges(m, f, sheet, drawn, terrain(m["t"]), note, at, sq, fig)
-    for w in tunnel_mesh(*_root_of(f)):
-        if sq.contains(Point(w["x"], w["y"])):
-            note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
-            fig[w["rule"][3:]] = fig.get(w["rule"][3:], 0) + 1
+    for w in _passes_in(("tunnel_mesh",), *_root_of(f), m["b"], tag, note):
+        fig[w["rule"][3:]] = fig.get(w["rule"][3:], 0) + 1
     flights(m, sheet, walk, note, at, inner, fig)
     cp = canal_pieces(*_root_of(f))
     locks(cp, note, at, sq, fig)
@@ -2179,7 +2291,7 @@ def _street_lines(m):
 
 @functools.lru_cache(maxsize=16)
 def _streets_of(path):
-    return _street_lines(json.load(open(path))) if os.path.exists(path) else []
+    return _street_lines(_square_file(path)) if os.path.exists(path) else []
 
 
 def _streets_round(m, f):

@@ -61,7 +61,7 @@ case by case:
     playing (road markings, lanes' faces in streets, steps in the road, the faces at squares' sides,
     flights and their handrails, walls standing over the ground).
 """
-import functools, glob, json, math, multiprocessing, os, subprocess, sys, tempfile, collections
+import concurrent.futures, functools, glob, json, math, multiprocessing, os, subprocess, sys, tempfile, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
@@ -232,7 +232,7 @@ def main():
             pt = Point(q[:2])
             if not r.get("pr"): return False
             if not any(water_all[int(w)].contains(pt) for w in wtree_all.query(pt)): return False
-            return not any(roads[int(o)] is not r and lines[int(o)].distance(pt) < PIER_CLEAR for o in tree.query(pt.buffer(PIER_CLEAR)))
+            return not any(roads[int(o)] is not r and lines[int(o)].distance(pt) < PIER_CLEAR for o in tree.query(pt, predicate="dwithin", distance=PIER_CLEAR))
         pieces = set_pieces_near(m)
         # (a span in a set piece's outline is the set piece's, which builds what holds it up: held)
         held = {id(r) for r, mk in zip(roads, marks) if pieces and any(f == 1 and any(pc.contains(Point(q[:2])) for pc in pieces) for q, f in zip(r["p"], mk))}
@@ -416,21 +416,34 @@ def main():
         check_more.square(m, tag, note, f)
         return found
 
-    check_more.watertight(root, map_id)      # (once, here, so every worker shares it)
-    check_more.trackclear(root, map_id)
     if "--tiles" in args:
         check_more.OVERROAD_ONLY[0] = tuple(os.path.basename(f)[:-5] for f in files if "_" in os.path.basename(f))
-    check_more.overroad(root, map_id, check_more.OVERROAD_ONLY[0])
-    check_more.roofs_solid(root, map_id, check_more.OVERROAD_ONLY[0])
-    check_more.ground_seams(root, map_id, check_more.OVERROAD_ONLY[0])
-    # the files are checked a few at once (each on its own), and their failures gathered in order
+    # what every square reads the same, read once before the workers are made so they share it (if
+    # it can't be read here, each worker reads it as it would have)
+    try:
+        centre = json.load(open(files[0])).get("centre")
+        if centre: check_more._set_pieces(tuple(centre))
+        check_more.canal_pieces(*check_more._root_of(files[0]))
+        check_more.church_outlines(check_more._root_of(files[0])[1])
+        _roofs_drawn_script()
+    except Exception:
+        pass
+    # the passes over the whole map run alongside the squares, each square leaving a place for their
+    # findings; the squares are checked biggest first, so the last few to finish are small ones
+    check_more.LATER[0] = True
     global _check
     _check = check
-    with multiprocessing.get_context("fork").Pool(min(len(files), JOBS)) as pool:
-        for found in pool.imap(_check_one, files):
-            for rule, score, where, what in found:
-                totals[rule] += 1
-                worst[rule].append((score, where, what))
+    found = {}
+    with multiprocessing.get_context("fork").Pool(min(len(files), JOBS) or 1) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            passes = ex.submit(check_more.run_passes, root, map_id, (JOBS + 1) // 2)
+            for f, got in pool.imap_unordered(_check_one, sorted(files, key=lambda f: -os.path.getsize(f))):
+                found[f] = got
+            got = passes.result()
+    for f in files:
+        for rule, score, where, what in check_more.passes_found(found[f], got):
+            totals[rule] += 1
+            worst[rule].append((score, where, what))
     print("rule failures across", len(files), "map files:")
     for rule in sorted(totals):
         print(f"  {totals[rule]:5d}  {rule}")
@@ -648,9 +661,9 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
 
 @functools.lru_cache(maxsize=24)
 def _walls_and_gates(path):
-    """One square's walls as lines and its gate ends as points. Squares are checked in order, so each
-    is read for several of its neighbours: keeping the last few saves reading it again."""
-    n = json.load(open(path))
+    """One square's walls as lines and its gate ends as points. Each is read for several of its
+    neighbours: keeping the last few saves reading it again."""
+    n = check_more._square_file(path)
     return ([LineString([q[:2] for q in b["p"]]) for b in n["br"] if len(b["p"]) > 1],
             [p for g_ in n.get("gt") or [] for p in (Point(g_[0], g_[1]), Point(g_[2], g_[3]))])
 
@@ -688,22 +701,24 @@ def fit_together(m, tag, note, f=None):
     stree = shapely.STRtree([s for _, s in segs])
     bar_tree = shapely.STRtree([line(b["p"]) for b in bars])
     bar_lines = [line(b["p"]) for b in bars]
-    near_bar = lambda pt, r: any(bar_lines[int(k)].distance(pt) < r for k in bar_tree.query(pt.buffer(r)))
+    near_bar = lambda pt, r: any(bar_lines[int(k)].distance(pt) < r for k in bar_tree.query(pt, predicate="dwithin", distance=r))
     # gates with a wall at both sides
     gates = [g for g in m.get("gt") or [] if g[5] != "open"]
     for g in gates:
         ends = near_bar(Point(g[0], g[1]), 0.3) + near_bar(Point(g[2], g[3]), 0.3)
         if ends < 2: note("9 gate without a wall each side", 2 - ends, (tag, round(g[0]), round(g[1])), f"{g[5]} gate, {ends} side{'s' if ends != 1 else ''} walled")
     # two runs on top of each other (within 0.6 m and within 25 degrees)
-    ang = lambda s: math.atan2(s.coords[1][1] - s.coords[0][1], s.coords[1][0] - s.coords[0][0])
-    doubled = collections.Counter()
     seg_g = [s for _, s in segs]
+    angs = [math.atan2(c[1][1] - c[0][1], c[1][0] - c[0][0]) for c in (s.coords for s in seg_g)]
+    doubled = collections.Counter()
     near6, near12 = shapely.buffer(seg_g, 0.6, quad_segs=16), shapely.buffer(seg_g, 1.2, quad_segs=16)
+    in6 = {}
     for n, (i, s) in enumerate(segs):
         for j in stree.query(near6[n]):
             bi, t = segs[int(j)]
-            if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
-            doubled[(i, bi)] += s.intersection(near6[int(j)]).length
+            if bi <= i or abs((angs[n] - angs[int(j)] + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
+            in6[n, int(j)] = s.intersection(near6[int(j)]).length
+            doubled[(i, bi)] += in6[n, int(j)]
     for (i, bi), L in doubled.items():
         if L > 2: note("9 walls doubled", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} on {bars[bi]['c']} {L:.0f} m")
     # two runs side by side a metre or so apart (0.6 to 1.2 m, over more than 3 m): one boundary drawn twice
@@ -711,8 +726,9 @@ def fit_together(m, tag, note, f=None):
     for n, (i, s) in enumerate(segs):
         for j in stree.query(near12[n]):
             bi, t = segs[int(j)]
-            if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
-            apart[(i, bi)] += s.intersection(near12[int(j)]).length - s.intersection(near6[int(j)]).length
+            if bi <= i or abs((angs[n] - angs[int(j)] + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
+            got6 = in6[n, int(j)] if (n, int(j)) in in6 else s.intersection(near6[int(j)]).length
+            apart[(i, bi)] += s.intersection(near12[int(j)]).length - got6
     for (i, bi), L in apart.items():
         if L > 3: note("9 walls a metre apart", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} beside {bars[bi]['c']} {L:.0f} m")
     # a run that pokes out past another it meets (by up to a metre)
@@ -735,7 +751,7 @@ def fit_together(m, tag, note, f=None):
             x = bar_lines[int(k)].intersection(path)
             for h in getattr(x, "geoms", [x]):
                 if h.is_empty: continue
-                if not any(gate_pts[int(j)].distance(h) < 1.0 for j in gtree.query(h.buffer(1.0))):
+                if not any(gate_pts[int(j)].distance(h) < 1.0 for j in gtree.query(h, predicate="dwithin", distance=1.0)):
                     note("9 front path through a wall", 1, (tag, round(h.x if h.geom_type == "Point" else q[0]), round(h.y if h.geom_type == "Point" else q[1])), bars[int(k)]["c"])
     # trees, shrubs and street items on a wall or indoors
     for kind, items, xy in (("tree", m["tr"], lambda q: q[:2]), ("shrub", m.get("sb") or [], lambda q: q[:2]), ("boulder", m.get("rk") or [], lambda q: q[:2]),
@@ -763,15 +779,16 @@ def fit_together(m, tag, note, f=None):
         if dz > 0.35: note("9 wall off its ground", dz, (tag, round(b["p"][0][0]), round(b["p"][0][1])), f"{b['c']} {dz:.1f} m")
     # a stub of wall on its own, with nothing at either end
     gate_ends = [Point(g[0], g[1]) for g in m.get("gt") or []] + [Point(g[2], g[3]) for g in m.get("gt") or []]
-    ends_tree = shapely.STRtree(bar_lines + gate_ends)
+    ends_all = bar_lines + gate_ends
+    ends_tree = shapely.STRtree(ends_all)
     # (one cut by the square's edge is held by the run it carries on into in the next square)
     edge = box(*m["b"]).exterior if "b" in m else None
     over = next_door(f, m) if f and edge is not None else []
     over_tree = shapely.STRtree(over)
     for i, L in enumerate(bar_lines):
         if L.length >= 1.5: continue
-        alone = lambda pt: (not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt.buffer(0.3)))
-                            and not (edge.distance(pt) < 0.3 and any(over[int(k)].distance(pt) < 0.6 for k in over_tree.query(pt.buffer(0.6)))))
+        alone = lambda pt: (not any(int(k) != i and ends_all[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt, predicate="dwithin", distance=0.3))
+                            and not (edge.distance(pt) < 0.3 and any(over[int(k)].distance(pt) < 0.6 for k in over_tree.query(pt, predicate="dwithin", distance=0.6))))
         if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
             note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
     # an end that stops just short of something it should meet: another boundary (not end to end,
@@ -794,7 +811,7 @@ def fit_together(m, tag, note, f=None):
         c = list(L.coords)
         for pt, back in ((Point(c[0]), c[1:]), (Point(c[-1]), c[-2::-1])):
             if meets.contains(pt) or (edge is not None and edge.distance(pt) < MEETS): continue
-            if any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < MEETS for k in ends_tree.query(pt.buffer(MEETS))): continue
+            if any(int(k) != i and ends_all[int(k)].distance(pt) < MEETS for k in ends_tree.query(pt, predicate="dwithin", distance=MEETS)): continue
             q = next((b for b in back if math.dist(b[:2], (pt.x, pt.y)) >= 0.3), None)
             if q is None: continue
             d = math.dist(q[:2], (pt.x, pt.y))
@@ -1234,7 +1251,7 @@ def walls_facing_in(b):
 
 
 def _check_one(f):
-    return _check(f)
+    return f, _check(f)
 
 
 if __name__ == "__main__":
