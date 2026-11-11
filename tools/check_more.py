@@ -902,10 +902,12 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
             return bool(r.get("sc") or r.get("hr")) or abs(ground(*p[-1][:2]) - ground(*p[0][:2])) > 0.3
         flights = shapely.union_all([LineString([q[:2] for q in r["p"]]).buffer(r.get("w", 1.8) / 2 + 1.0, cap_style="flat")
                                      for r in roads if drawn(r)] or [Polygon()])
+        beside = None
         for g in getattr(F["path"], "geoms", [F["path"]]):
             if g.geom_type != "Polygon" or not inner.intersects(g): continue
             if g.intersection(flights).area > 0.5 * g.area: continue
-            shared = g.exterior.intersection(edge.buffer(0.05))
+            if beside is None: beside = edge.buffer(0.05)
+            shared = g.exterior.intersection(beside)
             # (its longest stretch: a path leaving the pavement at a slant at both ends runs along it nowhere)
             along = longest_run(shared)
             steps = [abs(zs["path"][k] - zs["pave"][k]) for k in
