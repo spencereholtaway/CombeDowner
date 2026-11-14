@@ -113,18 +113,31 @@ function miter(d1: Edge, d2: Edge): number[] {
   return [mx * k, mz * k];
 }
 
-/** Where (x, z) is against a path: how far along it (negative behind the start), and how far to its left. */
-function project(path: number[][], x: number, z: number): [number, number] {
-  let best = Infinity, u = 0, w = 0, run = 0;
+/** A path's stretches, worked out once for all the things measured against it: for each, its start,
+ *  its direction, its length, how far along the path it starts, and whether it's the first (which
+ *  reaches on back behind the start). */
+function stretches(path: number[][]): number[] {
+  const out: number[] = [];
+  let run = 0;
   for (let k = 0; k + 1 < path.length; k++) {
     const [ax, az] = path[k], [bx, bz] = path[k + 1], len = Math.hypot(bx - ax, bz - az);
     if (len < 1e-6) continue;
-    const sx = (bx - ax) / len, sz = (bz - az) / len, dx = x - ax, dz = z - az;
-    let t = dx * sx + dz * sz;
-    if (k > 0 || t > 0) t = Math.min(len, Math.max(0, t));
-    const px = ax + sx * t, pz = az + sz * t, d = Math.hypot(x - px, z - pz);
-    if (d < best) { best = d; u = run + t; w = (x - px) * sz - (z - pz) * sx; }
+    out.push(ax, az, (bx - ax) / len, (bz - az) / len, len, run, k);
     run += len;
+  }
+  return out;
+}
+
+/** Where (x, z) is against a path (as stretches gives it): how far along it (negative behind the
+ *  start), and how far to its left. */
+function project(s: number[], x: number, z: number): [number, number] {
+  let best = Infinity, u = 0, w = 0;
+  for (let i = 0; i < s.length; i += 7) {
+    const ax = s[i], az = s[i + 1], sx = s[i + 2], sz = s[i + 3], len = s[i + 4];
+    let t = (x - ax) * sx + (z - az) * sz;
+    if (s[i + 6] > 0 || t > 0) t = Math.min(len, Math.max(0, t));
+    const ox = x - (ax + sx * t), oz = z - (az + sz * t), d = ox * ox + oz * oz;
+    if (d < best) { best = d; u = s[i + 5] + t; w = ox * sz - oz * sx; }
   }
   return [u, w];
 }
@@ -500,10 +513,10 @@ export class Traffic {
         c.sigs = [this.map, ...this.map.tilesNear(c.x, c.z, 80)].flatMap((m) => signalsOf(m)).filter((g) => Math.abs(g.x - c.x) < 70 && Math.abs(g.z - c.z) < 70);
       }
       obstacles.push(...c.parked);
-      const path = this.lanePath(c);
+      const path = stretches(this.lanePath(c));
       // how far out to the side something parked reaches, turned as it is against the way we're going
       const side = (o: Obstacle) => o.a === undefined ? Math.min(o.r, 1.2) : Math.abs(Math.sin(o.a - c.a)) * o.r + Math.abs(Math.cos(o.a - c.a)) * 0.9;
-      const seen = obstacles.map((o) => [...project(path, o.x, o.z), o] as [number, number, Obstacle]);
+      const seen = obstacles.map((o) => { const [u, w] = project(path, o.x, o.z); return [u, w, o] as [number, number, Obstacle]; });
       // how far out it can pull: not past the far kerb, nor into anything on its right
       let room = e.room;
       // (anything coming the other way, further off: it's closing)

@@ -722,10 +722,19 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   };
   const shows = (mesh: THREE.Mesh, text: string, sub?: string) => { mesh.userData.plate = [text, sub]; mesh.onBeforeRender = plateShown; };
   const edge = new THREE.MeshLambertMaterial({ color: "#151515" });
+  // a plate's four edges are one group and its two faces the other: two draws a plate, not six
+  const plateBox = (w: number, h: number, d: number) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.clearGroups();
+    g.addGroup(0, 24, 0);
+    g.addGroup(24, 12, 1);
+    return g;
+  };
+  const stopBox = plateBox(0.9, 0.3, 0.04), signBox = plateBox(1.4, 0.3, 0.035);
   for (const [k, f] of stops.entries()) {
     if (k % 16 === 15) yield;
     const plate = plateFor(f[5] as string, "Bus stop");
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.04), [edge, edge, edge, edge, plate, plate]);
+    const mesh = new THREE.Mesh(stopBox, [edge, plate]);
     shows(mesh, f[5] as string, "Bus stop");
     mesh.applyMatrix4(place(f));
     mesh.position.y += 2.1;
@@ -740,7 +749,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   for (const [k, f] of signs.entries()) {
     if (k % 16 === 15) yield;
     const plate = plateFor(f[5] as string);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 0.035), [edge, edge, edge, edge, plate, plate]);
+    const mesh = new THREE.Mesh(signBox, [edge, plate]);
     shows(mesh, f[5] as string);
     mesh.applyMatrix4(place(f));
     mesh.position.y += 1.2;

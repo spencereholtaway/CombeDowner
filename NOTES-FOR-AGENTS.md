@@ -21,19 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
-- **Leftovers after the passages (branch `claude/leftovers`, code only, map not rebuilt):** in
-  `tools/partition/settle.py` a lane or path edge no longer takes as evidence a barrier the survey
-  sees running across it and over a way (`Evidence.near(along=, across=)`), so a hedge seen across a
-  flight is not drawn down the flight's side; in `write_tile.py` a lidar run on paving with benches
-  mapped along it is left out (`bench_rows`), a way counts as going through a passage only if it runs
-  along it (`_run_along`; a piece ending inside it, where the data splits a lane under its arch,
-  still counts), and a passage frees its way only a metre past each mouth
-  (`_passage_strip`), so no way ends indoors beside one. Since then: a passage running along one
-  already made through the same arch is left out or cut back to where it meets it
-  (`_beside_made`), and a drawn boundary nothing sees, beside a path, stands with its foot at the
-  path's level (`guesses_at_path_level`). Bath and Edinburgh are rebuilt in full on this branch;
-  not yet in the maintainer's main.
-
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
   going and the building gets `ps` (openings: width, headroom, middle line with floor heights) in

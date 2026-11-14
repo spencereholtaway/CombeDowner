@@ -619,11 +619,15 @@ export class Railway {
           }
       return best;
     };
+    // every track's pieces in one 250 m square are drawn together, however many tracks a station has
+    const pooled = new Map<string, { pos: number[]; col: number[]; bpos: number[]; bcol: number[]; ms: ReturnType<typeof mason> }>();
     this.d.tracks.forEach((t, ti) => {
       const p = t.p, plan = bridgePlan(p, this.need, twin), m = plan.marks();
       twin.piers.push(...m.piers); twin.ends.push(...m.ends); twin.girders.push(...m.girders);
       for (let k0 = 0; k0 < p.length - 1; k0 += CHUNK) {
-        const pos: number[] = [], col: number[] = [], bpos: number[] = [], bcol: number[] = [], ms = mason();
+        const at = `${Math.floor(p[k0][0] / 250)},${Math.floor(p[k0][1] / 250)}`;
+        const pool = pooled.get(at) ?? pooled.set(at, { pos: [], col: [], bpos: [], bcol: [], ms: mason() }).get(at)!;
+        const { pos, col, bpos, bcol, ms } = pool;
         const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => {
           if (this.masonry && role.has(cc)) { ms.put(a, b, c, d, role.get(cc)!, 1, 1); return; }
           const [P, Q] = cc === BANK ? [bpos, bcol] : [pos, col];
@@ -718,11 +722,13 @@ export class Railway {
             }
           }
         }
-        add(pos, col);
-        addBank(bpos, bcol);
-        ms.flush();
       }
     });
+    for (const { pos, col, bpos, bcol, ms } of pooled.values()) {
+      add(pos, col);
+      addBank(bpos, bcol);
+      ms.flush();
+    }
     // tunnel mouths: a stone face with a ring of voussoirs round each arch, and the bore lined in
     // stone going on into the hill, its track with it, the daylight dying away a few metres in
     const pos: number[] = [], col: number[] = [], pm = mason();
