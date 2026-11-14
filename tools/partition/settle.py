@@ -63,6 +63,8 @@ PEDESTRIAN_SHARE = 0.5  # of a boundary's length on a pedestrian street that mak
 STANDING_REACH = 4.0    # metres: a guessed wall or hedge with nothing standing this near goes
 UNSTOOD_SOURCES = {"front", "inferred"}     # a registered parcel's edge is evidence enough
 MIN_GAP = 2.0           # metres: a dropped stretch shorter than this, between kept ones, stays
+ALONG_COS = math.cos(math.radians(35))   # evidence turned further than this from a boundary runs across it
+CROSSING = 1.0          # metres of a way's walked ground that evidence running across a boundary must cross
 
 
 LISTED_REACH = 4.0      # metres from a listed entry's point to the house whose front it is
@@ -101,6 +103,19 @@ def _box(p, tol):
     return shapely.box(p.x - tol, p.y - tol, p.x + tol, p.y + tol)
 
 
+def _heading(line, p, reach=1.0):
+    """The unit direction of `line` where it passes nearest `p`, or None."""
+    s = line.project(p)
+    a, b = line.interpolate(max(0.0, s - reach)), line.interpolate(min(line.length, s + reach))
+    d = math.hypot(b.x - a.x, b.y - a.y)
+    return None if d < 1e-6 else ((b.x - a.x) / d, (b.y - a.y) / d)
+
+
+def _runs_with(line, p, along):
+    h = _heading(line, p)
+    return h is None or abs(h[0] * along[0] + h[1] * along[1]) >= ALONG_COS
+
+
 class Evidence:
     """The mapped barriers and lidar wall runs near a square, for asking whether a stretch of
     boundary has something real standing along it."""
@@ -110,11 +125,13 @@ class Evidence:
         self.mapped = [(l, c) for l, c in mapped if not l.is_empty and l.length > 0]
         self.tree = STRtree(self.lines) if self.lines else None
         self.mapped_tree = STRtree([l for l, _ in self.mapped]) if self.mapped else None
+        self.mapped_ids = {id(l) for l, _ in self.mapped}
         self.listed = list(listed)
         self.listed_tree = STRtree([p for p, _ in self.listed]) if self.listed else None
         self.styled = []       # (line, game style) for the mapped barriers the map says the make of
         self.heights = []      # (line, metres) for the mapped barriers the map says the height of
         self.seating = []      # outdoor seating mapped as areas
+        self.seats = []        # benches and picnic tables mapped as points
 
     def listed_front(self, house, reach=LISTED_REACH):
         """The kind of a house's front boundary where Historic England lists railings or a wall
@@ -125,11 +142,20 @@ class Evidence:
                if house.distance(self.listed[int(k)][0]) <= reach}
         return "railing" if "railing" in hit else LISTED_WALL if hit else None
 
-    def near(self, p, tol=EVIDENCE_NEAR):
+    def near(self, p, tol=EVIDENCE_NEAR, along=None, across=None):
+        """Whether a mapped or lidar barrier stands within `tol` of `p`. Given the boundary's heading
+        there (`along`, a unit vector) and the ground of the ways beside it (`across`), not a survey's run
+        that turns across it and over a way: a hedge the lidar sees across a flight is no evidence for
+        a hedge down the flight's side. (A mapped barrier across a path is real, with a gate in it.)"""
         if self.tree is None:
             return False
         idx = np.atleast_1d(self.tree.query(_box(p, tol)))
-        return any(self.lines[int(k)].distance(p) <= tol for k in idx)
+
+        def counts(line):
+            if along is None or across is None or id(line) in self.mapped_ids or _runs_with(line, p, along):
+                return True
+            return line.intersection(p.buffer(2 * tol)).intersection(across).length < CROSSING
+        return any(self.lines[int(k)].distance(p) <= tol and counts(self.lines[int(k)]) for k in idx)
 
     def mapped_at(self, pts, tol=EVIDENCE_NEAR):
         """For each of `pts`, 'wall', 'hedge' or 'fence' for the mapped barrier along it, or None."""
@@ -193,6 +219,8 @@ def load_evidence(sq, pad=50.0):
     # a pub's or a café's tables outside, mapped as an area: paved, not grass
     ev.seating = [g.buffer(0) for g, p in D.near(win, "osm")
                   if p.get("leisure") == "outdoor_seating" and g.geom_type in ("Polygon", "MultiPolygon")]
+    ev.seats = [g for g, p in D.near(win, "infrastructure")
+                if g.geom_type == "Point" and p.get("class") in ("bench", "picnic_table")]
     ev.parcels = [g for g, _p in D.polys_near((x0 - pad - PARCEL_NEAR, y0 - pad - PARCEL_NEAR,
                                                x1 + pad + PARCEL_NEAR, y1 + pad + PARCEL_NEAR), "parcels")]
     return ev
@@ -371,6 +399,11 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
         return any(g.distance(shop_pts[int(k)]) <= SHOP_REACH
                    for k in np.atleast_1d(shop_tree.query(g.buffer(SHOP_REACH))))
 
+    paths = shapely.union_all([Polygon(f["xy"]).buffer(0) for f in part["faces"]
+                               if f["cls"] == "path" and len(f["xy"]) > 2] or [Polygon()])
+    walked = paths.buffer(-0.2)
+    shapely.prepare(walked)
+
     gone = dict(front=0.0, lane=0.0, far=0.0, pedestrian=0.0)
     guessed = []
     seen = set()        # edges whose kind something real decided: the lidar, the map or a listing
@@ -435,6 +468,8 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
         if "corridor" in sides:
             # a lane's edge against open land: only what stands there, and a field's edge is a
             # hedge, not a garden's fence, unless a fence is mapped along it
+            if not walked.is_empty:
+                real = [evidence.near(p, along=_heading(line, p), across=walked) for p in pts]
             drop = _intervals(real, L, n)
             if drop:
                 e["drop"] = drop

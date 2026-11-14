@@ -25,11 +25,6 @@ the game locally, without the sound" in `CLAUDE.md`.
   that change nothing on screen: traffic measures things against each car's lane once
   (`traffic.ts`), a station's tracks are drawn a 250 m square at a time (`railway.ts`), and name
   plates take two draws, not six (`furniture.ts`). Not on the maintainer's `main` yet.
-- **Shadows' cost cut (branch `claude/shadows`, on top of `claude/fps-now`):** looking just the same:
-  big merged models are drawn into the sharpest shadow square in 100 m pieces (`inPieces`,
-  `shadows.ts`; `tileWorld` keeps freeOnUpload's copies till a square is finished, `world.ts`), only
-  as many cascade lights as needed (two at the usual settings, not four), and the moored canal boats
-  instanced a 500 m stretch at a time (`canal.ts`). Not on the maintainer's `main` yet.
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
   going and the building gets `ps` (openings: width, headroom, middle line with floor heights) in
