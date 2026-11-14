@@ -21,10 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
-- **Frame rate re-measured after the November map work (branch `claude/fps-now`):** small fixes
-  that change nothing on screen: traffic measures things against each car's lane once
-  (`traffic.ts`), a station's tracks are drawn a 250 m square at a time (`railway.ts`), and name
-  plates take two draws, not six (`furniture.ts`). Not on the maintainer's `main` yet.
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
   going and the building gets `ps` (openings: width, headroom, middle line with floor heights) in
