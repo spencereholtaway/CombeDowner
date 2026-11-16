@@ -287,18 +287,21 @@ function vegetationKit(look: Region["trees"]): VegetationKit {
   // camera, sized by the plant's own scale (textures.ts SPRITE_FRAMES), its top swaying as the
   // crowns do. It shows the plant's own close crown as seen from the side you're on (SIDES
   // pictures round it, the nearest two blended), so its shape and colour carry on from the 3D one.
-  // It's lit as if it faced you and a little up.
-  const sprites = plantPictures(geo, leaf[0][0], bark);
+  // Each pixel is lit by the way the crown's surface faced there (a second sheet of the same
+  // pictures), so the sunlit tops and shaded sides match the 3D crown's and it doesn't darken.
+  const { map: sprites, normals: spriteNormals } = plantPictures(geo, leaf[0][0], bark);
   const [tw, th, tb] = TX.SPRITE_FRAMES.tree, [sw, sh, sb] = TX.SPRITE_FRAMES.shrub;
   const f = (v: number) => v.toFixed(3);
   const flatMat = (kind: number) => {
     const m = new THREE.MeshLambertMaterial({ map: sprites, alphaTest: 0.5 });
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = time;
+      shader.uniforms.uFacing = { value: spriteNormals };
       fading(shader, kind, PART.flat);
       shader.vertexShader = `uniform float uTime;
         attribute float aCell;
         varying vec2 vUvA, vUvB; varying float vSideMix;
+        varying vec3 vBbRight, vBbToCam;
         vec3 bbWorld, bbToCam;
         void bbSetup() {
           vec3 c = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
@@ -308,6 +311,7 @@ function vegetationKit(look: Region["trees"]): VegetationKit {
           vec3 t = cameraPosition - c; t.y = 0.0;
           bbToCam = length(t) > 0.001 ? normalize(t) : vec3(0.0, 0.0, 1.0);
           vec3 right = cross(vec3(0.0, 1.0, 0.0), bbToCam);
+          vBbRight = right; vBbToCam = bbToCam;
           // the plant is wider one way than the other: as wide as it is across your view
           float wide = length(vec2(sx * dot(right, ax), sz * dot(right, az)));
           float ph = uTime * 1.1 + c.x * 0.21 + c.z * 0.17, sway = position.y * position.y * 0.1 * sy;
@@ -331,8 +335,13 @@ function vegetationKit(look: Region["trees"]): VegetationKit {
             vec4 worldPosition = vec4(bbWorld, 1.0);
           #endif`);
       // the two sides' pictures mixed, outline and all, so turning round a plant morphs it
-      shader.fragmentShader = "varying vec2 vUvA, vUvB; varying float vSideMix;\n" + shader.fragmentShader
+      shader.fragmentShader = "uniform sampler2D uFacing; varying vec2 vUvA, vUvB; varying float vSideMix; varying vec3 vBbRight, vBbToCam;\n" + shader.fragmentShader
         .replace("#include <map_fragment>", "diffuseColor *= mix(texture2D(map, vUvA), texture2D(map, vUvB), vSideMix);")
+        .replace("#include <lights_lambert_fragment>", `{
+            vec3 fn = mix(texture2D(uFacing, vUvA).xyz, texture2D(uFacing, vUvB).xyz, vSideMix) * 2.0 - 1.0;
+            normal = normalize(mat3(viewMatrix) * (vBbRight * fn.x + vec3(0.0, fn.y, 0.0) + vBbToCam * fn.z));
+          }
+          #include <lights_lambert_fragment>`)
         // (as the crowns: far off, mipmapped alpha fades, so ease the cut-off with distance)
         .replace("#include <alphatest_fragment>", `${FADE_TEST}
           if (diffuseColor.a < mix(alphaTest, 0.15, smoothstep(40.0, 300.0, length(vViewPosition)))) discard;`);
@@ -346,7 +355,9 @@ function vegetationKit(look: Region["trees"]): VegetationKit {
 /**
  * The flat pictures, drawn once from the close crowns themselves: each kind of plant (row) from
  * SIDES sides round it (columns), unlit, so the flat material lights it as the crowns are lit. Drawn
- * from far off, as the crowns' leaves look then, and coarsened to the game's retro look.
+ * from far off, as the crowns' leaves look then, and coarsened to the game's retro look. normals is
+ * a second sheet laid out the same, of which way the crown's surface faces at each pixel (across,
+ * up, towards you), for the flat material to light it by.
  */
 function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: THREE.Material) {
   const CW = 96, CH = 144, UP = 2, w = CW * UP, h = CH * UP;
@@ -356,8 +367,12 @@ function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: TH
   scene.add(new THREE.AmbientLight(0xffffff, Math.PI));
   const own = pictureRenderer() ? null : new THREE.WebGLRenderer({ alpha: true });
   const r = pictureRenderer() ?? own!;
-  const target = new THREE.WebGLRenderTarget(w, h);
+  const target = new THREE.WebGLRenderTarget(w, h), facing = new THREE.WebGLRenderTarget(w, h);
   target.texture.colorSpace = THREE.SRGBColorSpace;
+  const facingMat = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
+  // (bare background faces you, so blurring at the edges doesn't tip the outline's lighting)
+  const nw = SIDES * CW, nh = KINDS * CH, nsheet = new Uint8Array(nw * nh * 4).fill(255);
+  for (let i = 0; i < nsheet.length; i += 4) nsheet[i] = nsheet[i + 1] = 128;
   const prevTarget = r.getRenderTarget(), prevColour = r.getClearColor(new THREE.Color()), prevAlpha = r.getClearAlpha();
   const prevViewport = r.getViewport(new THREE.Vector4()), prevScissor = r.getScissor(new THREE.Vector4()), prevScissorTest = r.getScissorTest();
   const px = new Uint8Array(w * h * 4), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 400);
@@ -384,6 +399,26 @@ function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: TH
         // (the GPU's rows run bottom up)
         for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
         g.putImageData(img, side * w, k * h);
+        scene.overrideMaterial = facingMat;
+        r.setRenderTarget(facing);
+        r.clear();
+        r.render(scene, cam);
+        r.readRenderTargetPixels(facing, 0, 0, w, h, px);
+        scene.overrideMaterial = null;
+        r.setRenderTarget(target);
+        // shrunk to the colour picture's size; rows bottom up, as the texture wants them
+        for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+          const sum = [0, 0, 0];
+          let n = 0;
+          for (let dy = 0; dy < UP; dy++) for (let dx = 0; dx < UP; dx++) {
+            const i = ((y * UP + dy) * w + x * UP + dx) * 4;
+            if (px[i + 3] < 128) continue;
+            sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; n++;
+          }
+          if (!n) continue;
+          const o = (((KINDS - 1 - k) * CH + y) * nw + side * CW + x) * 4;
+          for (let c = 0; c < 3; c++) nsheet[o + c] = Math.round(sum[c] / n);
+        }
       }
       for (const m of scene.children.filter((o) => o instanceof THREE.Mesh)) scene.remove(m);
     });
@@ -394,11 +429,18 @@ function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: TH
     r.setScissor(prevScissor);
     r.setScissorTest(prevScissorTest);
     target.dispose();
+    facing.dispose();
+    facingMat.dispose();
     if (own) { own.dispose(); own.forceContextLoss(); }
   }
   const t = TX.pixelTex(canvas, SIDES * CW, KINDS * CH, 18, 53, true);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;   // (so one picture doesn't bleed into the next)
-  return t;
+  const normals = new THREE.DataTexture(nsheet, nw, nh);
+  normals.generateMipmaps = true;
+  normals.minFilter = THREE.LinearMipmapLinearFilter;
+  normals.magFilter = THREE.NearestFilter;
+  normals.needsUpdate = true;
+  return { map: t, normals };
 }
 
 /**
