@@ -212,7 +212,7 @@ export function setTreeLens(zoom: number, dirX: number, dirZ: number, halfWide: 
   lensCos[0] = Math.cos(Math.min(Math.PI, halfWide * 1.5 + 0.05));
 }
 /** Each change of level is blended over this share of its distance, and the far edge fades out over it. */
-const BAND = 0.15;
+const BAND = 0.25;
 /** Plants are dealt into both levels this far either side of a blend, so the blend is never cut short
  *  between one dealing out and the next (every 3 m moved, or 6 m at a car's speed). */
 const SLACK = 6;
