@@ -51,9 +51,9 @@ export const LAMPS_FAR = touch ? 200 : 260;
 const askedSquares = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("squares")) : 0;
 export const SQUARES = askedSquares >= 1 ? Math.round(askedSquares) : touch ? 9 : 25;
 /** Squares of Bath whose nearest edge is further off than this are drawn simpler (world.ts): coarser
- *  ground, and none of the footpaths and pavements, which are too thin to see from there. It only
- *  comes into play at the longer draw distances. */
-export const SIMPLER_FAR = 850;
+ *  ground, and none of the footpaths and pavements, which are too thin to see from there. Close
+ *  enough in that nothing is lost by eye, far enough out to save about a quarter of a long view's triangles. */
+export const SIMPLER_FAR = 450;
 /** How far off trees change to simpler models, and how far they're drawn at all (shared by every patch of trees). */
 export const TREE_TO = [50, 100, 480];
 
