@@ -14,6 +14,8 @@ const cache = new Map<string, Promise<string | null>>();
 
 /** The game's own renderer, so a picture can be drawn without making another context. */
 export function itemPicRenderer(r: THREE.WebGLRenderer | null) { shared = r; }
+/** That renderer, for other pictures drawn once at load (the trees' flat pictures, trees.ts). */
+export const pictureRenderer = () => shared;
 
 export function itemPicture(id: string): Promise<string | null> {
   let p = cache.get(id);

@@ -55,7 +55,7 @@ export const SQUARES = askedSquares >= 1 ? Math.round(askedSquares) : touch ? 9 
  *  comes into play at the longer draw distances. */
 export const SIMPLER_FAR = 850;
 /** How far off trees change to simpler models, and how far they're drawn at all (shared by every patch of trees). */
-export const TREE_TO = [50, 140, 480];
+export const TREE_TO = [50, 100, 480];
 
 /** How far round you grass grows (shared by every square's grass: grass.ts), metres. */
 export const GRASS = { reach: touch ? 26 : 42 };
@@ -63,10 +63,11 @@ export const GRASS = { reach: touch ? 26 : 42 };
 /** Scenery detail, as Settings offers it: how far grass grows round you, and how far off trees keep
  *  their full crowns and then their simpler ones (past that they're flat pictures, to the fog). Low
  *  is what a phone or iPad had before there was a choice, Medium a computer's. Further is slower:
- *  grass grows with the square of its reach. */
+ *  grass grows with the square of its reach. The flat pictures are drawn from the crowns themselves
+ *  (trees.ts), so they can take over nearer in. */
 export const DETAIL_LEVELS = [
-  { name: "Low", grass: 26, trees: [50, 140] },
-  { name: "Medium", grass: 42, trees: [50, 140] },
+  { name: "Low", grass: 26, trees: [50, 100] },
+  { name: "Medium", grass: 42, trees: [50, 100] },
   { name: "High", grass: 64, trees: [90, 240] },
   { name: "Ultra", grass: 90, trees: [150, 400] },
   { name: "Max", grass: 130, trees: [250, 650] },

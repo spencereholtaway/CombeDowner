@@ -590,84 +590,8 @@ export function shoePrints(ink = "rgba(105, 6, 8, 0.95)"): THREE.CanvasTexture {
   return t;
 }
 
-/** How each picture in treeSprites() sits on its quad, in the plant's own metres before it's
- *  scaled: width, height and how far below its foot the bottom edge is. Trees (cells 0 to 2) share
- *  one frame, shrubs (cell 3) another. trees.ts draws the quads to match. */
+/** How each of the trees' flat pictures (trees.ts) sits on its quad, in the plant's own metres
+ *  before it's scaled: width, height and how far below its foot the bottom edge is. Trees (kinds 0
+ *  to 2) share one frame, shrubs (kind 3) another. */
 export const SPRITE_FRAMES = { tree: [7.2, 10.8, -0.3], shrub: [1.6, 1.2, -0.05] };
 
-/**
- * Far-off trees and shrubs as flat pictures, Duke Nukem style (trees.ts turns each to face you):
- * four side by side, two broadleaf trees, a conifer and a garden shrub, drawn like the 3D ones
- * (the same lumps of leaves, trunk and limbs) and shaded lighter on top. Leaves are on
- * transparent, for an alpha cutout, and kept fairly neutral green so each plant's tint shows.
- */
-export function treeSprites(): THREE.CanvasTexture {
-  const C = 256, [c, g] = canvas(C * 4, C);
-  g.clearRect(0, 0, C * 4, C);
-  const r = rng(47);
-  // cell k, frame [w, h, base]: metres to pixels
-  let ox = 0, fw = 1, fh = 1, fb = 0;
-  const cell = (k: number, f: number[]) => { ox = k * C; [fw, fh, fb] = f; };
-  const X = (x: number) => ox + (x / fw + 0.5) * C, Y = (y: number) => C - ((y - fb) / fh) * C;
-  const S = (m: number) => (m / fw) * C;            // a width in metres, in pixels
-  const leaf = (l: number, shade: number) => `rgb(${(55 + 110 * l) * shade},${(80 + 135 * l) * shade},${(40 + 70 * l) * shade})`;
-  /** A lump of leaves round (x, y), rx by ry metres: a dark mass with leaves over it, lit from above. */
-  const lump = (x: number, y: number, rx: number, ry: number, n: number, dark = 1) => {
-    g.fillStyle = `rgb(${50 * dark},${76 * dark},${38 * dark})`;
-    g.beginPath(); g.ellipse(X(x), Y(y), S(rx * 0.92), (ry * 0.92 / fh) * C, 0, 0, Math.PI * 2); g.fill();
-    for (let i = 0; i < n; i++) {
-      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 1.05;
-      const lx = x + Math.cos(a) * rx * d, ly = y + Math.sin(a) * ry * d;
-      const up = Math.min(1, Math.max(0, 0.5 + (ly - y) / ry * 0.5));
-      const l = Math.min(1, 0.35 + r() * 0.5 + up * 0.25);
-      g.fillStyle = leaf(l, (0.55 + 0.45 * up) * dark);
-      const k = fw / 7.2;   // (leaves come out the same size in pixels on a shrub as on a tree)
-      g.beginPath(); g.ellipse(X(lx), Y(ly), S((0.16 + r() * 0.14) * k), S((0.08 + r() * 0.08) * k), r() * Math.PI, 0, Math.PI * 2); g.fill();
-    }
-  };
-  const bark = (pts: number[][], w0: number, w1: number) => {
-    const [a, b] = pts;
-    g.fillStyle = "#5e5042";
-    g.beginPath(); g.moveTo(X(a[0] - w0), Y(a[1])); g.lineTo(X(b[0] - w1), Y(b[1])); g.lineTo(X(b[0] + w1), Y(b[1])); g.lineTo(X(a[0] + w0), Y(a[1])); g.fill();
-    g.fillStyle = "#3e342b";
-    g.beginPath(); g.moveTo(X(a[0] + w0 * 0.2), Y(a[1])); g.lineTo(X(b[0] + w1 * 0.2), Y(b[1])); g.lineTo(X(b[0] + w1), Y(b[1])); g.lineTo(X(a[0] + w0), Y(a[1])); g.fill();
-  };
-  // two broadleaf trees: a trunk forking into limbs, a ring of lumps and two on top (as trees.ts)
-  for (const k of [0, 1]) {
-    cell(k, SPRITE_FRAMES.tree);
-    bark([[0, -0.3], [0, 3.2]], 0.27, 0.19);
-    bark([[0, 3.2], [0.1, 5.6]], 0.19, 0.08);
-    for (let j = 0; j < 4; j++) { const a = j * 1.7 + 0.4 + k, h = 2.6 + j * 0.45; bark([[0, h], [Math.cos(a) * 1.7, h + 1.7]], 0.11, 0.035); }
-    const lumps: number[][] = [];
-    for (let j = 0; j < 6; j++) {
-      const a = (j / 6) * Math.PI * 2 + r() * 0.6, d = 1.3 + r() * 0.4, h = 3.9 + r() * 1.9, s = 1.05 + r() * 0.4;
-      lumps.push([Math.cos(a) * d, h, s, s * 0.85, Math.sin(a) * d]);
-    }
-    lumps.push([0, 5.1, 1.8, 1.6, 0], [0.2, 6.4, 1.3, 1.1, 0.1]);
-    // the ones behind first, a little darker
-    lumps.sort((p, q) => p[4] - q[4]);
-    for (const [x, y, rx, ry, z] of lumps) lump(x, y, rx, ry, 240, z < -0.5 ? 0.8 : 1);
-  }
-  // a conifer: tiers of drooping cones, smaller up the tree, on a short trunk
-  cell(2, SPRITE_FRAMES.tree);
-  bark([[0, -0.3], [0, 2.5]], 0.2, 0.14);
-  for (let t = 0; t < 6; t++) {
-    const f = t / 6, rad = 2.3 * (1 - f * 0.85), h = 2.4 * (1 - f * 0.3), y = 1.5 + f * 7.2;
-    g.fillStyle = "rgb(36,58,40)";
-    g.beginPath(); g.moveTo(X(0), Y(y + h));
-    for (let s = 0; s <= 10; s++) { const x = -rad + (2 * rad * s) / 10; g.lineTo(X(x), Y(y - 0.25 * Math.abs(Math.sin(s * 1.6 + t)))); }
-    g.closePath(); g.fill();
-    for (let i = 0; i < 160; i++) {
-      const v = r(), x = (r() * 2 - 1) * rad * (1 - v), ly = y + v * h;
-      const l = 0.3 + r() * 0.4 + v * 0.3;
-      g.fillStyle = `rgb(${(40 + 70 * l) * 0.9},${(70 + 110 * l) * 0.9},${(50 + 70 * l) * 0.9})`;
-      g.fillRect(X(x) - 2, Y(ly) - 1, 4 + r() * 4, 2 + r() * 2);
-    }
-  }
-  // a shrub: four lumps, as trees.ts's
-  cell(3, SPRITE_FRAMES.shrub);
-  for (const [x, y, rx, ry] of [[0.3, 0.35, 0.42, 0.36], [-0.25, 0.38, 0.45, 0.38], [0, 0.45, 0.62, 0.48], [0.05, 0.62, 0.38, 0.32]]) lump(x, y, rx, ry, 260);
-  const t = pixelTex(c, 512, 128, 18, 53, true);
-  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;   // (so one picture doesn't bleed into the next)
-  return t;
-}
