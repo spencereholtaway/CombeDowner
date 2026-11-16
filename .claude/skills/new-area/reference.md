@@ -132,7 +132,7 @@ the command to rebuild just those. Shoot one view with
 `cd web && npm run shoot -- "<east,north,bearing,tilt>" --map <id> --out ../shots/<id>` (note
 `--map`: without it the tool shoots Bath).
 
-On the build Mac, full builds can go through `tools/mac_build.sh <commit> --map --map-id <id> --check`.
+On the build Mac, run full builds in your own worktree, one whole-map build or check at a time.
 
 ## When a new place breaks a shared tool (people and stronger agents only)
 

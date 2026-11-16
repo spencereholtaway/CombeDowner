@@ -151,15 +151,13 @@ crosshair (east, north, height off the ground there, and how far); `square` is t
 `hit` is what the game's solid ray met there (so "ground" under something that looks solid means
 it isn't in the collision). The sheet's pictures carry the same numbers, crosshair on the spot.
 
-On the fork, the co-developer's agents run full map builds and screenshots on the build Mac, through the
-project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check]
-[--shots views.json] [--push <branch>]`. It waits for any other build to finish, builds in a
-throwaway worktree, reuses a commit it has already built (`--cold` builds the partition from an
-empty store), and writes the timings, what each partition stage took from its store (`cache.txt`),
-changed files, clash check and shots to one report folder. A cloud container has no graphics card,
-so take one frame there at most. Before each big merge into the maintainer's main, run
-`tools/mac_build.sh <commit> --verify`: it builds the map from the store and again from an empty
-one, and fails, naming the first stage that differs, unless every map file is the same.
+On the fork, the co-developer's agents build in their own worktree with `tools/prep_tiles.py` and
+check with `tools/check_map.py`. Only whole-map builds and whole-map checks wait for each other, one
+at a time, so the build Mac isn't swamped; `--only` trials, `--tiles` checks and shots can run side by
+side. A cloud container has no graphics card, so take one frame there at most. Before each big merge
+into the maintainer's main, run `tools/mac_build.sh <commit> --verify`: it builds the map from the
+store and again from an empty one, and fails, naming the first stage that differs, unless every map
+file is the same.
 
 Voice chat's delay from one player's mic to another's ears can be measured with
 `node tools/voicelag.mjs --game` (two pages linked over real WebRTC, fake mic; `--old` for the
