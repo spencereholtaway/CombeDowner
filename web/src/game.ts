@@ -82,6 +82,7 @@
 //   down on every screen till it's over, and the pub takeover from there goes round as "gl".
 // - Which of the zones, the strange objects and the team challenges are on (features.ts) is the
 //   host's say, sent with its state ("st"); everyone else plays by the host's switches.
+import { setTreeLens } from "./trees";
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { padInUse, rumble } from "./gamepad";
@@ -490,6 +491,7 @@ export class Game {
   private balloonView: (typeof BALLOON_VIEWS)[number] = keptView(BALLOON_VIEWS, BALLOON_KEY);   // in a balloon: the basket, the chase camera or the cinematic one
   private cinema: Cinema;                        // the cinematic camera (cinema.ts)
   private filmed = false;                        // the cinematic camera's had the view since the lens was last set
+  private readonly treeLook = new THREE.Vector3();
   private lensNow: Focus | null = null;          // the cinematic camera's depth of field, this frame
   private aloftMe: Avatar | null = null;         // you, stood in a balloon's basket, for the chase and cinematic cameras to see
   private boatYaw: number | null = null;         // at a tiller: which way the boat was heading last frame, so your view turns with it
@@ -4746,6 +4748,10 @@ export class Game {
         this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
         this.camera.updateProjectionMatrix();
       }
+    }
+    {
+      const t = Math.tan(this.camera.fov * Math.PI / 360), ahead = this.camera.getWorldDirection(this.treeLook);
+      setTreeLens(Math.tan(view.fov * Math.PI / 360) / t, ahead.x, ahead.z, Math.atan(t * this.camera.aspect));
     }
     this.filmed = false;
     if (tv) {

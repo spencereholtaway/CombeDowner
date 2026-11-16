@@ -194,7 +194,23 @@ const SHRUB_TO = [30, 65, 180];
 /** Where the blends into the middle crowns and into the pictures end, metres: short of the levels'
  *  own reach by the slack, so no plant is drawn in a costlier level further out than it used to be.
  *  ?trees=flat: nowhere, it's pictures throughout. */
-const levels = (to: number[]): [number, number] => FLAT_ALL ? [0.001, 0.002] : [to[0] - SLACK, to[1] - SLACK];
+const levels = (to: number[]): [number, number] => FLAT_ALL ? [0.001, 0.002]
+  : [zoomed(to[0], to) - SLACK, zoomed(to[1], to) - SLACK];
+/** A level's reach, stretched by the zoom so a tree is drawn as well as it looks big, up to most of
+ *  the trees' whole reach (the last of it stays pictures, for the fade at the far edge). */
+const zoomed = (t: number, to: number[]) => Math.max(t, Math.min(t * lens, to[2] * 0.8 - (to[1] - t)));
+/** How much the view is magnified (a scope or binoculars: game.ts). Zoomed in, a far tree is as big
+ *  on the screen as a near one, so it's drawn as a near one would be. Only the narrow view is drawn,
+ *  so that costs far less than it would all round. */
+let lens = 1;
+/** Which way the zoomed view looks (x, z) and the cosine of its widest half-angle, with some spare. */
+const lensDir = [0, -1], lensCos = [-1];
+export function setTreeLens(zoom: number, dirX: number, dirZ: number, halfWide: number) {
+  lens = Math.max(1, zoom);
+  const l = Math.hypot(dirX, dirZ) || 1;
+  lensDir[0] = dirX / l; lensDir[1] = dirZ / l;
+  lensCos[0] = Math.cos(Math.min(Math.PI, halfWide * 1.5 + 0.05));
+}
 /** Each change of level is blended over this share of its distance, and the far edge fades out over it. */
 const BAND = 0.15;
 /** Plants are dealt into both levels this far either side of a blend, so the blend is never cut short
@@ -361,8 +377,14 @@ function vegetationKit(look: Region["trees"]): VegetationKit {
  */
 function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: THREE.Material) {
   const CW = 96, CH = 144, UP = 2, w = CW * UP, h = CH * UP;
-  const [canvas, g] = TX.canvas(SIDES * w, KINDS * h);
-  const img = g.createImageData(w, h);
+  const [canvas, g] = TX.canvas(SIDES * CW, KINDS * CH);
+  const img = g.createImageData(CW, CH);
+  // Shrunk by averaging the light itself, not the stored values: averaging those darkens a speckled
+  // crown by a sixth, and the far trees came out darker than the near ones.
+  const toLight = new Float32Array(256).map((_, v) => Math.pow(v / 255, 2.2));
+  // Measured against the close crowns in the same light, a picture still comes out a little darker
+  // (by about the same share in sun or shade), so it's lifted to match.
+  const LIFT = 1.2;
   const scene = new THREE.Scene();
   scene.add(new THREE.AmbientLight(0xffffff, Math.PI));
   const own = pictureRenderer() ? null : new THREE.WebGLRenderer({ alpha: true });
@@ -396,9 +418,17 @@ function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: TH
         r.clear();
         r.render(scene, cam);
         r.readRenderTargetPixels(target, 0, 0, w, h, px);
-        // (the GPU's rows run bottom up)
-        for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
-        g.putImageData(img, side * w, k * h);
+        for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+          let r0 = 0, g0 = 0, b0 = 0, a0 = 0;
+          for (let dy = 0; dy < UP; dy++) for (let dx = 0; dx < UP; dx++) {
+            // (the GPU's rows run bottom up)
+            const i = ((h - 1 - (y * UP + dy)) * w + x * UP + dx) * 4, a = px[i + 3] / 255;
+            r0 += toLight[px[i]] * a; g0 += toLight[px[i + 1]] * a; b0 += toLight[px[i + 2]] * a; a0 += a;
+          }
+          const o = (y * CW + x) * 4, back = (v: number) => a0 ? Math.round(255 * Math.min(1, Math.pow(LIFT * v / a0, 1 / 2.2))) : 0;
+          img.data[o] = back(r0); img.data[o + 1] = back(g0); img.data[o + 2] = back(b0); img.data[o + 3] = Math.round(255 * a0 / (UP * UP));
+        }
+        g.putImageData(img, side * CW, k * CH);
         scene.overrideMaterial = facingMat;
         r.setRenderTarget(facing);
         r.clear();
@@ -528,11 +558,18 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     for (const m of ch.shade) m.count = 0;
     if (ch.shadeTrunk) ch.shadeTrunk.count = 0;
     const shadows = FLAT_ALL ? 0 : shadowReach();
-    const [t0, t1] = levels(ch.to);
+    const [z0, z1] = levels(ch.to), keep = lens;
+    lens = 1;
+    const [p0, p1] = levels(ch.to);
+    lens = keep;
     const cell = ch.cell.array as Float32Array;
     for (let i = 0; i < ch.kind.length; i++) {
       const k = ch.kind[i];
-      const d = Math.hypot(ch.ix[i] - px, ch.iz[i] - pz);
+      const dx = ch.ix[i] - px, dz = ch.iz[i] - pz, d = Math.hypot(dx, dz);
+      // zoomed in, only the plants in view are drawn as well as they look big; the rest, out of
+      // sight, are dealt as usual, and the shaders (set for the zoom) leave them out altogether
+      const inView = lens === 1 || (dx * lensDir[0] + dz * lensDir[1]) >= lensCos[0] * d;
+      const t0 = inView ? z0 : p0, t1 = inView ? z1 : p1;
       const near = d < t0 + SLACK, mid = d >= t0 * (1 - BAND) - SLACK && d < t1 + SLACK, far = d >= t1 * (1 - BAND) - SLACK;
       if (k >= 0) {
         if (near) { const m = ch.meshes[0][k]; copy(m, m.count++, ch.mat, i, ch.col); }
@@ -595,7 +632,8 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     });
   }
 
-  let wait = 0;
+  let wait = 0, dealtLens = lens;
+  const dealtDir = [lensDir[0], lensDir[1]];
   return {
     time, kit,
     dispose() {
@@ -609,16 +647,21 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
       kit.eye.set(px, pz);
       kit.to[0].set(...levels(TREE_TO), TREE_TO[2]);
       kit.to[1].set(...levels(SHRUB_TO), SHRUB_TO[2]);
+      // zooming in or out deals every chunk afresh, straight away
+      // (and so does turning while zoomed, as which plants are in view changes)
+      const lensMoved = Math.abs(lens - dealtLens) > 0.05 * dealtLens
+        || (lens > 1 && dealtDir[0] * lensDir[0] + dealtDir[1] * lensDir[1] < Math.cos(0.3 * Math.acos(lensCos[0])));
       wait -= dt;
-      if (wait > 0) return;
+      if (wait > 0 && !lensMoved) return;
       wait = 0.2;
+      if (lensMoved) { dealtLens = lens; dealtDir[0] = lensDir[0]; dealtDir[1] = lensDir[1]; for (const ch of chunks) ch.sx = Infinity; }
       for (const ch of chunks) {
         const d = Math.hypot(ch.x - px, ch.z - pz) - ch.r;
         const inRange = d < ch.to[ch.to.length - 1];   // (the trees' reach can change: view.ts)
         show(ch.holder, inRange);
         if (!inRange) { ch.sx = Infinity; continue; }
         // a chunk wholly in the far band only needs dealing out once; nearer ones as the player moves
-        if (d > ch.to[1] + 2 * SLACK) {
+        if (d > levels(ch.to)[1] + 3 * SLACK) {
           if (!ch.allFar || ch.sx === Infinity) sort(ch, px, pz);
           ch.allFar = true;
         } else if (ch.allFar || Math.hypot(px - ch.sx, pz - ch.sz) > 3) {
