@@ -56,7 +56,7 @@ export function groundCdt(): boolean {
 }
 import { SunShadows, inPieces } from "./shadows";
 import { tag, tagSince } from "./kinds";
-import { RIVER_FLOW, ShoreMap, waterCorners, waterLook, waterSky, waterWeirs, wetBy } from "./water";
+import { RIVER_FLOW, ShoreMap, type ShoreWater, waterCorners, waterLook, waterSky, waterWeirs, wetBy } from "./water";
 
 const CHUNK = 320;
 
@@ -228,6 +228,8 @@ export interface TileWorld {
   pavement(x: number, z: number): boolean;
   /** The level of its water at scene (x, z), or null where there's none. */
   water(x: number, z: number): number | null;
+  /** Its water's outlines and levels, for the shore (water.ts). */
+  waterShapes: ShoreWater[];
   update(px: number, pz: number, dt: number): void;
   /** Free what it alone uses (the materials and models it shares stay). */
   dispose(): void;
@@ -2402,7 +2404,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   // (all of them in one mesh: each mesh costs a little to draw, however small)
   const ponds: THREE.BufferGeometry[] = [];
-  const drawnWater: { r: number[][][]; y: number; box: number[] }[] = [];
+  const drawnWater: ShoreWater[] = [];
   /** The level of the water drawn here at scene (x, z), or null where there's none. */
   const waterAt = (x: number, z: number): number | null => {
     for (const w of drawnWater) {
@@ -3395,7 +3397,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const bx0 = T.x0, bx1 = T.x0 + (T.nx - 1) * T.dx, bz0 = -(T.y0 + (T.ny - 1) * T.dy), bz1 = -T.y0;
     let far = false;
     return {
-      group, surface, paved, pavement, water: waterAt,
+      group, surface, paved, pavement, water: waterAt, waterShapes: drawnWater,
       update(px: number, pz: number, dt: number) {
         const d = Math.hypot(Math.max(0, bx0 - px, px - bx1), Math.max(0, bz0 - pz, pz - bz1));
         if (farTerr && (far ? d < SIMPLER_FAR - 50 : d > SIMPLER_FAR)) {
@@ -3562,9 +3564,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   fieldMesh.renderOrder = 5;
   scene.add(tag(fieldMesh, "field"));
   const clock = new THREE.Clock();
-  let weirT = 0;
-  const shore = new ShoreMap((x, z) => (map.canal instanceof Canal ? map.canal.waterAt(x, z) : null) ?? tiles?.worldAt(x, z)?.water(x, z) ?? waterAt(x, z),
-    () => [...map.tiles.keys()].join());
+  let weirT = 0, weirKey = "", weirs: { p: number[][]; b: number }[] = [];
+  const shore = new ShoreMap({
+    ponds: (x0, z0, x1, z1) => [...drawnWater, ...(tiles?.water() ?? [])].filter((w) => w.box[2] >= x0 && w.box[0] <= x1 && -w.box[1] >= z0 && -w.box[3] <= z1),
+    lines: () => {
+      const d = map.canal instanceof Canal ? map.canal.d : null;
+      return d ? [...d.runs.map((r) => r.p), ...d.locks.map((l) => [[...l.lo, 3], [...l.hi, 3]])] : [];
+    },
+    level: (x, z) => (map.canal instanceof Canal ? map.canal.waterAt(x, z) : null),
+    levels: () => map.canal instanceof Canal ? map.canal.locks.map((l) => Math.round(l.level * 2)).join() : "",
+  });
 
   mark("field");
   // ---- the full-detail squares round the map, loaded as the player comes near ----------------
@@ -3637,7 +3646,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       shore.update(px, pz, dt);
       if ((weirT -= dt) <= 0) {
         weirT = 0.5;
-        waterWeirs([map, ...map.tilesNear(px, pz, 500)].flatMap((m) => [...m.d.wf ?? [], ...landmarkFalls(m)]), px, -pz);
+        const near = [map, ...map.tilesNear(px, pz, 500)];
+        const key = near.map((m) => `${m.d.tile?.join() ?? ""}:${landmarkFalls(m).length}`).join("|");
+        if (key !== weirKey) { weirKey = key; weirs = near.flatMap((m) => [...m.d.wf ?? [], ...landmarkFalls(m)]); }
+        waterWeirs(weirs, px, -pz);
       }
       for (const m of GLOWING) m.emissiveIntensity = night * 1.1;
       LAMP_GLASS.color.lerpColors(lampDay, lampNight, night);

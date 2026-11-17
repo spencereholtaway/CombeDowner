@@ -49,7 +49,8 @@ const U = {
 // dot of land is, and how near the land each dot of water is. The water reads it for its shallows
 // and the white line where it laps at the bank; the ground, the banks' and locks' stonework and
 // bridges' piers read it for the dark, wet band just above the water. One picture for all of them,
-// painted afresh over a few frames as you move or squares load, so it costs no more however much water there is.
+// painted afresh only when you've moved some way or water near you comes with a square of Bath, a
+// millisecond a frame at most, so it costs no more however much water there is.
 const SHORE = 256, SHORE_STEP = 1, SHORE_LEVEL = 0.1;
 function shorePicture() {
   const t = new THREE.DataTexture(new Uint8Array(SHORE * SHORE * 4), SHORE, SHORE, THREE.RGBAFormat, THREE.UnsignedByteType);
@@ -73,68 +74,149 @@ vec4 shoreAt(vec3 p) {
   return vec4(shoreBase.x + t.r * 255.0 * shoreBase.y, 0.0, t.b, t.a);
 }`;
 
+/** Water drawn from the map's outlines: its rings (data x, y), its level (scene y) and its box (data x0, y0, x1, y1). */
+export interface ShoreWater { r: number[][][]; y: number; box: number[] }
+/** Where the shore picture finds the water: the outlines near a box (scene x0, z0 to x1, z1); the
+ *  middle lines (data x, y, half width) of water that has its own lookup (the canal and its locks,
+ *  whose levels change), and that lookup. */
+export interface ShoreSource {
+  ponds(x0: number, z0: number, x1: number, z1: number): ShoreWater[];
+  lines(): number[][][];
+  level(x: number, z: number): number | null;
+  /** Something that changes when that water's levels do (a lock filling or emptying). */
+  levels(): string;
+}
+
+/** The most time the shore picture takes a frame, ms: it's painted a slice at a time. */
+const SHORE_BUDGET = 1;
+const REACH = 4;
+const LAND = [255, 200, 120, 50, 0], WATER = [255, 170, 90, 30, 0];
+
 /**
- * The shore picture, for one world. level(x, z): the water's level at scene (x, z) (scene y), or
- * null where there's none.
+ * The shore picture, for one world. Painted afresh only when you've moved some way, or when water
+ * near you comes or goes with the squares of Bath; a slice at a time, never more than a millisecond
+ * a frame, into arrays it keeps.
  */
 export class ShoreMap {
   private job: Generator<void> | null = null;
-  private cx = NaN; private cz = NaN; private since = 0; private sig = "";
-  /** squares(): something that changes when the squares of Bath loaded do. */
-  constructor(private level: (x: number, z: number) => number | null, private squares: () => string) {}
+  private cx = NaN; private cz = NaN; private sig = ""; private sigT = 0;
+  private lv = new Float32Array(SHORE * SHORE);
+  private near = new Float32Array(SHORE * SHORE);
+  private toWater = new Uint8Array(SHORE * SHORE);
+  private toLand = new Uint8Array(SHORE * SHORE);
+  private xs: number[] = [];
+  private ids = new WeakMap<object, number>(); private nextId = 1;
+  constructor(private src: ShoreSource) {}
 
   /** Each frame, with where you are. */
   update(px: number, pz: number, dt: number) {
-    this.since += dt;
-    // (afresh as you move off, and now and then for squares built since and the locks' water)
-    const sig = this.squares();
-    if (!this.job && (Math.hypot(px - this.cx, pz - this.cz) > SHORE * SHORE_STEP / 6 || this.since > 8 || sig !== this.sig)) {
-      this.since = 0; this.sig = sig;
+    const span = SHORE * SHORE_STEP;
+    let again = !(Math.hypot(px - this.cx, pz - this.cz) <= span / 6);
+    if ((this.sigT -= dt) <= 0) {
+      this.sigT = 0.5;
+      const sig = this.signature(px, pz);
+      if (sig !== this.sig) { this.sig = sig; again = true; }
+    }
+    if (again) {
       this.cx = Math.round(px / SHORE_STEP) * SHORE_STEP; this.cz = Math.round(pz / SHORE_STEP) * SHORE_STEP;
-      this.job = this.paint(this.cx - SHORE * SHORE_STEP / 2, this.cz - SHORE * SHORE_STEP / 2);
+      this.job = this.paint(this.cx - span / 2, this.cz - span / 2);
     }
     if (this.job && this.job.next().done) this.job = null;
   }
 
-  private *paint(x0: number, z0: number): Generator<void> {
-    const N = SHORE, lv = new Float32Array(N * N).fill(NaN);
-    let low = Infinity;
-    for (let j = 0; j < N; j++) {
-      for (let i = 0; i < N; i++) {
-        const l = this.level(x0 + (i + 0.5) * SHORE_STEP, z0 + (j + 0.5) * SHORE_STEP);
-        if (l !== null) { lv[j * N + i] = l; if (l < low) low = l; }
-      }
-      if (j % 32 === 31) yield;
+  /** Which water there is round (x, z): changes when a square with water near loads or goes. */
+  private signature(x: number, z: number) {
+    const h = SHORE * SHORE_STEP / 2 + 60;
+    let sig = this.src.levels() + ";";
+    for (const w of this.src.ponds(x - h, z - h, x + h, z + h)) {
+      let id = this.ids.get(w);
+      if (!id) this.ids.set(w, id = this.nextId++);
+      sig += id + ",";
     }
-    // how far each dot is from the other side of the shore, in dots (up to REACH), and on land
-    // the level of the nearest water
-    const REACH = 4, toWater = new Uint8Array(N * N).fill(REACH + 1), toLand = new Uint8Array(N * N).fill(REACH + 1), near = new Float32Array(lv);
-    for (let k = 0; k < N * N; k++) (Number.isNaN(lv[k]) ? toLand : toWater)[k] = 0;
-    for (let pass = 1; pass <= REACH; pass++) {
-      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-        const k = j * N + i;
-        for (const [d, o] of [[toWater, 1], [toLand, 0]] as const) {
-          if (d[k] <= pass) continue;
-          for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
-            const ii = i + di, jj = j + dj;
-            if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
-            if (d[jj * N + ii] === pass - 1) { d[k] = pass; if (o && Number.isNaN(near[k])) near[k] = near[jj * N + ii]; }
+    return sig;
+  }
+
+  private *paint(x0: number, z0: number): Generator<void> {
+    const N = SHORE, S = SHORE_STEP, lv = this.lv, x1 = x0 + N * S, z1 = z0 + N * S;
+    let t = performance.now();
+    const tired = () => performance.now() - t > SHORE_BUDGET;
+    const rest = () => { t = performance.now(); };
+    lv.fill(NaN);
+    // the map's own water, row by row: where each row of dots crosses its outlines
+    const ponds = this.src.ponds(x0, z0, x1, z1), xs = this.xs;
+    for (const w of ponds) {
+      const j0 = Math.max(0, Math.floor((-w.box[3] - z0) / S)), j1 = Math.min(N - 1, Math.ceil((-w.box[1] - z0) / S));
+      for (let j = j0; j <= j1; j++) {
+        const y = -(z0 + (j + 0.5) * S);
+        xs.length = 0;
+        for (const ring of w.r) for (let a = 0, b = ring.length - 1; a < ring.length; b = a++) {
+          const ya = ring[a][1], yb = ring[b][1];
+          if ((ya > y) !== (yb > y)) xs.push(ring[a][0] + (y - ya) / (yb - ya) * (ring[b][0] - ring[a][0]));
+        }
+        xs.sort((p, q) => p - q);
+        for (let k = 0; k + 1 < xs.length; k += 2) {
+          const i0 = Math.max(0, Math.ceil((xs[k] - x0) / S - 0.5)), i1 = Math.min(N - 1, Math.floor((xs[k + 1] - x0) / S - 0.5));
+          for (let i = i0; i <= i1; i++) lv[j * N + i] = w.y;
+        }
+        if (tired()) { yield; rest(); }
+      }
+    }
+    // and the water with its own levels, asked only along its middle lines
+    for (const line of this.src.lines()) for (let k = 0; k + 1 < line.length; k++) {
+      const [ax, ay] = line[k], [bx, by] = line[k + 1], r = Math.max(line[k][2], line[k + 1][2]) + 1.5;
+      const az = -ay, bz = -by;
+      if (Math.max(ax, bx) + r < x0 || Math.min(ax, bx) - r > x1 || Math.max(az, bz) + r < z0 || Math.min(az, bz) - r > z1) continue;
+      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - r - x0) / S)), i1 = Math.min(N - 1, Math.floor((Math.max(ax, bx) + r - x0) / S));
+      const j0 = Math.max(0, Math.floor((Math.min(az, bz) - r - z0) / S)), j1 = Math.min(N - 1, Math.floor((Math.max(az, bz) + r - z0) / S));
+      const dx = bx - ax, dz = bz - az, ll = dx * dx + dz * dz || 1;
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const k2 = j * N + i;
+        if (!Number.isNaN(lv[k2])) continue;
+        const x = x0 + (i + 0.5) * S, z = z0 + (j + 0.5) * S;
+        const f = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / ll));
+        if ((x - ax - dx * f) ** 2 + (z - az - dz * f) ** 2 > r * r) continue;
+        const l = this.src.level(x, z);
+        if (l !== null) lv[k2] = l;
+      }
+      if (tired()) { yield; rest(); }
+    }
+    // how many dots each is from the other side of the shore (up to REACH), and on land the level of
+    // the nearest water: two sweeps over the picture, forwards and back
+    const tw = this.toWater, tl = this.toLand, near = this.near;
+    let low = Infinity;
+    for (let k = 0; k < N * N; k++) {
+      const wet = !Number.isNaN(lv[k]);
+      tw[k] = wet ? 0 : REACH + 1; tl[k] = wet ? REACH + 1 : 0; near[k] = lv[k];
+      if (wet && lv[k] < low) low = lv[k];
+    }
+    for (const dir of [1, -1]) {
+      for (let jj = 0; jj < N; jj++) {
+        const j = dir > 0 ? jj : N - 1 - jj;
+        for (let ii = 0; ii < N; ii++) {
+          const i = dir > 0 ? ii : N - 1 - ii, k = j * N + i;
+          // the four neighbours already swept: behind in this row, and three in the row before
+          for (let n = 0; n < 4; n++) {
+            const di = n === 0 ? -dir : n - 2, dj = n === 0 ? 0 : -dir;
+            const ni = i + di, nj = j + dj;
+            if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+            const q = nj * N + ni;
+            if (tw[q] + 1 < tw[k]) { tw[k] = tw[q] + 1; near[k] = near[q]; }
+            if (tl[q] + 1 < tl[k]) tl[k] = tl[q] + 1;
           }
         }
+        if (tired()) { yield; rest(); }
       }
-      yield;
     }
     const tex = SU.shoreMap.value, out = tex.image.data as Uint8Array, base = Number.isFinite(low) ? low - 0.5 : 0;
-    const LAND = [255, 200, 120, 50, 0], WATER = [255, 170, 90, 30, 0];
     for (let k = 0; k < N * N; k++) {
-      const l = near[k];
+      const l = near[k], dry = Number.isNaN(lv[k]);
       out[k * 4] = Number.isNaN(l) ? 0 : Math.max(1, Math.min(255, Math.round((l - base) / SHORE_LEVEL)));
       out[k * 4 + 1] = 0;
-      out[k * 4 + 2] = Number.isNaN(l) ? 0 : LAND[Math.min(toWater[k], REACH)];
-      out[k * 4 + 3] = Number.isNaN(lv[k]) ? 255 : WATER[Math.min(toLand[k], REACH)];
+      out[k * 4 + 2] = Number.isNaN(l) || tw[k] > REACH ? 0 : LAND[tw[k]];
+      out[k * 4 + 3] = dry ? 255 : WATER[Math.min(tl[k], REACH)];
     }
     tex.needsUpdate = true;
-    SU.shoreBox.value.set(x0, z0, 1 / (N * SHORE_STEP), 1);
+    SU.shoreBox.value.set(x0, z0, 1 / (N * S), 1);
     SU.shoreBase.value.set(base, SHORE_LEVEL);
   }
 }

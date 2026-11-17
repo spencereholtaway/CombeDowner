@@ -15,6 +15,7 @@ import * as THREE from "three";
 import { GameMap, clearShopfronts, drapeBarriers, tileKey, type MapData } from "./map";
 import { SquareParser } from "./parsesquare";
 import type { TileWorld } from "./world";
+import type { ShoreWater } from "./water";
 import { SQUARES, view } from "./view";
 import { maskSetPieces } from "./landmarks/setpieces";
 import { clearCourt } from "./bonfire";
@@ -126,6 +127,13 @@ export class Tiles {
     const m = this.core.tileAt(x, z);
     if (!m?.d.tile) return undefined;
     return this.live.get(tileKey(m.d.tile[0], m.d.tile[1]))?.world;
+  }
+
+  /** Every built square's water, for the shore (water.ts). */
+  water(): ShoreWater[] {
+    const out: ShoreWater[] = [];
+    for (const t of this.live.values()) if (t.world) out.push(...t.world.waterShapes);
+    return out;
   }
 
   /** The squares whose scenery is built and drawn, as [ti, tj]. */
