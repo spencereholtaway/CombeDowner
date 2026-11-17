@@ -1119,8 +1119,9 @@ const CELL_W = 384, CELL_H = 48, COLS = 4, ROWS = 32;
 
 /** Painted timber fascia: lettering centred on a coloured board with a thin moulding, drawn into
  *  cell (cx, cy) of a sheet. aspect: the board's width over its height, so the lettering, squeezed
- *  into the cell, comes out in proportion once it's stretched across the board. */
-function paintFascia(g: CanvasRenderingContext2D, cx: number, cy: number, text: string, style: string, aspect: number) {
+ *  into the cell, comes out in proportion once it's stretched across the board. letters: their
+ *  height, as a share of the board's. */
+function paintFascia(g: CanvasRenderingContext2D, cx: number, cy: number, text: string, style: string, aspect: number, letters = 0.5) {
   const st = SIGN_STYLE[style] ?? SIGN_STYLE.shop;
   const x0 = cx * CELL_W, y0 = cy * CELL_H, w = CELL_W, h = CELL_H;
   g.save();
@@ -1134,7 +1135,7 @@ function paintFascia(g: CanvasRenderingContext2D, cx: number, cy: number, text: 
   g.strokeRect(-bw / 2 + h * 0.1, h * 0.1, bw - h * 0.2, h - h * 0.2);
   g.globalAlpha = 1;
   g.fillStyle = st.fg; g.textAlign = "center"; g.textBaseline = "middle";
-  let size = h * 0.5;
+  let size = h * letters;
   g.font = `600 ${size}px ${st.font}`;
   while (g.measureText(text).width > bw * 0.86 && size > 6) { size -= 1; g.font = `600 ${size}px ${st.font}`; }
   g.fillText(text, 0, h * 0.54);
@@ -1180,7 +1181,7 @@ function letGoOnceSent(t: THREE.CanvasTexture) {
  *  colour the sheet has its own set, painted in that colour. The shop's name is painted on its own
  *  sheet and laid exactly over the board's panel. */
 const FRONT_STYLES = ["cafe", "shop", "agent", "health", "civic"];
-const FRONT_H = 2.675, BAND_H = 0.8;               // the shopfront from the pavement, and the fascia's band over it
+const CAP_H = 0.06;                                 // the lead capping over the cornice
 const SET_PX = 320, BAY_PX = 128, DOOR_PX = 128, PIL_PX = 32, SHEET_W = 2048, SHEET_H = 256;
 // the band's pieces sit under the shopfront's on the sheet: the board, then the console
 const BAND_PX = 96, BOARD_PX = 64, CONSOLE_PX = 32, SHEET_ROWS = 512;
@@ -1188,9 +1189,42 @@ const BAND_PX = 96, BOARD_PX = 64, CONSOLE_PX = 32, SHEET_ROWS = 512;
 const NARROW_PX = 64, NARROW_AT = FRONT_STYLES.length * SET_PX;
 // the board's panel, in the band's pixels down from its top: what the shop's name is laid over
 const PANEL_TOP = 20, PANEL_FOOT = 82;
-const PANEL_H = BAND_H * (PANEL_FOOT - PANEL_TOP) / BAND_PX, PANEL_Y = FRONT_H + BAND_H * (1 - (PANEL_TOP + PANEL_FOOT) / 2 / BAND_PX);
+
+/** How much room a shop's front has on its wall (world.ts, as it lays the building's walls): how far
+ *  either side of the sign it may reach before a corner, and how high over the sign's ground before
+ *  the eaves or the first floor's windows. A sign with none recorded has room for the whole front. */
+const shopRoom = new WeakMap<(number | string)[], { half: number; high: number }>();
+/** The least height a shop's front can have with a believable door and the slimmest band. */
+export const SHOPFRONT_LEAST = 2.1 + 0.3 + CAP_H;
+export function fitShopfront(sign: (number | string)[], half: number, high: number) {
+  const was = shopRoom.get(sign);
+  shopRoom.set(sign, was ? { half: Math.min(was.half, half), high: Math.min(was.high, high) } : { half, high });
+}
+
+/** A front's heights: the fanlight row and the doorway under it (together the shopfront; a bay's
+ *  glass and stall riser are as tall as the doorway), and the fascia's band over it all. Where the wall is too low for all of it, each part gives way in turn, so the band
+ *  and the fanlight go first and the door keeps a believable height; only a wall lower than the
+ *  least of them all has the whole front made smaller. */
+function frontHeights(high: number) {
+  const size = { band: 0.8, fan: 2.2 * ROW_TRANSOM / (SHEET_H - ROW_TRANSOM), door: 2.2 };
+  const giveWay: [keyof typeof size, number][] = [["band", 0.45], ["fan", 0.2], ["door", 2.1], ["band", 0.3], ["fan", 0]];
+  let over = size.band + size.fan + size.door - (high - CAP_H);
+  for (const [part, least] of giveWay) {
+    const by = Math.min(Math.max(0, over), size[part] - least);
+    size[part] -= by; over -= by;
+  }
+  const squeeze = Math.max(0.6, Math.min(1, (high - CAP_H) / (size.band + size.fan + size.door)));
+  const band = size.band * squeeze, fan = size.fan * squeeze, door = size.door * squeeze;
+  return { fan, door, band, front: door + fan };
+}
+/** A shop's front: how wide it is, and its heights. */
+function frontFit(sign: (number | string)[]) {
+  const room = shopRoom.get(sign);
+  const w = Math.max(1, Math.min(+sign[4], room ? 2 * room.half : Infinity));
+  return { w, ...frontHeights(room ? room.high : Infinity) };
+}
 const PIL_W = 0.3, DOOR_W = 1.3, BAY_W = 1.3;      // metres each piece stands for, at 96 pixels a metre
-type FrontPiece = { a: number; b: number; u0: number; u1: number; door?: boolean };
+type FrontPiece = { a: number; b: number; u0: number; u1: number; door?: boolean; pilaster?: boolean };
 
 /** The pieces of a front ww metres wide, along it from its left end (-ww/2), and where its door's
  *  middle is. Up to about 3 m of windows go on one side of the door (which side, from the shop's
@@ -1207,7 +1241,7 @@ function frontLayout(ww: number, style: string, flip: boolean) {
   const runs = rest === 0 ? [] : rest < 2 * BAY_W + 0.4 ? [rest] : [rest / 2, rest / 2];
   const pieces: FrontPiece[] = [];
   let at = -ww / 2;
-  const put = (w: number, u: number[], door = false) => { pieces.push({ a: at, b: at + w, u0: u[0], u1: u[1], door }); at += w; };
+  const put = (w: number, u: number[], door = false) => { pieces.push({ a: at, b: at + w, u0: u[0], u1: u[1], door, pilaster: u === pilU }); at += w; };
   const windows = (r: number) => {
     if (r < 0.75 * BAY_W) { put(r, narrowU); return; }
     const n = Math.max(1, Math.round(r / BAY_W));
@@ -1232,7 +1266,7 @@ const frontFlip = (x: number, y: number) => Math.abs(Math.round(x * 7 + y * 13))
 export function shopDoor(sign: (number | string)[]) {
   if (sign[6] === "pub") return null;
   const x = +sign[0], y = +sign[1], a = +sign[3];
-  const along = frontLayout(+sign[4], String(sign[6]), frontFlip(x, y)).door;
+  const along = frontLayout(frontFit(sign).w, String(sign[6]), frontFlip(x, y)).door;
   return { x: x + Math.cos(a) * along, y: y + Math.sin(a) * along, z: +sign[2], a, along };
 }
 
@@ -1292,7 +1326,7 @@ function paintPilaster(g: CanvasRenderingContext2D, x: number, frame: string) {
 }
 
 function paintDoorway(g: CanvasRenderingContext2D, x: number, frame: string, leaf: string) {
-  const w = DOOR_PX, L = x + 8, R = x + w - 8, inset = 14, back = SHEET_H - 12;
+  const w = DOOR_PX, L = x + 8, R = x + w - 8, inset = 14, back = SHEET_H - 8;
   g.fillStyle = frame; g.fillRect(x, 0, w, SHEET_H);
   const quad = (pts: number[][], fill: string | CanvasGradient) => {
     g.fillStyle = fill; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
@@ -1300,7 +1334,7 @@ function paintDoorway(g: CanvasRenderingContext2D, x: number, frame: string, lea
     g.closePath(); g.fill();
   };
   // the recess: its soffit in shadow, its sides (the near one lit), and a mosaic step at its foot
-  const top = ROW_GLASS, dTop = ROW_GLASS + 12;
+  const top = ROW_GLASS, dTop = ROW_GLASS + 2;
   quad([[L, top], [R, top], [R - inset, dTop], [L + inset, dTop]], shade(frame, -0.7));
   quad([[L, top], [L + inset, dTop], [L + inset, back], [L, SHEET_H]], shade(frame, 0.3));
   quad([[R, top], [R - inset, dTop], [R - inset, back], [R, SHEET_H]], shade(frame, -0.4));
@@ -1439,9 +1473,12 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
     let nb = 0;
     for (let k = 0; k < batch.length; k++) {
       const [x, y, z, ang, width, name, style] = batch[k];
-      const w = width as number, cx = k % COLS, cy = Math.floor(k / COLS);
-      const shop = style !== "pub", boardW = w - 2 * PIL_W;
-      paintFascia(g, cx, cy, name as string, style as string, shop ? boardW / PANEL_H : w / 0.62);
+      const shop = style !== "pub", fit = frontFit(batch[k]);
+      const w = shop ? fit.w : width as number, cx = k % COLS, cy = Math.floor(k / COLS);
+      // (on a slim band the name takes the whole board, so it can still be read)
+      const boardW = w - 2 * PIL_W, panelH = Math.max(fit.band * (PANEL_FOOT - PANEL_TOP) / BAND_PX, Math.min(0.3, fit.band - 0.05));
+      const panelY = Math.min(fit.band * (1 - (PANEL_TOP + PANEL_FOOT) / 2 / BAND_PX), fit.band - 0.03 - panelH / 2);
+      paintFascia(g, cx, cy, name as string, style as string, shop ? boardW / panelH : w / 0.62, shop && fit.band < 0.45 ? 0.7 : 0.5);
       q.setFromAxisAngle(up, ang as number);
       m4.compose(pos.set(x as number, (z as number) - Z0, -(y as number)), q, one);
       // the fascia's painted face, its cell of the sheet (v runs up the sheet)
@@ -1461,22 +1498,31 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
           wins.push(piece.applyMatrix4(m4));
         };
         const k0 = Math.max(0, FRONT_STYLES.indexOf(style as string)) * SET_PX;
-        const fanH = FRONT_H * ROW_TRANSOM / SHEET_H, [fx, fy] = fanAt(k0, fanKind(+x, +y));
+        const { fan, door, band, front } = fit, [fx, fy] = fanAt(k0, fanKind(+x, +y));
+        const V = (row: number) => 1 - row / SHEET_ROWS;
         for (const p of frontLayout(w, style as string, frontFlip(+x, +y)).pieces) {
-          if (!p.door) { lay(p.a, p.b, 0, FRONT_H, p.u0, p.u1, 1 - SHEET_H / SHEET_ROWS, 1); continue; }
-          // the doorway, and its fanlight laid over its top
-          lay(p.a, p.b, 0, FRONT_H - fanH, p.u0, p.u1, 1 - SHEET_H / SHEET_ROWS, 1 - ROW_TRANSOM / SHEET_ROWS);
-          lay(p.a, p.b, FRONT_H - fanH, fanH, fx / SHEET_W, (fx + DOOR_PX) / SHEET_W, 1 - (fy + ROW_TRANSOM) / SHEET_ROWS, 1 - fy / SHEET_ROWS);
+          if (p.door) {
+            // the doorway, and its fanlight laid over its top
+            lay(p.a, p.b, 0, door, p.u0, p.u1, V(SHEET_H), V(ROW_TRANSOM));
+            if (fan > 0.01) lay(p.a, p.b, door, fan, fx / SHEET_W, (fx + DOOR_PX) / SHEET_W, V(fy + ROW_TRANSOM), V(fy));
+          } else if (p.pilaster) lay(p.a, p.b, 0, front, p.u0, p.u1, V(SHEET_H), V(0));
+          else {
+            // a bay: its display glass over the stall riser, as tall as the doorway, and its transom
+            // light (in one piece where they stand as the sheet has them)
+            if (Math.abs(fan * (SHEET_H - ROW_TRANSOM) - door * ROW_TRANSOM) < 0.01) { lay(p.a, p.b, 0, front, p.u0, p.u1, V(SHEET_H), V(0)); continue; }
+            lay(p.a, p.b, 0, door, p.u0, p.u1, V(SHEET_H), V(ROW_TRANSOM));
+            if (fan > 0.01) lay(p.a, p.b, door, fan, p.u0, p.u1, V(ROW_TRANSOM), V(0));
+          }
         }
         const bv0 = 1 - (SHEET_H + BAND_PX) / SHEET_ROWS, bv1 = 1 - SHEET_H / SHEET_ROWS;
         const cu0 = (k0 + BOARD_PX) / SHEET_W, cu1 = (k0 + BOARD_PX + CONSOLE_PX) / SHEET_W;
-        lay(-w / 2, -w / 2 + PIL_W, FRONT_H, BAND_H, cu0, cu1, bv0, bv1);
-        lay(-w / 2 + PIL_W, w / 2 - PIL_W, FRONT_H, BAND_H, (k0 + 2) / SHEET_W, (k0 + BOARD_PX - 2) / SHEET_W, bv0, bv1);
-        lay(w / 2 - PIL_W, w / 2, FRONT_H, BAND_H, cu1, cu0, bv0, bv1);
-        face(boardW, PANEL_H, new THREE.Matrix4().makeTranslation(0, PANEL_Y, 0.063));
-        darks.push(new THREE.BoxGeometry(w, FRONT_H + BAND_H, 0.06).translate(0, (FRONT_H + BAND_H) / 2, 0.03).applyMatrix4(m4));
+        lay(-w / 2, -w / 2 + PIL_W, front, band, cu0, cu1, bv0, bv1);
+        lay(-w / 2 + PIL_W, w / 2 - PIL_W, front, band, (k0 + 2) / SHEET_W, (k0 + BOARD_PX - 2) / SHEET_W, bv0, bv1);
+        lay(w / 2 - PIL_W, w / 2, front, band, cu1, cu0, bv0, bv1);
+        face(boardW, panelH, new THREE.Matrix4().makeTranslation(0, front + panelY, 0.063));
+        darks.push(new THREE.BoxGeometry(w, front + band, 0.06).translate(0, (front + band) / 2, 0.03).applyMatrix4(m4));
         // the cornice's lead-capped top, standing out over the front
-        darks.push(new THREE.BoxGeometry(w + 0.12, 0.06, 0.18).translate(0, FRONT_H + BAND_H + 0.03, 0.09).applyMatrix4(m4));
+        darks.push(new THREE.BoxGeometry(w + 0.12, CAP_H, 0.18).translate(0, front + band + CAP_H / 2, 0.09).applyMatrix4(m4));
       } else {
         face(w, 0.62, new THREE.Matrix4().makeTranslation(0, 3.05, 0.142));
         darks.push(new THREE.BoxGeometry(w, 0.62, 0.14).translate(0, 3.05, 0.07).applyMatrix4(m4));

@@ -13,7 +13,7 @@ import { breakable, holed } from "./gaps";
 import { type BarMat, BRIDGE_DECK, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeKind, bridgeSpans, deckLift, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags, isChurch } from "./map";
 import * as TX from "./textures";
 import { LANCETS, churchGlass } from "./stainedglass";
-import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops, stepsDetail } from "./furniture";
+import { LAMP_GLASS, LAMP_GLOW, SHOPFRONT_LEAST, buildFurniture, buildShops, fitShopfront, stepsDetail } from "./furniture";
 import { setLatitude, sky as skyNow } from "./daylight";
 import { buildLandmarks, landmarkLamps } from "./landmarks";
 import { Culler, show, traverseAll } from "./cull";
@@ -2630,7 +2630,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   // front doors and shopfronts: the ground-floor window behind one is left out, and a front door
   // says how many window bays its wall has (tools/landscape.py put it in the middle of one)
-  type Opening = { x: number; y: number; w: number; n: number };
+  type Opening = { x: number; y: number; w: number; n: number; sign?: (number | string)[] };
   const openings = new Map<string, Opening[]>();
   const okey = (i: number, j: number) => `${i},${j}`;
   const addOpening = (o: Opening) => {
@@ -2638,15 +2638,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     (openings.get(k) ?? openings.set(k, []).get(k)!).push(o);
   };
   for (const d of D.dr ?? []) addOpening({ x: d[0], y: d[1], w: 1.3, n: d[5] ?? 0 });
-  for (const sg of D.sh ?? []) addOpening({ x: +sg[0], y: +sg[1], w: +sg[4], n: 0 });
+  // (a shopfront's windows are left out a little past its ends, so none shows round its edge)
+  for (const sg of D.sh ?? []) addOpening({ x: +sg[0], y: +sg[1], w: +sg[4] + 0.3, n: 0, sign: sg });
   /** Openings within 0.3 m of the wall from a to q, as distance t along it. */
   const openingsOn = (a: number[], q: number[], len: number) => {
-    const ex = (q[0] - a[0]) / len, ey = (q[1] - a[1]) / len, found: { t: number; w: number; n: number }[] = [];
+    const ex = (q[0] - a[0]) / len, ey = (q[1] - a[1]) / len, found: { t: number; w: number; n: number; sign?: (number | string)[] }[] = [];
     for (let i = Math.floor((Math.min(a[0], q[0]) - 1) / 20); i <= Math.floor((Math.max(a[0], q[0]) + 1) / 20); i++)
       for (let j = Math.floor((Math.min(a[1], q[1]) - 1) / 20); j <= Math.floor((Math.max(a[1], q[1]) + 1) / 20); j++)
         for (const o of openings.get(okey(i, j)) ?? []) {
           const t = (o.x - a[0]) * ex + (o.y - a[1]) * ey, off = Math.abs((o.x - a[0]) * ey - (o.y - a[1]) * ex);
-          if (t > 0 && t < len && off < 0.3) found.push({ t, w: o.w, n: o.n });
+          if (t > 0 && t < len && off < 0.3) found.push({ t, w: o.w, n: o.n, sign: o.sign });
         }
     return found;
   };
@@ -2742,12 +2743,30 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             }
             if (u < ub) draw(g, u, ub, h0, h1);
           });
+        // a shopfront keeps to its wall: clear of its corners, and under the eaves and the sills of
+        // the windows over it (wall() in textures.ts: a storey's window sill is 0.23 of the way up
+        // it). Where those sills are too low for a front with a door of a believable height, the
+        // windows over it are left out instead. On a slope the street can be a storey or more up the
+        // wall, and the front stands in the storey there, so the windows round it go too
+        const frontTop = new Map<object, number>();
+        if (!church) for (const o of b.w ? ops : openingsOn(a, q, len)) {
+          if (!o.sign) continue;
+          const foot = +o.sign[2] - Z0, at = Math.max(0, Math.floor((foot - org) / sto + 0.1)), sill = org + sto * (at + 1.23);
+          let high = eave - 0.1 - foot, over = 1;
+          if (b.w && eave > sill) {
+            if (sill - 0.08 - foot >= SHOPFRONT_LEAST) high = Math.min(high, sill - 0.08 - foot);
+            else over = 2;
+          }
+          frontTop.set(o, Math.min(eave, org + sto * (at + over)));
+          fitShopfront(o.sign, Math.min(o.t, len - o.t) - 0.3, high);
+        }
         // ground-floor windows behind a door or shopfront are left out, whole windows at a time
+        const top = Math.min(eave, org + sto);
         const blank: number[][] = [];
         for (const o of n > 0 ? ops : []) {
           let ua = u0 + (o.t - o.w / 2) / sp, ub = u0 + (o.t + o.w / 2) / sp;
           for (let k = Math.ceil(ua - 0.72); k <= Math.floor(ub - 0.28); k++) { ua = Math.min(ua, k); ub = Math.max(ub, k + 1); }
-          blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
+          blank.push([Math.max(u0, ua), Math.min(u1, ub), frontTop.get(o) ?? top]);
         }
         const v1 = (eave - org) / sto;
         if (roofHigh !== undefined && roofHigh - Z0 > eave + 0.02) {
@@ -2774,7 +2793,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             } else facing(plain, P(ua, eave), P(ub, eave), P(ub, hb), P(ua, ha), out, [ua, v1], [ub, v1], [ub, vt(hb)], [ua, vt(ha)], wallCol);
           }
         }
-        const top = Math.min(eave, org + sto);
         if (church && n > 0) {
           // one row of lancets along the wall, sills well up from the highest ground along it (none
           // buried on a slope) and clear of the eaves; a tall, long wall has a second, smaller
@@ -2813,15 +2831,29 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         } else if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
         else if (!blank.length || top <= base) quad(walls, u0, u1, base, eave, v0, v1);
         else {
-          blank.sort((x, y) => x[0] - y[0]);
+          // (overlapping blanks made one, as high as the higher)
+          const runs: number[][] = [];
+          for (const r of blank.sort((x, y) => x[0] - y[0])) {
+            const last = runs[runs.length - 1];
+            if (last && r[0] <= last[1]) { last[1] = Math.max(last[1], r[1]); last[2] = Math.max(last[2], r[2]); } else runs.push([...r]);
+          }
+          const vh = (h: number) => (h - org) / sto;
           let u = u0;
-          for (const [ua, ub] of blank) {
+          for (const [ua, ub, bt] of runs) {
             if (ua > u) quad(walls, u, ua, base, top, v0, 1);
-            if (ub > Math.max(u, ua)) quad(plain, Math.max(u, ua), ub, base, top, v0, 1);
+            if (ub > Math.max(u, ua)) quad(plain, Math.max(u, ua), ub, base, bt, v0, vh(bt));
             u = Math.max(u, ub);
           }
           if (u < u1) quad(walls, u, u1, base, top, v0, 1);
-          if (top < eave) quad(walls, u0, u1, top, eave, 1, v1);
+          // the storeys above, in one piece but for where a blank reaches up into them
+          u = u0;
+          for (const [ua, ub, bt] of runs) {
+            if (bt <= top) continue;
+            if (ua > u && top < eave) quad(walls, u, ua, top, eave, 1, v1);
+            if (bt < eave) quad(walls, Math.max(u, ua), ub, bt, eave, vh(bt), v1);
+            u = Math.max(u, ub);
+          }
+          if (u < u1 && top < eave) quad(walls, u, u1, top, eave, 1, v1);
         }
         if (b.pp && ri === 0 && (roofLow === undefined || roofHigh! - roofLow < 0.3)) {
           // a parapet: the wall carries on past the eaves, seen from both sides
