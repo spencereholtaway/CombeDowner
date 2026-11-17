@@ -287,8 +287,10 @@ export function wetBy<M extends THREE.Material>(m: M): M {
   const was = m.onBeforeCompile, ownKey = m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey : null;
   m.onBeforeCompile = function (this: THREE.Material, sh, r) {
     was.call(this, sh, r);
-    if (built === "simple") return;
+    // (in both looks: going back to a look's shader three.js reuses the uniforms this last gave it,
+    // and a shore picture missing from them would leave the shader reading whatever's in its place)
     Object.assign(sh.uniforms, SU);
+    if (built === "simple") return;
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWetAt;")
       .replace("#include <project_vertex>", `#include <project_vertex>\n  ${WET_VERT}`);
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\nvarying vec3 vWetAt;\n${SHORE_DECL}`)
@@ -441,8 +443,9 @@ export function waterLook<M extends THREE.Material>(m: M): M {
   const was = m.onBeforeCompile;
   m.onBeforeCompile = function (this: THREE.Material, sh, r) {
     was.call(this, sh, r);
+    // (both looks get every uniform: see wetBy)
+    Object.assign(sh.uniforms, U, SU);
     if (built === "simple") {
-      Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${VERT_DECL_SIMPLE}`)
         .replace("#include <project_vertex>", `#include <project_vertex>\n  ${VERT_SIMPLE}`);
       sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FRAG_DECL_SIMPLE}`)
@@ -450,7 +453,6 @@ export function waterLook<M extends THREE.Material>(m: M): M {
         .replace("#include <opaque_fragment>", `${FRAG_SKY_SIMPLE}\n  #include <opaque_fragment>`);
       return;
     }
-    Object.assign(sh.uniforms, U, SU);
     sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${VERT_DECL}`)
       .replace("#include <project_vertex>", `#include <project_vertex>\n  ${VERT}`);
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FRAG_DECL}`)
