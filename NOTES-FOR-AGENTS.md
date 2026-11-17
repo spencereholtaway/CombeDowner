@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Bridged streets you stand on (branch `claude/smooth-roads`, code only):** a bridge's deck is
+  stood on at its line's nearest stretch only (`web/src/map.ts` `deckAt`, used by `deck`,
+  `overhead`, `underside` and the canal's decks), not at every stretch's end within reach, which
+  stood a step every few metres down a whole sloping street with a bridge on it (Ferry Lane).
+  `tools/road_bumps.mjs` counts bumpy streets in the game.
+
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
   going and the building gets `ps` (openings: width, headroom, middle line with floor heights) in

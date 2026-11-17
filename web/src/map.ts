@@ -634,11 +634,8 @@ export class GameMap {
         let low: number | null = null;
         for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(-y / CELL))) ?? []) {
           const { p, half } = this.decks[k];
-          for (let i = 0; i < p.length - 1; i++) {
-            const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
-            const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (-y - a[1]) * vz) / l2));
-            if (Math.hypot(x - a[0] - vx * t, -y - a[1] - vz * t) < half + 0.5) low = Math.min(low ?? Infinity, a[2] + (b[2] - a[2]) * t + this.z0);
-          }
+          const h = deckAt(p, x, -y);
+          if (nearDeck.off < half + 0.5) low = Math.min(low ?? Infinity, h + this.z0);
         }
         return low;
       };
@@ -1058,16 +1055,10 @@ export class GameMap {
     let best: number | null = null, floor: number | null = null;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, left, right } = this.decks[k];
-      for (let i = 0; i < p.length - 1; i++) {
-        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
-        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
-        // (scene z is south, so a point left of the road looking along it has a negative cross product)
-        const reach = vx * (z - a[1]) - vz * (x - a[0]) < 0 ? left : right;
-        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= reach) continue;
-        const h = a[2] + (b[2] - a[2]) * t;
-        if (h > y + 0.6 || (best !== null && h <= best)) continue;
-        if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
-      }
+      const h = deckAt(p, x, z);
+      if (nearDeck.off >= (nearDeck.left ? left : right)) continue;
+      if (h > y + 0.6 || (best !== null && h <= best)) continue;
+      if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
     }
     return best;
   }
@@ -1080,13 +1071,8 @@ export class GameMap {
     let low: number | null = null;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, half } = this.decks[k];
-      for (let i = 0; i < p.length - 1; i++) {
-        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
-        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
-        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
-        const h = a[2] + (b[2] - a[2]) * t;
-        if (h > y && (low === null || h < low)) low = h;
-      }
+      const h = deckAt(p, x, z);
+      if (nearDeck.off < half && h > y && (low === null || h < low)) low = h;
     }
     return low;
   }
@@ -1498,13 +1484,8 @@ export class GameMap {
     let low: number | null = null, drop = DECK_DEPTH;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, half } = this.decks[k];
-      for (let i = 0; i < p.length - 1; i++) {
-        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
-        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
-        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
-        const h = a[2] + (b[2] - a[2]) * t;
-        if (h > y && (low === null || h < low)) { low = h; drop = this.decks[k].drop; }
-      }
+      const h = deckAt(p, x, z);
+      if (nearDeck.off < half && h > y && (low === null || h < low)) { low = h; drop = this.decks[k].drop; }
     }
     if (low === null) return null;
     // (an arch belongs to the deck whose road it's under: within a hand of the same height)
@@ -2485,6 +2466,26 @@ export function offsetLine(p: number[][], by: number | ((i: number) => number)):
 }
 
 function key(i: number, j: number) { return (i + 2048) * 4096 + (j + 2048); }
+/** Where deckAt last found a deck's line passing nearest: how far off it, and on which side. */
+const nearDeck = { off: Infinity, left: false };
+/** A deck's height at scene (x, z): its line's at the point on it nearest there. Only the nearest
+ *  stretch counts, since near a bend a spot is also within reach of the next stretch's end, and on a
+ *  road down a hill that end's height stood a step up every few metres all the way down it. */
+function deckAt(p: number[][], x: number, z: number): number {
+  let h = NaN;
+  nearDeck.off = Infinity;
+  for (let i = 0; i < p.length - 1; i++) {
+    const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+    const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
+    const off = Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t);
+    if (off >= nearDeck.off) continue;
+    nearDeck.off = off;
+    // (scene z is south, so a point left of the road looking along it has a negative cross product)
+    nearDeck.left = vx * (z - a[1]) - vz * (x - a[0]) < 0;
+    h = a[2] + (b[2] - a[2]) * t;
+  }
+  return h;
+}
 function push(m: Map<number, number[]>, k: number, v: number) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
 
 /** Distance along a horizontal ray (o + t*d, d not normalised in 2D) to segment a-b, or -1. */
