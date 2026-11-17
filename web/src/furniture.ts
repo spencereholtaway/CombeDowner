@@ -1162,7 +1162,9 @@ function paintBoard(g: CanvasRenderingContext2D, n: number, text: string) {
   g.restore();
 }
 
-/** Shop window: glazing bars over dark glass, with a stall riser below. */
+/** A shopfront's glazing and its door, painted side by side on one sheet so they're drawn as one
+ *  piece: the window (glazing bars over dark glass, with a stall riser below) on the left half, and
+ *  then a door for each fascia colour, so a shop's door matches its sign. */
 let shopWindow: THREE.CanvasTexture | null = null;
 const lend = (t: THREE.CanvasTexture) => { t.userData.lent = true; return t; };
 
@@ -1172,10 +1174,30 @@ function letGoOnceSent(t: THREE.CanvasTexture) {
   t.onUpdate = () => { const c = t.image as HTMLCanvasElement; c.width = c.height = 0; t.onUpdate = null; };
 }
 
+const SHOP_DOOR_STYLES = ["cafe", "shop", "agent", "health", "civic"];
+const SHOP_SHEET_W = 512, SHOP_DOOR_PX = 48;
+/** The shop door runs from the pavement to the window's top, so its fanlight lines up with the glazing. */
+const SHOP_DOOR_W = 1.1, WIN_TOP = 2.675;
+const shopDoorU = (style: string) => {
+  const k = Math.max(0, SHOP_DOOR_STYLES.indexOf(style));
+  return [(256 + k * SHOP_DOOR_PX) / SHOP_SHEET_W, (256 + (k + 1) * SHOP_DOOR_PX) / SHOP_SHEET_W];
+};
+
+/** Where a shop's door stands in its front, from its sign: x, y and ground as the sign's, the angle
+ *  it faces, and how far along the front from the sign's middle. A pub has none of its own. */
+export function shopDoor(sign: (number | string)[]) {
+  if (sign[6] === "pub") return null;
+  const x = +sign[0], y = +sign[1], a = +sign[3], ww = +sign[4] - 0.5;
+  // whichever end the shop's spot picks, so it's the same end each time the square is built
+  const side = Math.abs(Math.round(x * 7 + y * 13)) % 2 ? -1 : 1, along = side * (ww - SHOP_DOOR_W) / 2;
+  return { x: x + Math.cos(a) * along, y: y + Math.sin(a) * along, z: +sign[2], a, along, side };
+}
+
 function shopWindowTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
-  c.width = 256; c.height = 128;
+  c.width = SHOP_SHEET_W; c.height = 256;
   const g = c.getContext("2d")!;
+  g.save(); g.scale(1, 2);
   const glass = g.createLinearGradient(0, 0, 256, 128);
   glass.addColorStop(0, "#41505c"); glass.addColorStop(0.5, "#26333d"); glass.addColorStop(1, "#52646f");
   g.fillStyle = glass; g.fillRect(0, 0, 256, 104);
@@ -1183,13 +1205,28 @@ function shopWindowTexture(): THREE.CanvasTexture {
   g.fillRect(0, 0, 256, 6); g.fillRect(0, 100, 256, 6); g.fillRect(0, 0, 6, 106); g.fillRect(250, 0, 6, 106);
   g.fillRect(84, 0, 4, 104); g.fillRect(168, 0, 4, 104); g.fillRect(0, 30, 256, 3);
   g.fillStyle = "#3b4044"; g.fillRect(0, 106, 256, 22);        // stall riser
+  g.restore();
+  // each door: 256 pixels from the window's top to the pavement, the fanlight's bar where the window's is
+  const bar = Math.round(256 * (2.25 * 30 / 128) / WIN_TOP);
+  SHOP_DOOR_STYLES.forEach((style, k) => {
+    const x0 = 256 + k * SHOP_DOOR_PX, w = SHOP_DOOR_PX, paint = SIGN_STYLE[style];
+    const leaf = style === "health" ? paint.fg : paint.bg;
+    g.fillStyle = "#e6e0d2"; g.fillRect(x0, 0, w, 256);
+    g.fillStyle = "#2f3d47"; g.fillRect(x0 + 4, 12, w - 8, bar - 12);
+    g.fillStyle = leaf; g.fillRect(x0 + 5, bar + 6, w - 10, 256 - bar - 6);
+    const pane = g.createLinearGradient(x0, bar, x0 + w, bar + 120);
+    pane.addColorStop(0, "#41505c"); pane.addColorStop(0.5, "#26333d"); pane.addColorStop(1, "#52646f");
+    g.fillStyle = pane; g.fillRect(x0 + 11, bar + 14, w - 22, 116);
+    g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x0 + 11, bar + 146, w - 22, 70);
+    g.fillStyle = "#c9a54a"; g.fillRect(x0 + w - 12, bar + 136, 4, 8);
+  });
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
 /**
- * Shopfronts: a painted fascia over a shop window (pubs get a hanging sign instead of the window).
+ * Shopfronts: a painted fascia over a shop window with its door (pubs get a hanging sign instead of the window).
  * The fascias of each patch of signs share one painted sheet, and each patch is merged into a few
  * meshes, so a busy high street costs a handful of draws. Built a few signs at a time (yields).
  */
@@ -1231,9 +1268,17 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
       face(w, new THREE.Matrix4().makeTranslation(0, 3.05, 0.142));
       darks.push(new THREE.BoxGeometry(w, 0.62, 0.14).translate(0, 3.05, 0.07).applyMatrix4(m4));
       if (style !== "pub") {
-        const win = new THREE.PlaneGeometry(w - 0.5, 2.25).translate(0, 1.55, 0.061).applyMatrix4(m4);
-        wins.push(win);
-        darks.push(new THREE.BoxGeometry(w - 0.5, 2.25, 0.06).translate(0, 1.55, 0.03).applyMatrix4(m4));
+        // the window and its door as one front
+        const { side, along: dx } = shopDoor(batch[k])!, ww = w - 0.5;
+        const win = new THREE.PlaneGeometry(ww - SHOP_DOOR_W, 2.25).translate(-side * SHOP_DOOR_W / 2, 1.55, 0.061);
+        const [du0, du1] = shopDoorU(style as string);
+        const door = new THREE.PlaneGeometry(SHOP_DOOR_W, WIN_TOP).translate(dx, WIN_TOP / 2, 0.061);
+        const uv = win.attributes.uv as THREE.BufferAttribute, duv = door.attributes.uv as THREE.BufferAttribute;
+        for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 256 / SHOP_SHEET_W);
+        for (let i = 0; i < duv.count; i++) duv.setX(i, duv.getX(i) ? du1 : du0);
+        wins.push(win.applyMatrix4(m4), door.applyMatrix4(m4));
+        darks.push(new THREE.BoxGeometry(ww, 2.25, 0.06).translate(0, 1.55, 0.03).applyMatrix4(m4));
+        darks.push(new THREE.BoxGeometry(SHOP_DOOR_W, WIN_TOP - 2.25, 0.06).translate(dx, (WIN_TOP - 2.25) / 2, 0.03).applyMatrix4(m4));
       } else {
         // hanging sign on an iron bracket at one end of the fascia, painted both sides
         darks.push(new THREE.BoxGeometry(0.05, 0.05, 1.1).translate(w / 2 - 0.3, 3.75, 0.55).applyMatrix4(m4));

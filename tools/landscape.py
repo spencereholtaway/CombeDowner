@@ -83,7 +83,7 @@ def _as_mapped(poly, b, road, rr, walls, wtree, with_bay):
     return colour, [bx, by, ang, storeys, min(2.6, L * 0.32), ux, uy, nx, ny], True, door
 
 
-def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=(), mapped=None):
+def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=(), mapped=None, shopfront=None):
     """Doors (and, if a list is given, bay windows: 1930s suburban semis and detached houses
     usually have one beside the door, often two storeys high). keys: see buildings.classify.
     walls (lines): a door goes in another bay of its wall rather than open on to one of them.
@@ -94,7 +94,12 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=(), 
 
     mapped: the outlines as mapped, before a neighbour's was cut from them. The door, its colour and the
     bay window come from where they stood on those (see _as_mapped): each stays there wherever its wall
-    is still open, and moves only where it would stand against a neighbour, a wall or the doorway."""
+    is still open, and moves only where it would stand against a neighbour, a wall or the doorway.
+
+    shopfront (shops.on_shopfront): a door that would stand over a shop window is marked as the shop's
+    (a seventh field, 1): the game draws the shop's door in its window instead (web/src/furniture.ts).
+    It stays where it is for everything laid out from it (front paths, bins, gates, wires), so the
+    ground comes out as it would with the door drawn. A bay window keeps off a shopfront."""
     wtree = shapely.STRtree(list(walls)) if len(walls) else None
     lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in roads
              if r["c"] not in ("footway", "steps", "path", "cycleway", "bridleway", "track") and len(r["p"]) > 1]
@@ -192,12 +197,14 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=(), 
         if math.sin(ang) * nx - math.cos(ang) * ny < 0: ang += math.pi
         px, py = px + nx * 0.03, py + ny * 0.03
         out.append([round(px, 2), round(py, 2), round(gelev(px, py), 2), round(ang, 3), colour, n])
+        if shopfront is not None and shopfront(px, py): out[-1].append(1)
         if not wanted: continue
 
         def open_bay(bx, by, ux, uy, nx, ny, width):
             """A bay window standing out of a wall of this house, on open ground, clear of the doorway."""
             sx, sy = bx - nx * 0.45, by - ny * 0.45
             if math.dist((sx, sy), (px, py)) < width / 2 + 0.6: return False
+            if shopfront is not None and any(shopfront(sx + ux * t, sy + uy * t) for t in (-width / 2, 0, width / 2)): return False
             for t in (-width / 2, 0, width / 2):
                 if poly.exterior.distance(Point(sx + ux * t, sy + uy * t)) > 0.15: return False
                 for out in (0, 0.4):        # (it stands 0.9 m out from the wall)

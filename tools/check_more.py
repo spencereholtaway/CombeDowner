@@ -629,6 +629,12 @@ def buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, 
         for k in btree.query(step):
             if step.intersects(LineString([q[:2] for q in bars[int(k)]["p"]])):
                 note("12 door opening into a wall", 1, at(x, y), bars[int(k)]["c"]); break
+    from shops import on_shopfront
+    shopfront = on_shopfront(m.get("sh") or [])
+    for d in m.get("dr") or []:
+        if shopfront(d[0], d[1]) and not (len(d) > 6 and d[6]): note("12 door over a shop window", 1, at(d[0], d[1]), "")
+    for q in m.get("by") or []:
+        if shopfront(q[0], q[1], 0.8): note("12 bay window over a shop window", 1, at(q[0], q[1]), "")
     for s in m.get("sh") or []:
         if len(s) > 7 and s[7]: continue
         off = on_wall(s[0], s[1])

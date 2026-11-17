@@ -12,7 +12,7 @@
 // simpler wider map (wide.ts) stands in. The host also loads the map (not the scenery) of the
 // squares round everyone else, as it runs the traffic, naughty boys, cats and buses wherever they are.
 import * as THREE from "three";
-import { GameMap, drapeBarriers, tileKey, type MapData } from "./map";
+import { GameMap, clearShopfronts, drapeBarriers, tileKey, type MapData } from "./map";
 import { SquareParser } from "./parsesquare";
 import type { TileWorld } from "./world";
 import { SQUARES, view } from "./view";
@@ -348,6 +348,8 @@ export class Tiles {
         maskSetPieces(d);
         // and long straight walls, fences and hedges follow the ground between their ends (map.ts)
         drapeBarriers(d);
+        // and no house door stands over a shop window (map.ts)
+        clearShopfronts(d);
         // and Kingswood's bonfire court is levelled and cleared (bonfire.ts)
         clearCourt(d);
         // and the trees in front of The Climb's face are cleared, to see its holds (theclimb.ts)

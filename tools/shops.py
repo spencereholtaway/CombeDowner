@@ -269,6 +269,29 @@ def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, sk
     return found, log
 
 
+# metres either side of a shopfront kept clear of a house's front door and bay window: the door's
+# frame and porch hood are 0.8 m each side of its middle
+FRONT_CLEAR = 0.8
+
+
+def on_shopfront(signs):
+    """A test for whether a point within off metres of a wall stands in front of a shopfront on it. A
+    shop's door is drawn in its window (web/src/furniture.ts), so a house's own front door or bay
+    window there would stand over the glass. A pub has no shop window, so its door is the house's."""
+    fronts = [(float(s[0]), float(s[1]), math.cos(float(s[3])), math.sin(float(s[3])), float(s[4]) / 2 + FRONT_CLEAR)
+              for s in signs if s[6] != "pub" and not (len(s) > 7 and s[7])]
+    if not fronts: return lambda x, y, off=0.4: False
+    tree = shapely.STRtree([Point(f[0], f[1]) for f in fronts])
+
+    def test(x, y, off=0.4):
+        for k in tree.query(Point(x, y).buffer(6 + FRONT_CLEAR + off)):
+            sx, sy, ux, uy, half = fronts[int(k)]
+            dx, dy = x - sx, y - sy
+            if abs(dx * ux + dy * uy) < half and abs(dy * ux - dx * uy) < off: return True
+        return False
+    return test
+
+
 def shop_signs(found, polys, roads, gelev):
     btree = shapely.STRtree(polys)
     """Fascias as [x, y, ground, angle, width, name, style], and the parts that are pubs."""

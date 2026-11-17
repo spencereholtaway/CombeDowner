@@ -2,12 +2,13 @@
 // beacon of light outside it (beacon.ts) and a point-of-interest marker on the maps.
 //
 // The deli is found by its shop sign on the map (from the shop data, see tools/shops.py), and the
-// door is the nearest one to it.
+// door is the one drawn in its shop window (furniture.ts), or the nearest front door if it's a pub.
 // Maps without the deli simply have no way in. The door is looked for again as each square of Bath
 // loads, so it turns up once the square it's in is there.
 import * as THREE from "three";
 import type { GameMap } from "./map";
 import { neonSign } from "./neon";
+import { shopDoor } from "./furniture";
 import { beacon } from "./beacon";
 import type { Spot } from "./minimap";
 
@@ -33,9 +34,11 @@ export class DeliDoor {
     let shop: (number | string)[] | undefined;
     for (const m of areas) shop ??= (m.d.sh ?? []).find((s) => /darling deli/i.test(String(s[5])));
     if (!shop) return false;
-    const sx = Number(shop[0]), sy = Number(shop[1]);
+    const sx = Number(shop[0]), sy = Number(shop[1]), own = shopDoor(shop);
+    const home = areas.find((m) => m.d.sh?.includes(shop!)), inWindow = !!(own && home);
     let best: number[] | undefined, bd = Infinity, at: GameMap = this.map;
-    for (const m of areas) for (const d of m.d.dr ?? []) {
+    if (own && home) { best = [own.x, own.y, own.z, own.a]; bd = 0; at = home; }
+    else for (const m of areas) for (const d of m.d.dr ?? []) {
       const dd = Math.hypot(d[0] - sx, d[1] - sy);
       if (dd < bd) { bd = dd; best = d; at = m; }
     }
@@ -45,7 +48,9 @@ export class DeliDoor {
     this.nx = nx; this.nz = nz;
     this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - z0;
     this.sign = neonSign("Combe Down With Me", "#ff6a1a");
-    this.sign.group.position.set(best[0] + nx * 0.12, best[2] - z0 + 2.9, -best[1] + nz * 0.12);
+    // over a shop's own door its fascia is in the way, so the neon goes up above the fascia's middle
+    if (inWindow) this.sign.group.position.set(sx + nx * 0.12, best[2] - z0 + 3.85, -sy + nz * 0.12);
+    else this.sign.group.position.set(best[0] + nx * 0.12, best[2] - z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
     this.scene.add(this.sign.group);
     // a ring on the step and a point-of-interest marker over the sign, the same for every minigame

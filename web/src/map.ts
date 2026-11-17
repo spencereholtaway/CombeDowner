@@ -91,7 +91,7 @@ export interface MapData {
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
   sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style, and 1 if a set piece hangs its own (landmarks/setpieces.ts)
   lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
-  dr?: number[][];              // front doors: x, y, ground, angle, colour, window bays on its wall
+  dr?: number[][];              // front doors: x, y, ground, angle, colour, window bays on its wall, and 1 if it's a shop's (drawn in its window)
   sb?: number[][];              // shrubs: x, y, ground, height
   rk?: number[][];              // boulders on bare rock: x, y, ground, size (tools/wild.py)
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
@@ -169,6 +169,24 @@ export function gateShape(gt: (number | string)[], z0: number) {
 
 /** How tall a wall, fence, hedge or railing stands: its measured height, else its kind's. */
 export function barrierHeight(l: Line): number { return l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5; }
+/** A shop's door is drawn in its window (furniture.ts), so a house's own front door or bay window
+ *  standing in front of a shopfront on the same wall goes. The map tools mark such a door as the
+ *  shop's (its seventh field, tools/landscape.py) and keep bay windows off; the same test as theirs
+ *  (tools/shops.py, on_shopfront) catches squares built before they did. A pub has no shop window,
+ *  so its door is the house's. Done to each square as it loads and to the first area, like
+ *  drapeBarriers. */
+export function clearShopfronts(d: MapData) {
+  const fronts = (d.sh ?? []).filter((s) => s[6] !== "pub" && !s[7])
+    .map((s) => [+s[0], +s[1], Math.cos(+s[3]), Math.sin(+s[3]), +s[4] / 2 + 0.8]);
+  if (!fronts.length) return;
+  const before = (x: number, y: number, off: number) => fronts.some(([sx, sy, ux, uy, half]) => {
+    const dx = x - sx, dy = y - sy;
+    return Math.abs(dx * ux + dy * uy) < half && Math.abs(dy * ux - dx * uy) < off;
+  });
+  if (d.dr) d.dr = d.dr.filter((q) => !q[6] && !before(q[0], q[1], 0.4));
+  if (d.by) d.by = d.by.filter((q) => !before(+q[0], +q[1], 0.8));
+}
+
 /** A long straight stretch of wall, fence or hedge follows the ground between its ends. The map
  *  can have one as just its two ends (the Royal Crescent's ha-ha is 139 m in one go), and a stretch
  *  is drawn and made solid straight from one point's height to the next's, so over a dip or a rise
@@ -2531,7 +2549,7 @@ export function inlineMapId(): string | null {
 export async function loadMap(url: string, wideUrl?: string, tilesDir?: string): Promise<GameMap> {
   // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
-  if (inline?.textContent) { const d = JSON.parse(inline.textContent); unpackSurfaces(d); maskSetPieces(d); drapeBarriers(d); return new GameMap(d); }
+  if (inline?.textContent) { const d = JSON.parse(inline.textContent); unpackSurfaces(d); maskSetPieces(d); drapeBarriers(d); clearShopfronts(d); return new GameMap(d); }
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -2543,6 +2561,7 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   unpackSurfaces(d);
   maskSetPieces(d);
   drapeBarriers(d);
+  clearShopfronts(d);
   const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; map.groundKinds = kinds; }
   return map;
