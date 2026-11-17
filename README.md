@@ -112,7 +112,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
   each kerb, and traffic lights at junctions, lit both ways and changing in their own time, their
-  poles on the pavement at each way into the junction; bus shelters only at the stops that have
+  poles on the pavement at each way into the junction, one set to each (a crossing just past a
+  junction's stop line shares its lights); bus shelters only at the stops that have
   one; a street only buses may use (Princes Street in Edinburgh, a bus station's lanes, the
   University's Parade) is a road with its carriageway, pavements and stops at the kerb, which the
   buses drive along and the rest of the traffic keeps out of; a street shut to traffic only in the

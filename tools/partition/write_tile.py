@@ -9028,6 +9028,8 @@ POLE_OUT = 0.5           # metres past the carriageway's edge the game stands a 
 SLIDE_STEP, SLIDE_MAX = 0.5, 15.0    # metres a crossing may be moved along its street to get its poles off another's
 OWN_LIGHTS = 25.0        # an approach with lights of its own mapped this near the junction needs none from it
 ARM_OFF = 4.0            # metres from an approach's middle line that its own lights may be mapped
+SAME_SET = 10.0          # metres along a street within which two lights, with no street across between them, are one set
+SAME_SET_SIDE = 3.0      # metres sideways: further apart than this they stand on different carriageways
 
 
 def crossings(sq, rd, ground, points):
@@ -9042,7 +9044,11 @@ def crossings(sq, rd, ground, points):
     mapped on the junction itself (where the streets' middle lines meet) control every way into it:
     they are stood back along each approach, clear of the streets across it, except an approach that
     traffic only leaves by (a one-way street) or that has lights of its own mapped near; a crossing
-    with lights mapped on a junction goes on one approach."""
+    with lights mapped on a junction goes on one approach.
+
+    The game stands a set at both kerbs facing both ways, so it is one set to an approach: the mapping
+    often has the lights' stop line (traffic_signals) and the crossing just past it as two nodes, and
+    those are put once, at the crossing."""
     roads = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
     if not roads:
         return [], collections.Counter()
@@ -9085,21 +9091,47 @@ def crossings(sq, rd, ground, points):
                     return u, n > 0
         return None, False
 
+    def same_set(c, ux, uy, sx, sy, vx, vy):
+        """Whether lights at c and at (sx, sy) are on one approach: along one street, near, with no street joining between."""
+        if abs(ux * vy - uy * vx) > 0.3:
+            return False
+        dx, dy = sx - c.x, sy - c.y
+        if abs(dx * ux + dy * uy) > SAME_SET or abs(dy * ux - dx * uy) > SAME_SET_SIDE:
+            return False
+        between = LineString([(c.x, c.y), (sx, sy)])
+        for j in tree.query(between):
+            l2 = roads[int(j)][0]
+            hit = l2.intersection(between)
+            if hit.is_empty:
+                continue
+            hx, hy = heading(l2, l2.project(hit.representative_point()))
+            if abs(ux * hy - uy * hx) > 0.5:
+                return False
+        return True
+
     def put(k, t, kind):
         line, r = roads[k]
         c = line.interpolate(t)
         ux, uy = heading(line, t)
-        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy in seen):
+        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy, _, _ in seen):
             count["doubled"] += 1
+            return
+        if any(same_set(c, ux, uy, sx, sy, svx, svy) for sx, sy, svx, svy in seen):
+            count["one set with lights nearer"] += 1
             return
         z = ground(c.x, c.y)
         if z is None:
             return
-        seen.append((c.x, c.y))
+        seen.append((c.x, c.y, ux, uy))
         out.append([round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(uy, ux), 3), kind, round(way_width(r), 1)])
         count[kind] += 1
 
-    for x, y, cls, tags in points:
+    # crossings first, so a set mapped as a stop line and a crossing stands at the crossing, where
+    # its studs are painted
+    def first(pt):
+        return (crossing_kind(pt[2], pt[3]) != "p", pt[2] != "crossing")
+
+    for x, y, cls, tags in sorted(points, key=first):
         if cls not in ("crossing", "traffic_signals") or not (x0 <= x < x1 and y0 <= y < y1):
             continue
         kind = crossing_kind(cls, tags)
