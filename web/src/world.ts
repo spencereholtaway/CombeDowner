@@ -3646,7 +3646,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
       waterSky(sk, fog.color, dark);
       if (waterMode() === "fancy") (shore ??= new ShoreMap(shoreSrc)).update(px, pz, dt);
-      if (waterMode() === "fancy" && (weirT -= dt) <= 0) {
+      if ((weirT -= dt) <= 0) {
         weirT = 0.5;
         const near = [map, ...map.tilesNear(px, pz, 500)];
         const key = near.map((m) => `${m.d.tile?.join() ?? ""}:${landmarkFalls(m).length}`).join("|");

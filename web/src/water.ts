@@ -12,8 +12,8 @@
 //
 // Settings offers Simple water too, for slow laptops and phones (and the normal at Low scenery
 // detail): one colour a stretch of water, mirroring the sky's colour at the time of day, with one
-// slow ripple, no glints, no wet band or lapping line (the shore picture isn't kept at all) and no
-// churning below weirs beyond the weirs' own white water. Changing it builds the water's and the
+// slow ripple, no glints, no wet band or lapping line (the shore picture isn't kept at all), and a
+// plain white band below each weir instead of churning foam. Changing it builds the water's and the
 // wet stone's shaders again on the spot. ?water=simple or ?water=fancy tries one for a visit.
 //
 // Nothing here goes over the network: the water moves on each player's own clock, and the ripples
@@ -398,23 +398,37 @@ const FRAG_SKY = `// (white water shows white even in shade: it's lit by the who
     outgoingLight += wLightCol * pow(max(dot(wS, wLightDir), 0.0), wSharp) * (wSharp / 400.0) * (1.0 - wFoam);
   }`;
 
-// Simple water: no shore picture, no weirs, one ripple, the sky's colour mirrored without glints
+// Simple water: no shore picture, one ripple, flat white below weirs, the sky's colour mirrored without glints
 const VERT_DECL_SIMPLE = `varying vec3 vWPos;`;
 const VERT_SIMPLE = `vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`;
 const FRAG_DECL_SIMPLE = `varying vec3 vWPos;
-uniform float wTime, wReflect; uniform vec3 wSkyTop, wSkyLow, wBank, wDeep;`;
+uniform float wTime, wReflect; uniform vec3 wSkyTop, wSkyLow, wBank, wDeep;
+uniform int wWeirs; uniform vec4 wWeir[${WEIRS}]; uniform float wWeirRun[${WEIRS}];`;
 const FRAG_SURFACE_SIMPLE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV); wV /= wDist;
   float wAbove = step(vWPos.y, cameraPosition.y);
   vec2 wp = (floor(vWPos.xz * 8.0) + 0.5) / 8.0;
   float wR = cos(dot(vec2(0.8, 0.6), wp) * 2.1 - wTime * 2.3) * 0.03 / (1.0 + wDist / 70.0);
   vec3 wN = normalize(vec3(-0.8 * wR, 1.0, -0.6 * wR));
-  diffuseColor.rgb = wDeep;`;
-const FRAG_SKY_SIMPLE = `if (wAbove > 0.5) {
-    // (near by it's the far bank that's mirrored, darker; further off, the haze at the horizon)
-    vec3 wSky = mix(wSkyLow, wSkyTop * wSkyTop, 0.3);
-    wSky = mix(mix(wBank, wSkyLow, smoothstep(150.0, 600.0, wDist)), wSky, 0.6);
+  diffuseColor.rgb = wDeep;
+  // (a set piece's weir, Pulteney's, has no white water of its own: a flat band below each crest)
+  float wFoam = 0.0;
+  vec2 wd = vec2(wp.x, -wp.y);
+  for (int i = 0; i < ${WEIRS}; i++) {
+    if (i >= wWeirs) break;
+    vec2 a = wWeir[i].xy, ab = wWeir[i].zw - a;
+    float l = max(length(ab), 0.01); vec2 t = ab / l;
+    float s = dot(wd - a, t), dn = dot(wd - a, vec2(t.y, -t.x));
+    wFoam = max(wFoam, step(0.0, s) * step(s, l) * step(-0.3, dn) * step(dn, wWeirRun[i] * 0.35));
+  }
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.88, 0.88), wFoam);`;
+const FRAG_SKY_SIMPLE = `outgoingLight = mix(outgoingLight, max(outgoingLight, wSkyLow * 0.7), wFoam);
+  if (wAbove > 0.5) {
+    // (fancy water's ripples mirror mostly the sky overhead, and near by the darker far bank: so
+    // this does too, or a low sun's pale horizon would turn the whole river to mud)
+    vec3 wSky = mix(wSkyLow, wSkyTop * wSkyTop, 0.6);
+    wSky = mix(mix(wBank, wSkyLow, smoothstep(150.0, 600.0, wDist)), wSky, 0.5);
     float wF = 0.02 + 0.98 * pow(1.0 - max(dot(wN, wV), 0.0), 5.0);
-    outgoingLight = mix(outgoingLight, wSky, mix(0.08, 1.0, wF) * wReflect);
+    outgoingLight = mix(outgoingLight, wSky, mix(0.08, 1.0, wF) * wReflect * (1.0 - wFoam));
   }`;
 
 const done = new WeakSet<THREE.Material>();
