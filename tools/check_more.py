@@ -2477,11 +2477,11 @@ def markings(m, f, sheet, note, at, sq, fig):
         if kind == "z":
             t = -h + 0.25
             while t + 0.5 <= h - 0.15: parts.append(quad(-1.3, 1.3, t, t + 0.5)); t += 1.0
-        else:
+        elif kind != "c":
             sl = 3 if kind == "p" else 2
             parts += [quad(-sl - 0.15, -sl + 0.15, 0, h - 0.2), quad(sl - 0.15, sl + 0.15, -h + 0.2, 0)]
         out = sum(off_by(p) for p in parts if p.is_valid) / 0.3
-        what = {"z": "zebra", "p": "crossing", "s": "lights"}.get(kind, kind)
+        what = {"z": "zebra", "p": "crossing", "c": "crossing", "s": "lights"}.get(kind, kind)
         if out > MARK_OFF:
             totals["off"] += 1
             note("39 road marking off the carriageway", out, at(x, y), f"{what}'s stripes or stop lines {out:.1f} m off the road")

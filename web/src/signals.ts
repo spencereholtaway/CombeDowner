@@ -1,6 +1,6 @@
 // Traffic lights that work, British style: red, red and amber together, green, amber, red. The map
-// has them from OpenStreetMap (each square's `cx`: a crossing with lights, p, or lights at a junction,
-// s, on a street running at some angle), and furniture.ts draws them, with their lamps lit by this
+// has them from OpenStreetMap (each square's `cx`: a crossing with lights, p, or lights, s, on a street
+// running at some angle; a crossing whose lights are those nearby, c, has none of its own), and furniture.ts draws them, with their lamps lit by this
 // sequence; the traffic stops for them (traffic.ts).
 //
 // - At a junction, the lights within a few dozen metres of each other are one set: those on streets
@@ -55,14 +55,20 @@ export function signalsOf(area: GameMap): Signal[] {
   if (out) return out;
   out = [];
   const cx = area.d.cx ?? [];
+  const at = (c: (number | string)[]) => c as [number, number, number, number, string, number];
+  const lit = cx.filter((c) => at(c)[4] === "s" || at(c)[4] === "p"), walks = cx.filter((c) => at(c)[4] === "c");
+  // lights standing on their own by a crossing they control are that crossing's, and keep its time
+  const forCrossing = (x: number, y: number, a: number) =>
+    walks.some((c) => Math.hypot(at(c)[0] - x, at(c)[1] - y) < 12 && Math.abs(Math.sin(at(c)[3] - a)) < 0.3)
+    && !lit.some((c) => { const d = Math.hypot(at(c)[0] - x, at(c)[1] - y); return d > 0.1 && d < 40; });
   // the junctions: lights within 40 m of each other are one set, timed together; the street of the
   // set's first light goes first, and those across it the other way about
   const sets: { x: number; y: number; ux: number; uy: number; off: number }[] = [];
   cx.forEach((c, i) => {
-    const [x, y, , a, kind, w] = c as [number, number, number, number, string, number];
+    const [x, y, , a, kind, w] = at(c);
     if (kind !== "s" && kind !== "p") return;
     const ux = Math.cos(a), uy = Math.sin(a);
-    if (kind === "p") { out!.push({ x, z: -y, ux, uz: -uy, crossing: true, off: hash(x, y) * CROSSING, group: 0, half: w / 2, i }); return; }
+    if (kind === "p" || forCrossing(x, y, a)) { out!.push({ x, z: -y, ux, uz: -uy, crossing: true, off: hash(x, y) * CROSSING, group: 0, half: w / 2, i }); return; }
     let set = sets.find((s) => Math.hypot(s.x - x, s.y - y) < 40);
     if (!set) sets.push((set = { x, y, ux, uy, off: hash(x, y) * JUNCTION }));
     const across = Math.abs(set.ux * uy - set.uy * ux) > 0.7 ? 1 : 0;

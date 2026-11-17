@@ -776,7 +776,8 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     const [x, y, z, a, kind, w] = c as [number, number, number, number, string, number];
     const h = w / 2, g = z - Z0 + 0.085, off = h + 0.5, nx = -Math.sin(a), ny = Math.cos(a);
     if (kind === "z") for (let t = -h + 0.25; t + 0.5 <= h - 0.15; t += 1.0) quad(x, y, g, a, -1.3, 1.3, t, t + 0.5);
-    if (kind === "p") for (const s of [-1.3, 1.3]) for (let t = -h + 0.2; t + 0.12 <= h - 0.2; t += 0.5) quad(x, y, g, a, s - 0.06, s + 0.06, t, t + 0.12);
+    if (kind === "p" || kind === "c") for (const s of [-1.3, 1.3]) for (let t = -h + 0.2; t + 0.12 <= h - 0.2; t += 0.5) quad(x, y, g, a, s - 0.06, s + 0.06, t, t + 0.12);
+    if (kind === "c") return;   // its lights stand at their own stop line, mapped as lights
     // stop lines: on the left half for traffic going along the street's points, the right for the rest
     if (kind !== "z") { const s = kind === "p" ? 3 : 2; quad(x, y, g, a, -s - 0.15, -s + 0.15, 0, h - 0.2); quad(x, y, g, a, s - 0.15, s + 0.15, -h + 0.2, 0); }
     const pole = z + 0.17;

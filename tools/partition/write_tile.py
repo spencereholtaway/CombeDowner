@@ -9010,8 +9010,9 @@ SIGNAL_REFS = ("pelican", "puffin", "toucan", "pegasus")
 
 def crossing_kind(cls, tags):
     """z: a zebra, with Belisha beacons; p: a crossing with lights (pelican, puffin, toucan); s: lights
-    at a junction with no crossing of their own; None for a crossing with nothing to show (a dropped
-    kerb)."""
+    with no crossing of their own; None for a crossing with nothing to show (a dropped kerb). A
+    `traffic_signals` node with crossing tags (the older way of mapping) is "p" too. `crossings` adds
+    c: a crossing with lights whose lights are mapped as their own node near it."""
     ref, kind, marks = tags.get("crossing_ref"), tags.get("crossing"), tags.get("crossing:markings")
     if ref in SIGNAL_REFS or kind == "traffic_signals" or tags.get("crossing:signals") == "yes":
         return "p"
@@ -9046,16 +9047,27 @@ def crossings(sq, rd, ground, points):
     traffic only leaves by (a one-way street) or that has lights of its own mapped near; a crossing
     with lights mapped on a junction goes on one approach.
 
-    The game stands a set at both kerbs facing both ways, so it is one set to an approach: the mapping
-    often has the lights' stop line (traffic_signals) and the crossing just past it as two nodes, and
-    those are put once, at the crossing."""
+    Only a `traffic_signals` node stands lights, where it is mapped (at the stop line). A crossing
+    with lights is a crossing the lights control, not where they stand: it is painted where it is
+    mapped, and gets lights of its own (p) only when no lights are mapped for it along the same street
+    (`same_set`); otherwise it is just its studs (c). A traffic_signals node with crossing tags is
+    both, unless a crossing is mapped as its own node beside it. The game stands a set at both kerbs
+    facing both ways, so two lights nodes on one approach are put once."""
     roads = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
     if not roads:
         return [], collections.Counter()
     tree = STRtree([l for l, _ in roads])
     widest = max(way_width(r) for _, r in roads) / 2
     x0, y0, x1, y1 = sq
-    lights = [(x, y) for x, y, cls, tags in points if cls in ("crossing", "traffic_signals") and crossing_kind(cls, tags) in ("p", "s")]
+
+    def is_lights(cls, tags):
+        return cls == "traffic_signals" and crossing_kind(cls, tags) in ("p", "s")
+
+    def is_crossing(cls, tags):
+        return cls == "crossing" and crossing_kind(cls, tags) == "p"
+
+    lights = [(x, y) for x, y, cls, tags in points if is_lights(cls, tags)]
+    walked = [(x, y) for x, y, cls, tags in points if is_crossing(cls, tags)]
     out, count, seen = [], collections.Counter(), []
 
     def heading(line, t):
@@ -9109,27 +9121,36 @@ def crossings(sq, rd, ground, points):
                 return False
         return True
 
-    def put(k, t, kind):
+    def put(k, t, kind, cls):
+        if kind == "p" and lit_near(k, t, walked if cls == "traffic_signals" else lights):
+            kind = "s" if cls == "traffic_signals" else "c"
         line, r = roads[k]
         c = line.interpolate(t)
         ux, uy = heading(line, t)
-        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy, _, _ in seen):
+        lit = kind != "c"
+        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy, _, _, slit in seen if slit == lit):
             count["doubled"] += 1
             return
-        if any(same_set(c, ux, uy, sx, sy, svx, svy) for sx, sy, svx, svy in seen):
-            count["one set with lights nearer"] += 1
+        if lit and kind == "s" and any(same_set(c, ux, uy, sx, sy, svx, svy) for sx, sy, svx, svy, slit in seen if slit):
+            count["lights with lights nearer on their street"] += 1
             return
         z = ground(c.x, c.y)
         if z is None:
             return
-        seen.append((c.x, c.y, ux, uy))
+        seen.append((c.x, c.y, ux, uy, lit))
         out.append([round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(uy, ux), 3), kind, round(way_width(r), 1)])
         count[kind] += 1
 
-    # crossings first, so a set mapped as a stop line and a crossing stands at the crossing, where
-    # its studs are painted
+    def lit_near(k, t, also):
+        """Whether lights are mapped along road k's street near t: put already, or as nodes in `also`."""
+        line = roads[k][0]
+        c, (ux, uy) = line.interpolate(t), heading(line, t)
+        return any(same_set(c, ux, uy, sx, sy, svx, svy) for sx, sy, svx, svy, slit in seen if slit) \
+            or any(same_set(c, ux, uy, lx, ly, ux, uy) for lx, ly in also if math.hypot(lx - c.x, ly - c.y) > 0.5)
+
+    # the lights first, so each crossing knows whether lights are mapped for it
     def first(pt):
-        return (crossing_kind(pt[2], pt[3]) != "p", pt[2] != "crossing")
+        return not is_lights(pt[2], pt[3])
 
     for x, y, cls, tags in sorted(points, key=first):
         if cls not in ("crossing", "traffic_signals") or not (x0 <= x < x1 and y0 <= y < y1):
@@ -9158,12 +9179,15 @@ def crossings(sq, rd, ground, points):
                     if not any(h[0] * g[0] + h[1] * g[1] > 0.9 for _, _, _, g in arms):
                         arms.append((k, t, w, h))
         junction = any(abs(a[3][0] * b[3][1] - a[3][1] * b[3][0]) > 0.5 for a in arms for b in arms)
+        if kind == "p" and (lit_near(near[0][1], roads[near[0][1]][0].project(p), walked if cls == "traffic_signals" else lights)):
+            # a crossing whose lights stand at their own node; or lights whose crossing is its own node
+            kind = "s" if cls == "traffic_signals" else "c"
         if not junction:
             k = near[0][1]
             t = roads[k][0].project(p)
-            u, moved = slide(k, t, (1, -1))
+            u, moved = (t, False) if kind == "c" else slide(k, t, (1, -1))
             count["moved off a street across"] += moved
-            put(k, t if u is None else u, kind)
+            put(k, t if u is None else u, kind, cls)
             continue
         count["on a junction"] += 1
         placed = 0
@@ -9172,16 +9196,17 @@ def crossings(sq, rd, ground, points):
             if (r.get("ow") or 0) * w > 0:
                 continue        # traffic only leaves the junction this way
             line = roads[k][0]
-            if kind == "s" and any(0 < math.hypot(lx - x, ly - y) <= OWN_LIGHTS and line.distance(Point(lx, ly)) <= ARM_OFF
+            if cls == "traffic_signals" and any(0 < math.hypot(lx - x, ly - y) <= OWN_LIGHTS and line.distance(Point(lx, ly)) <= ARM_OFF
                                    and (line.project(Point(lx, ly)) - t) * w > 0 for lx, ly in lights):
                 continue        # this approach's own lights are mapped
             u, _ = slide(k, t + w * SLIDE_STEP, (w,))
             if u is None:
                 continue
-            put(k, u, kind)
+            put(k, u, kind, cls)
             placed += 1
-            if kind != "s":
+            if cls != "traffic_signals":
                 break
+            kind = "s"          # the crossing of lights mapped the old way goes on one approach
         if not placed:
             count["junction with no approach clear"] += 1
     return out, count
@@ -9929,7 +9954,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     dual_kerbs(rd)
     tile["rd"] = rd
     br, _ = ends_off_pavements(br, rd)
-    points = mapped_points(sq)
+    points = mapped_points(sq, pad=SAME_SET + 2)
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)

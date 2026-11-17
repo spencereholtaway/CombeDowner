@@ -116,8 +116,8 @@ export interface MapData {
   tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
   sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
   so?: number[][][];                              // set pieces' outlines (landmarks/setpieces.ts), for the faces they lay their own ground over
-  // crossings and traffic lights: x, y, ground, the street's direction, kind (z a zebra, p a crossing with lights, s lights at a
-  // junction), the carriageway's width (furniture.ts draws them; the driving examiner can ask whether you stopped)
+  // crossings and traffic lights: x, y, ground, the street's direction, kind (z a zebra, p a crossing with lights, c a crossing
+  // whose lights are their own s nearby, s lights), the carriageway's width (furniture.ts draws them; the driving examiner can ask whether you stopped)
   cx?: (number | string)[][];
   // level crossings, where the data maps one: x, y, the rails' height, the line's direction, kind (r a road's, f a path's),
   // the way's width, and how far the deck reaches either side of the line's middle (furniture.ts draws them)
@@ -831,7 +831,8 @@ export class GameMap {
     // the beacons and lights at crossings stand at each kerb
     for (const c of d.cx ?? []) {
       if (this.spent(16)) yield;
-      const [x, y, z, a, , w] = c as [number, number, number, number, string, number];
+      const [x, y, z, a, kind, w] = c as [number, number, number, number, string, number];
+      if (kind === "c") continue;
       const off = w / 2 + 0.5, nx = -Math.sin(a) * off, ny = Math.cos(a) * off;
       for (const s of [1, -1]) this.addPost(x + nx * s, y + ny * s, 0.12, z - this.z0 + 3, z - this.z0);
     }
