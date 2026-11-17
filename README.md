@@ -71,7 +71,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   ground round it, as the filter beds do at the sewage works. The water ripples in the wind, a
   river's surface drifts downstream with its current, it mirrors the sky (dusk and night too) with
   the sun glinting off it, it's dark and green in the middle and paler at the banks, and it churns
-  white below every weir, Pulteney Weir's horseshoe among them. You can wade into the water and walk
+  white below every weir, Pulteney Weir's horseshoe among them. Simple water in Settings (the normal
+  at Low scenery detail, so on phones and tablets) keeps it to one calm colour with the sky's in it
+  and the weirs' white water, for slower machines; `?water=simple` or `?water=fancy` tries one. You can wade into the water and walk
   along its bed: where it's deeper than you are tall (out in the sea off Cape Town's quays), the
   water closes over your head, murky green, with its surface above you. A road the map
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill

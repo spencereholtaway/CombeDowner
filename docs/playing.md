@@ -211,6 +211,11 @@ open it, and Back or Esc takes you back to the list:
   and walls round it, out to 1 km (Medium) or 2 to 3 km (High to Max), a little brighter far off
   than close to and showing through the night haze, so the town looks lit from the drone and from
   the hills; roofs stay dark. It changes on the spot; everyone starts on Medium.
+  Water is Fancy or Simple. Fancy ripples, mirrors the sky with the sun glinting off it, laps white
+  at the banks, wets the stone just above it and churns below weirs; Simple is one calm colour a
+  stretch, with the sky's colour in it at every time of day and the weirs' own white water, and
+  costs much less. It changes on the spot, and starts on Simple at Low scenery detail (a phone or
+  tablet) and Fancy otherwise, until you choose.
 - Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
   counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the
@@ -1275,6 +1280,7 @@ Add these to the address:
 | `?view=1200` | tries a draw distance (metres) for one visit |
 | `?res=full` | full resolution |
 | `?fx=0` | turns off the retro colour grade |
+| `?water=simple` | tries Simple (or `fancy`) water for one visit |
 | `?trees=flat` | draws every tree as a flat picture |
 | `?ground=old` | draws and walks the ground as the survey's grid let down under the streets and paths, instead of the one sheet that meets their edges, for one visit (Settings, Video, "New ground" keeps the choice) |
 | `?ground=sheet` | draws the one sheet as before, each grid cell cut along the street and path edges, instead of triangulated round them, to compare |

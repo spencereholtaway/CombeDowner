@@ -11,7 +11,7 @@
 //
 // Video: automatic (quality.ts), draw distance (view.ts), resolution, the retro look and depth of field (post.ts), field of view (view.ts,
 // used by game.ts), how far the shadows reach (Off to Ultra, a share of the draw distance: shadows.ts), and
-// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), how far off lit street lamps show after dark and how many light the street (Low to Max: view.ts, world.ts), the debug panel (debug.ts, also F3), and the new ground (world.ts; changing it in a game reloads the page where you stand). Choosing a distance, resolution or shadows yourself turns automatic off.
+// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), how far off lit street lamps show after dark and how many light the street (Low to Max: view.ts, world.ts), the water (Fancy or Simple: water.ts, Simple unless you choose at Low scenery detail), the debug panel (debug.ts, also F3), and the new ground (world.ts; changing it in a game reloads the page where you stand). Choosing a distance, resolution or shadows yourself turns automatic off.
 // Controls: mouse sensitivity, turning the look round for the mouse and
 // for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
 // rumble (gamepad.ts keeps those).
@@ -30,6 +30,7 @@ import { closeButton } from "./modal";
 import { RES_DEFAULT, RES_STEPS, depthOfField, setDepthOfField, type Post } from "./post";
 import { quality } from "./quality";
 import { SHADOW_DEFAULT, SHADOW_LEVELS, SHADOW_OFF, setShadowLevel, shadowLevel, shadowLevelName, shadowReach } from "./shadows";
+import { setWaterMode, waterDefault, waterMode, type WaterMode } from "./water";
 import { DETAIL_DEFAULT, DETAIL_LEVELS, FOV_DEFAULT, LIGHT_DEFAULT, LIGHT_LEVELS, lightLevel, setLights, VIEW_DEFAULT, VIEW_STEPS, detailLevel, setDetail, setFov, setView, view } from "./view";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -86,6 +87,7 @@ export function settingsPage(h: Hooks) {
   const ground = $<HTMLInputElement>("set-ground");
   const detail = $<HTMLSelectElement>("set-detail"), detailHint = $("set-detail-hint");
   const lights = $<HTMLSelectElement>("set-lights"), lightsHint = $("set-lights-hint");
+  const water = $<HTMLSelectElement>("set-water");
   const shadows = $<HTMLSelectElement>("set-shadows"), shadowsHint = $("set-shadows-hint"), fx = $<HTMLInputElement>("set-fx"), dof = $<HTMLInputElement>("set-dof"), dbg = $<HTMLInputElement>("set-debug");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
   const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
@@ -113,6 +115,12 @@ export function settingsPage(h: Hooks) {
     const far = l.pools * l.step / 2, reach = far >= 1000 ? `${+(far / 1000).toFixed(1)} km` : `${far} m`;
     lightsHint.textContent = `How far off lit street lamps show after dark (from the drone too): ${p === 0 ? "the usual number" : p > 0 ? `${p} more` : `${-p} fewer`} light the street round you${l.pools ? `, and their pools of light show on the streets to ${reach}` : ""}. More is slower.`;
   };
+  option(water, "fancy", "Fancy"); option(water, "simple", "Simple");
+  // (the normal follows the scenery detail, so it's marked afresh whenever that changes)
+  const showWater = () => {
+    for (const o of water.options) o.textContent = `${o.value === "fancy" ? "Fancy" : "Simple"}${o.value === waterDefault() ? " (normal)" : ""}`;
+    water.value = waterMode();
+  };
   RES_STEPS.forEach((r, i) => option(resSel, String(i), r.lines ? `${r.name} (${r.lines} lines)` : `${r.name} (your screen's own)`));
 
   /** Show what's in force now. */
@@ -125,6 +133,7 @@ export function settingsPage(h: Hooks) {
     shadows.value = String(shadowLevel); showReach();
     detail.value = String(detailLevel); showDetail();
     lights.value = String(lightLevel); showLights();
+    showWater();
     fx.checked = h.post.retroLook;
     dof.checked = depthOfField;
     dbg.checked = h.debug.open;
@@ -169,7 +178,8 @@ export function settingsPage(h: Hooks) {
   resSel.onchange = () => { quality.manual(); h.post.setResolution(Number(resSel.value)); };
   fov.oninput = () => { setFov(Number(fov.value)); fovVal.textContent = `${view.fov}°`; };
   shadows.onchange = () => { quality.manual(); setShadows(Number(shadows.value)); };
-  detail.onchange = () => { setDetail(Number(detail.value), true); showDetail(); };
+  detail.onchange = () => { setDetail(Number(detail.value), true); showDetail(); showWater(); };
+  water.onchange = () => { setWaterMode(water.value as WaterMode, true); showWater(); };
   lights.onchange = () => { setLights(Number(lights.value), true); showLights(); };
   fx.onchange = () => h.post.setRetroLook(fx.checked);
   dof.onchange = () => setDepthOfField(dof.checked);
@@ -193,6 +203,7 @@ export function settingsPage(h: Hooks) {
     h.post.setResolution(RES_DEFAULT);
     setFov(FOV_DEFAULT);
     setShadows(SHADOW_DEFAULT);
+    setWaterMode(null, true);
     quality.automatic();
     h.post.setRetroLook(true);
     h.debug.toggle(false);

@@ -56,7 +56,7 @@ export function groundCdt(): boolean {
 }
 import { SunShadows, inPieces } from "./shadows";
 import { tag, tagSince } from "./kinds";
-import { RIVER_FLOW, ShoreMap, type ShoreWater, waterCorners, waterLook, waterSky, waterWeirs, wetBy } from "./water";
+import { RIVER_FLOW, ShoreMap, type ShoreSource, type ShoreWater, waterCorners, waterLook, waterMode, waterSky, waterWeirs, wetBy } from "./water";
 
 const CHUNK = 320;
 
@@ -3565,7 +3565,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   scene.add(tag(fieldMesh, "field"));
   const clock = new THREE.Clock();
   let weirT = 0, weirKey = "", weirs: { p: number[][]; b: number }[] = [];
-  const shore = new ShoreMap({
+  // (made only when fancy water first needs it: Simple water has no shore picture)
+  let shore: ShoreMap | null = null;
+  const shoreSrc: ShoreSource = {
     ponds: (x0, z0, x1, z1) => [...drawnWater, ...(tiles?.water() ?? [])].filter((w) => w.box[2] >= x0 && w.box[0] <= x1 && -w.box[1] >= z0 && -w.box[3] <= z1),
     lines: () => {
       const d = map.canal instanceof Canal ? map.canal.d : null;
@@ -3573,7 +3575,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     },
     level: (x, z) => (map.canal instanceof Canal ? map.canal.waterAt(x, z) : null),
     levels: () => map.canal instanceof Canal ? map.canal.locks.map((l) => Math.round(l.level * 2)).join() : "",
-  });
+  };
 
   mark("field");
   // ---- the full-detail squares round the map, loaded as the player comes near ----------------
@@ -3643,8 +3645,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
       skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
       waterSky(sk, fog.color, dark);
-      shore.update(px, pz, dt);
-      if ((weirT -= dt) <= 0) {
+      if (waterMode() === "fancy") (shore ??= new ShoreMap(shoreSrc)).update(px, pz, dt);
+      if (waterMode() === "fancy" && (weirT -= dt) <= 0) {
         weirT = 0.5;
         const near = [map, ...map.tilesNear(px, pz, 500)];
         const key = near.map((m) => `${m.d.tile?.join() ?? ""}:${landmarkFalls(m).length}`).join("|");

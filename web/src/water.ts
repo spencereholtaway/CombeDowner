@@ -10,6 +10,12 @@
 // Every water mesh shares the one look, so it costs no more draws than flat water did, and the
 // Low scenery detail (view.ts) leaves out the finest chop.
 //
+// Settings offers Simple water too, for slow laptops and phones (and the normal at Low scenery
+// detail): one colour a stretch of water, mirroring the sky's colour at the time of day, with one
+// slow ripple, no glints, no wet band or lapping line (the shore picture isn't kept at all) and no
+// churning below weirs beyond the weirs' own white water. Changing it builds the water's and the
+// wet stone's shaders again on the spot. ?water=simple or ?water=fancy tries one for a visit.
+//
 // Nothing here goes over the network: the water moves on each player's own clock, and the ripples
 // are the same pattern for everyone.
 import * as THREE from "three";
@@ -24,6 +30,36 @@ const WEIRS = 8;
 const WEIR_NEAR = 450;
 /** How fast a river's current carries its ripples (m/s), and the canal's barely moving water. */
 export const RIVER_FLOW = 0.45, CANAL_FLOW = 0.06;
+
+export type WaterMode = "simple" | "fancy";
+const WATER_KEY = "cd-water";
+const isMode = (s: string | null): s is WaterMode => s === "simple" || s === "fancy";
+// (read as the page loads: the game tidies the address away before the first shader is built)
+const askedWater = typeof location !== "undefined" ? new URLSearchParams(location.search).get("water") : null;
+let chosen: WaterMode | null = isMode(askedWater) ? askedWater : (() => {
+  try { const s = localStorage.getItem(WATER_KEY); return isMode(s) ? s : null; } catch { return null; }
+})();
+/** The water's look unless you choose one: Simple at the Low scenery detail, a phone's or tablet's normal. */
+export const waterDefault = (): WaterMode => detailLevel === 0 ? "simple" : "fancy";
+/** The water's look in force now. */
+export const waterMode = (): WaterMode => chosen ?? waterDefault();
+/** Choose the water's look (null: follow the scenery detail); keep: remember it on this computer. */
+export function setWaterMode(m: WaterMode | null, keep = false) {
+  chosen = m;
+  if (keep) { try { if (m) localStorage.setItem(WATER_KEY, m); else localStorage.removeItem(WATER_KEY); } catch { /* private window: just this visit */ } }
+}
+/** The look the shaders were last built for, and every material that has to be built again when it changes. */
+let built = waterMode();
+const looks: WeakRef<THREE.Material>[] = [];
+function rebuildIfChanged() {
+  const m = waterMode();
+  if (m === built) return;
+  built = m;
+  for (let i = looks.length - 1; i >= 0; i--) {
+    const mat = looks[i].deref();
+    if (mat) mat.needsUpdate = true; else looks.splice(i, 1);
+  }
+}
 
 const U = {
   wTime: { value: 0 },
@@ -58,7 +94,8 @@ function shorePicture() {
   return t;
 }
 const SU = {
-  shoreMap: { value: shorePicture() },
+  // (made only once fancy water first needs it, so Simple water never sends it to the graphics chip)
+  shoreMap: { value: null as THREE.DataTexture | null },
   /** The picture's corner (scene x, z), one over its width in metres, and 1 once it's painted. */
   shoreBox: { value: new THREE.Vector4(0, 0, 1, 0) },
   /** The level the picture's lowest step stands for (scene y), and metres a step. */
@@ -106,7 +143,7 @@ export class ShoreMap {
   private toLand = new Uint8Array(SHORE * SHORE);
   private xs: number[] = [];
   private ids = new WeakMap<object, number>(); private nextId = 1;
-  constructor(private src: ShoreSource) {}
+  constructor(private src: ShoreSource) { SU.shoreMap.value ??= shorePicture(); }
 
   /** Each frame, with where you are. */
   update(px: number, pz: number, dt: number) {
@@ -207,7 +244,7 @@ export class ShoreMap {
         if (tired()) { yield; rest(); }
       }
     }
-    const tex = SU.shoreMap.value, out = tex.image.data as Uint8Array, base = Number.isFinite(low) ? low - 0.5 : 0;
+    const tex = SU.shoreMap.value!, out = tex.image.data as Uint8Array, base = Number.isFinite(low) ? low - 0.5 : 0;
     for (let k = 0; k < N * N; k++) {
       const l = near[k], dry = Number.isNaN(lv[k]);
       out[k * 4] = Number.isNaN(l) ? 0 : Math.max(1, Math.min(255, Math.round((l - base) / SHORE_LEVEL)));
@@ -246,16 +283,18 @@ export const wetLike = <M extends THREE.Material>(from: THREE.Material, to: M): 
 export function wetBy<M extends THREE.Material>(m: M): M {
   if (wetDone.has(m) || !(m as unknown as THREE.MeshLambertMaterial).isMeshLambertMaterial) return m;
   wetDone.add(m);
+  looks.push(new WeakRef(m));
   const was = m.onBeforeCompile, ownKey = m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey : null;
   m.onBeforeCompile = function (this: THREE.Material, sh, r) {
     was.call(this, sh, r);
+    if (built === "simple") return;
     Object.assign(sh.uniforms, SU);
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWetAt;")
       .replace("#include <project_vertex>", `#include <project_vertex>\n  ${WET_VERT}`);
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\nvarying vec3 vWetAt;\n${SHORE_DECL}`)
       .replace("#include <color_fragment>", `#include <color_fragment>\n  ${WET_FRAG}`);
   };
-  m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + "|wet"; };
+  m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + (built === "simple" ? "" : "|wet"); };
   return m;
 }
 
@@ -359,14 +398,43 @@ const FRAG_SKY = `// (white water shows white even in shade: it's lit by the who
     outgoingLight += wLightCol * pow(max(dot(wS, wLightDir), 0.0), wSharp) * (wSharp / 400.0) * (1.0 - wFoam);
   }`;
 
+// Simple water: no shore picture, no weirs, one ripple, the sky's colour mirrored without glints
+const VERT_DECL_SIMPLE = `varying vec3 vWPos;`;
+const VERT_SIMPLE = `vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`;
+const FRAG_DECL_SIMPLE = `varying vec3 vWPos;
+uniform float wTime, wReflect; uniform vec3 wSkyTop, wSkyLow, wBank, wDeep;`;
+const FRAG_SURFACE_SIMPLE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV); wV /= wDist;
+  float wAbove = step(vWPos.y, cameraPosition.y);
+  vec2 wp = (floor(vWPos.xz * 8.0) + 0.5) / 8.0;
+  float wR = cos(dot(vec2(0.8, 0.6), wp) * 2.1 - wTime * 2.3) * 0.03 / (1.0 + wDist / 70.0);
+  vec3 wN = normalize(vec3(-0.8 * wR, 1.0, -0.6 * wR));
+  diffuseColor.rgb = wDeep;`;
+const FRAG_SKY_SIMPLE = `if (wAbove > 0.5) {
+    // (near by it's the far bank that's mirrored, darker; further off, the haze at the horizon)
+    vec3 wSky = mix(wSkyLow, wSkyTop * wSkyTop, 0.3);
+    wSky = mix(mix(wBank, wSkyLow, smoothstep(150.0, 600.0, wDist)), wSky, 0.6);
+    float wF = 0.02 + 0.98 * pow(1.0 - max(dot(wN, wV), 0.0), 5.0);
+    outgoingLight = mix(outgoingLight, wSky, mix(0.08, 1.0, wF) * wReflect);
+  }`;
+
 const done = new WeakSet<THREE.Material>();
 /** Give material m (a Lambert one, on water meshes made with waterCorners) the water's look. */
 export function waterLook<M extends THREE.Material>(m: M): M {
   if (done.has(m)) return m;
   done.add(m);
+  looks.push(new WeakRef(m));
   const was = m.onBeforeCompile;
   m.onBeforeCompile = function (this: THREE.Material, sh, r) {
     was.call(this, sh, r);
+    if (built === "simple") {
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${VERT_DECL_SIMPLE}`)
+        .replace("#include <project_vertex>", `#include <project_vertex>\n  ${VERT_SIMPLE}`);
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FRAG_DECL_SIMPLE}`)
+        .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>\n  ${FRAG_SURFACE_SIMPLE}`)
+        .replace("#include <opaque_fragment>", `${FRAG_SKY_SIMPLE}\n  #include <opaque_fragment>`);
+      return;
+    }
     Object.assign(sh.uniforms, U, SU);
     sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${VERT_DECL}`)
       .replace("#include <project_vertex>", `#include <project_vertex>\n  ${VERT}`);
@@ -374,13 +442,14 @@ export function waterLook<M extends THREE.Material>(m: M): M {
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>\n  ${FRAG_SURFACE}`)
       .replace("#include <opaque_fragment>", `${FRAG_SKY}\n  #include <opaque_fragment>`);
   };
-  m.customProgramCacheKey = () => "water";
+  m.customProgramCacheKey = () => "water|" + built;
   return m;
 }
 
 /** Each frame: the light now (daylight.ts), the fog's colour (the sky at the horizon) and how much
  *  a tunnel's darkened everything. */
 export function waterSky(sk: Sky, low: THREE.Color, dark: number) {
+  rebuildIfChanged();
   U.wTime.value = (performance.now() / 1000) % 4096;
   U.wFine.value = detailLevel > 0 ? 1 : 0;
   U.wSkyTop.value.copy(sk.top).multiplyScalar(1 - dark);
