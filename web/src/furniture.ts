@@ -1171,16 +1171,25 @@ function letGoOnceSent(t: THREE.CanvasTexture) {
   t.onUpdate = () => { const c = t.image as HTMLCanvasElement; c.width = c.height = 0; t.onUpdate = null; };
 }
 
-/** The shopfront under each fascia is one picture painted on a shared sheet: pilasters at its ends,
- *  display windows over a panelled stall riser, and a door set back in a recessed doorway under a
- *  fanlight. It's laid as a row of pieces of that sheet (a pilaster, window bays, the doorway), each
- *  in its own width, so a wide or narrow front isn't stretched; for each fascia colour the sheet
- *  has its own set, painted in that colour. */
+/** A shopfront is one picture painted on a shared sheet: pilasters at its ends, display windows
+ *  over a panelled stall riser, a door set back in a recessed doorway under a fanlight, and over it
+ *  all the fascia board between two console brackets under a cornice. It's laid as a row of pieces
+ *  of that sheet (a pilaster, window bays, the doorway; and above, a console, the board, a
+ *  console), each in its own width, so a wide or narrow front isn't stretched; for each fascia
+ *  colour the sheet has its own set, painted in that colour. The shop's name is painted on its own
+ *  sheet and laid exactly over the board's panel. */
 const FRONT_STYLES = ["cafe", "shop", "agent", "health", "civic"];
-const FRONT_H = 2.675;                               // from the pavement up to just under the fascia
+const FRONT_H = 2.675, BAND_H = 0.8;               // the shopfront from the pavement, and the fascia's band over it
 const SET_PX = 320, BAY_PX = 128, DOOR_PX = 128, PIL_PX = 32, SHEET_W = 2048, SHEET_H = 256;
+// the band's pieces sit under the shopfront's on the sheet: the board, then the console
+const BAND_PX = 96, BOARD_PX = 64, CONSOLE_PX = 32, SHEET_ROWS = 512;
+// the narrow single lights, one for each style, after all the styles' sets
+const NARROW_PX = 64, NARROW_AT = FRONT_STYLES.length * SET_PX;
+// the board's panel, in the band's pixels down from its top: what the shop's name is laid over
+const PANEL_TOP = 20, PANEL_FOOT = 82;
+const PANEL_H = BAND_H * (PANEL_FOOT - PANEL_TOP) / BAND_PX, PANEL_Y = FRONT_H + BAND_H * (1 - (PANEL_TOP + PANEL_FOOT) / 2 / BAND_PX);
 const PIL_W = 0.3, DOOR_W = 1.3, BAY_W = 1.3;      // metres each piece stands for, at 96 pixels a metre
-type FrontPiece = { a: number; b: number; u0: number; u1: number };
+type FrontPiece = { a: number; b: number; u0: number; u1: number; door?: boolean };
 
 /** The pieces of a front ww metres wide, along it from its left end (-ww/2), and where its door's
  *  middle is. Up to about 3 m of windows go on one side of the door (which side, from the shop's
@@ -1189,6 +1198,7 @@ function frontLayout(ww: number, style: string, flip: boolean) {
   const k = Math.max(0, FRONT_STYLES.indexOf(style)) * SET_PX;
   const U = (px: number) => px / SHEET_W;
   const bayU = [U(k), U(k + BAY_PX)], doorU = [U(k + BAY_PX), U(k + BAY_PX + DOOR_PX)];
+  const n0 = NARROW_AT + Math.max(0, FRONT_STYLES.indexOf(style)) * NARROW_PX, narrowU = [U(n0), U(n0 + NARROW_PX)];
   const pilU = [U(k + BAY_PX + DOOR_PX), U(k + BAY_PX + DOOR_PX + PIL_PX)];
   let rest = ww - 2 * PIL_W - DOOR_W, doorW = DOOR_W;
   // too little room for a window: the doorway takes it
@@ -1196,10 +1206,9 @@ function frontLayout(ww: number, style: string, flip: boolean) {
   const runs = rest === 0 ? [] : rest < 2 * BAY_W + 0.4 ? [rest] : [rest / 2, rest / 2];
   const pieces: FrontPiece[] = [];
   let at = -ww / 2;
-  const put = (w: number, u: number[]) => { pieces.push({ a: at, b: at + w, u0: u[0], u1: u[1] }); at += w; };
+  const put = (w: number, u: number[], door = false) => { pieces.push({ a: at, b: at + w, u0: u[0], u1: u[1], door }); at += w; };
   const windows = (r: number) => {
-    // a run narrower than most of a bay shows the middle of one, uncut glazing either side being hidden by the frames beside it
-    if (r < 0.75 * BAY_W) { const f = r / BAY_W, m = (bayU[0] + bayU[1]) / 2, h = (bayU[1] - bayU[0]) * f / 2; put(r, [m - h, m + h]); return; }
+    if (r < 0.75 * BAY_W) { put(r, narrowU); return; }
     const n = Math.max(1, Math.round(r / BAY_W));
     for (let i = 0; i < n; i++) put(r / n, bayU);
   };
@@ -1207,7 +1216,7 @@ function frontLayout(ww: number, style: string, flip: boolean) {
   if (runs.length === 2) windows(runs[0]);
   else if (runs.length === 1 && flip) windows(runs[0]);
   const door = at + doorW / 2;
-  put(doorW, doorU);
+  put(doorW, doorU, true);
   if (runs.length === 2) windows(runs[1]);
   else if (runs.length === 1 && !flip) windows(runs[0]);
   put(PIL_W, pilU);
@@ -1222,7 +1231,7 @@ const frontFlip = (x: number, y: number) => Math.abs(Math.round(x * 7 + y * 13))
 export function shopDoor(sign: (number | string)[]) {
   if (sign[6] === "pub") return null;
   const x = +sign[0], y = +sign[1], a = +sign[3];
-  const along = frontLayout(+sign[4] - 0.5, String(sign[6]), frontFlip(x, y)).door;
+  const along = frontLayout(+sign[4], String(sign[6]), frontFlip(x, y)).door;
   return { x: x + Math.cos(a) * along, y: y + Math.sin(a) * along, z: +sign[2], a, along };
 }
 
@@ -1253,19 +1262,23 @@ function panel(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 // glass, the sill and the stall riser to the pavement
 const ROW_TOP = 8, ROW_TRANSOM = 50, ROW_GLASS = 58, ROW_SILL = 190, ROW_RISER = 198;
 
-function paintBay(g: CanvasRenderingContext2D, x: number, frame: string) {
-  const w = BAY_PX;
+/** A window bay; a narrow one (a single light beside a door on a narrow front) has one pane of
+ *  glass and one transom light, with no bars across them. */
+function paintBay(g: CanvasRenderingContext2D, x: number, frame: string, w = BAY_PX) {
+  const narrow = w < BAY_PX;
   g.fillStyle = frame; g.fillRect(x, 0, w, SHEET_H);
   glassFill(g, x + 6, ROW_TOP, w - 12, ROW_TRANSOM - ROW_TOP, 0.1);
   glassFill(g, x + 6, ROW_GLASS, w - 12, ROW_SILL - ROW_GLASS);
   g.fillStyle = CREAM;
-  for (const t of [1, 2]) g.fillRect(x + 6 + ((w - 12) * t) / 3 - 1, ROW_TOP, 2, ROW_TRANSOM - ROW_TOP);
-  g.fillRect(x + w / 2 - 1, ROW_GLASS, 3, ROW_SILL - ROW_GLASS);
+  if (!narrow) {
+    for (const t of [1, 2]) g.fillRect(x + 6 + ((w - 12) * t) / 3 - 1, ROW_TOP, 2, ROW_TRANSOM - ROW_TOP);
+    g.fillRect(x + w / 2 - 1, ROW_GLASS, 3, ROW_SILL - ROW_GLASS);
+  }
   g.strokeStyle = CREAM; g.lineWidth = 2;
   g.strokeRect(x + 7, ROW_TOP + 1, w - 14, ROW_TRANSOM - ROW_TOP - 2); g.strokeRect(x + 7, ROW_GLASS + 1, w - 14, ROW_SILL - ROW_GLASS - 2);
   g.fillStyle = CREAM; g.fillRect(x + 2, ROW_SILL, w - 4, 6);
   g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x + 2, ROW_SILL + 6, w - 4, 3);
-  panel(g, x + 12, ROW_RISER + 12, w - 24, SHEET_H - ROW_RISER - 24, frame);
+  panel(g, x + (narrow ? 8 : 12), ROW_RISER + 12, w - (narrow ? 16 : 24), SHEET_H - ROW_RISER - 24, frame);
 }
 
 function paintPilaster(g: CanvasRenderingContext2D, x: number, frame: string) {
@@ -1280,13 +1293,6 @@ function paintPilaster(g: CanvasRenderingContext2D, x: number, frame: string) {
 function paintDoorway(g: CanvasRenderingContext2D, x: number, frame: string, leaf: string) {
   const w = DOOR_PX, L = x + 8, R = x + w - 8, inset = 14, back = SHEET_H - 12;
   g.fillStyle = frame; g.fillRect(x, 0, w, SHEET_H);
-  // the fanlight over the doorway, its bars fanning out from the middle of its foot
-  glassFill(g, x + 6, ROW_TOP, w - 12, ROW_TRANSOM - ROW_TOP, 0.15);
-  g.strokeStyle = CREAM; g.lineWidth = 2;
-  g.strokeRect(x + 7, ROW_TOP + 1, w - 14, ROW_TRANSOM - ROW_TOP - 2);
-  for (let i = 1; i < 6; i++) {
-    const t = i / 6; g.beginPath(); g.moveTo(x + w / 2, ROW_TRANSOM - 1); g.lineTo(x + 7 + (w - 14) * t, ROW_TOP + 1); g.stroke();
-  }
   const quad = (pts: number[][], fill: string | CanvasGradient) => {
     g.fillStyle = fill; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
     for (const p of pts.slice(1)) g.lineTo(p[0], p[1]);
@@ -1321,9 +1327,70 @@ function paintDoorway(g: CanvasRenderingContext2D, x: number, frame: string, lea
   g.fillStyle = sh; g.fillRect(dl, dTop, dr - dl, 50);
 }
 
+/** The band's cornice, the same along the board and over the consoles so it runs on unbroken. */
+function paintCornice(g: CanvasRenderingContext2D, x: number, w: number, y: number, frame: string) {
+  g.fillStyle = shade(frame, 0.35); g.fillRect(x, y, w, 3);
+  g.fillStyle = shade(frame, 0.15); g.fillRect(x, y + 3, w, 7);
+  g.fillStyle = shade(frame, -0.5); g.fillRect(x, y + 10, w, 4);
+}
+
+function paintFasciaBoard(g: CanvasRenderingContext2D, x: number, y: number, frame: string) {
+  const w = BOARD_PX;
+  g.fillStyle = frame; g.fillRect(x, y, w, BAND_PX);
+  paintCornice(g, x, w, y, frame);
+  g.fillStyle = shade(frame, 0.25); g.fillRect(x, y + 14, w, PANEL_TOP - 14);
+  g.fillStyle = shade(frame, 0.2); g.fillRect(x, y + PANEL_FOOT, w, 4);
+  g.fillStyle = shade(frame, -0.4); g.fillRect(x, y + BAND_PX - 4, w, 4);
+}
+
+function paintConsole(g: CanvasRenderingContext2D, x: number, y: number, frame: string) {
+  const w = CONSOLE_PX;
+  g.fillStyle = shade(frame, -0.3); g.fillRect(x, y, w, BAND_PX);
+  paintCornice(g, x, w, y, frame);
+  // a scrolled bracket, broad under the cornice and curling in at its foot
+  g.fillStyle = shade(frame, 0.35); g.fillRect(x + 3, y + 14, w - 6, 8);
+  g.fillStyle = shade(frame, 0.15);
+  g.beginPath(); g.moveTo(x + 6, y + 22); g.lineTo(x + w - 6, y + 22); g.lineTo(x + w - 10, y + 80); g.lineTo(x + 10, y + 80); g.closePath(); g.fill();
+  g.fillStyle = shade(frame, 0.4); g.fillRect(x + 6, y + 22, 2, 56);
+  g.fillStyle = shade(frame, 0.3); g.beginPath(); g.arc(x + w / 2, y + 82, 8, 0, Math.PI * 2); g.fill();
+  g.fillStyle = shade(frame, -0.35); g.beginPath(); g.arc(x + w / 2, y + 82, 3, 0, Math.PI * 2); g.fill();
+}
+
+/** The fanlights over a shop's door, four ways, each DOOR_PX by ROW_TRANSOM pixels with (x, y) its
+ *  top left: a sunburst, a plain light with upright bars, an arched light with spokes, and a
+ *  diamond lattice. */
+const FANLIGHTS = 4, FAN_GAP = 6;
+function paintFanlight(g: CanvasRenderingContext2D, x: number, y: number, frame: string, kind: number) {
+  const w = DOOR_PX, gx = x + 7, gy = y + ROW_TOP + 1, gw = w - 14, gh = ROW_TRANSOM - ROW_TOP - 2;
+  g.fillStyle = frame; g.fillRect(x, y, w, ROW_TRANSOM);
+  g.save();
+  g.beginPath();
+  // an arch has glass only under it, the frame's colour in its spandrels
+  if (kind === 2) { g.moveTo(gx, gy + gh); g.ellipse(gx + gw / 2, gy + gh, gw / 2, gh, 0, Math.PI, 0); g.closePath(); }
+  else g.rect(gx - 1, gy - 1, gw + 2, gh + 2);
+  g.clip();
+  glassFill(g, x + 6, y + ROW_TOP, w - 12, ROW_TRANSOM - ROW_TOP, 0.15);
+  g.strokeStyle = CREAM; g.lineWidth = 2;
+  const line = (ax: number, ay: number, bx: number, by: number) => { g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); };
+  if (kind === 0) for (let i = 1; i < 6; i++) line(gx + gw / 2, gy + gh, gx + gw * i / 6, gy);
+  else if (kind === 1) for (let i = 1; i < 5; i++) line(gx + gw * i / 5, gy, gx + gw * i / 5, gy + gh);
+  else if (kind === 2) {
+    for (let i = 1; i < 6; i++) { const a = Math.PI * (1 + i / 6); line(gx + gw / 2, gy + gh, gx + gw / 2 + Math.cos(a) * gw / 2, gy + gh + Math.sin(a) * gh); }
+    g.beginPath(); g.ellipse(gx + gw / 2, gy + gh, gw / 6, gh / 3, 0, Math.PI, 0); g.stroke();
+  } else for (let d = -gh; d < gw + gh; d += 16) { line(gx + d, gy, gx + d + gh, gy + gh); line(gx + d + gh, gy, gx + d, gy + gh); }
+  g.restore();
+  g.strokeStyle = CREAM; g.lineWidth = 2;
+  if (kind === 2) { g.beginPath(); g.ellipse(gx + gw / 2, gy + gh, gw / 2, gh, 0, Math.PI, 0); g.closePath(); g.stroke(); }
+  else g.strokeRect(gx, gy, gw, gh);
+}
+/** Where fanlight kind sits on the sheet, in its style's set: under the fascia band, two to a row. */
+const fanAt = (k0: number, kind: number) => [k0 + (kind % 2) * DOOR_PX, SHEET_H + BAND_PX + FAN_GAP + Math.floor(kind / 2) * (ROW_TRANSOM + FAN_GAP)];
+/** Which fanlight a shop has, from where it stands: the same every build and for everyone. */
+const fanKind = (x: number, y: number) => ((Math.round(x * 11 + y * 17) % FANLIGHTS) + FANLIGHTS) % FANLIGHTS;
+
 function shopWindowTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
-  c.width = SHEET_W; c.height = SHEET_H;
+  c.width = SHEET_W; c.height = SHEET_ROWS;
   const g = c.getContext("2d")!;
   FRONT_STYLES.forEach((style, k) => {
     const st = SIGN_STYLE[style], x = k * SET_PX;
@@ -1332,6 +1399,10 @@ function shopWindowTexture(): THREE.CanvasTexture {
     paintBay(g, x, frame);
     paintDoorway(g, x + BAY_PX, frame, leaf);
     paintPilaster(g, x + BAY_PX + DOOR_PX, frame);
+    paintFasciaBoard(g, x, SHEET_H, frame);
+    paintConsole(g, x + BOARD_PX, SHEET_H, frame);
+    for (let kind = 0; kind < FANLIGHTS; kind++) { const [fx, fy] = fanAt(x, kind); paintFanlight(g, fx, fy, frame, kind); }
+    paintBay(g, NARROW_AT + k * NARROW_PX, frame, NARROW_PX);
   });
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -1368,30 +1439,46 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
     for (let k = 0; k < batch.length; k++) {
       const [x, y, z, ang, width, name, style] = batch[k];
       const w = width as number, cx = k % COLS, cy = Math.floor(k / COLS);
-      paintFascia(g, cx, cy, name as string, style as string, w / 0.62);
+      const shop = style !== "pub", boardW = w - 2 * PIL_W;
+      paintFascia(g, cx, cy, name as string, style as string, shop ? boardW / PANEL_H : w / 0.62);
       q.setFromAxisAngle(up, ang as number);
       m4.compose(pos.set(x as number, (z as number) - Z0, -(y as number)), q, one);
       // the fascia's painted face, its cell of the sheet (v runs up the sheet)
       const u0 = cx / COLS, u1 = (cx + 1) / COLS, v1 = 1 - cy / Math.max(1, rows), v0 = 1 - (cy + 1) / Math.max(1, rows);
-      const face = (fw: number, at: THREE.Matrix4) => {
-        const f = new THREE.PlaneGeometry(fw, 0.62).applyMatrix4(at);
+      const face = (fw: number, fh: number, at: THREE.Matrix4) => {
+        const f = new THREE.PlaneGeometry(fw, fh).applyMatrix4(at);
         const uv = f.attributes.uv as THREE.BufferAttribute;
         for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
         faces.push(f.applyMatrix4(m4));
       };
-      face(w, new THREE.Matrix4().makeTranslation(0, 3.05, 0.142));
-      darks.push(new THREE.BoxGeometry(w, 0.62, 0.14).translate(0, 3.05, 0.07).applyMatrix4(m4));
-      if (style !== "pub") {
-        // the front as one picture, laid piece by piece across its width
-        const ww = w - 0.5;
-        for (const p of frontLayout(ww, style as string, frontFlip(+x, +y)).pieces) {
-          const piece = new THREE.PlaneGeometry(p.b - p.a, FRONT_H).translate((p.a + p.b) / 2, FRONT_H / 2, 0.061);
+      if (shop) {
+        // the front as one picture, laid piece by piece across its width, the name on its board
+        const lay = (a: number, b: number, y0: number, h: number, u0: number, u1: number, v0: number, v1: number) => {
+          const piece = new THREE.PlaneGeometry(b - a, h).translate((a + b) / 2, y0 + h / 2, 0.061);
           const uv = piece.attributes.uv as THREE.BufferAttribute;
-          for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) ? p.u1 : p.u0);
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
           wins.push(piece.applyMatrix4(m4));
+        };
+        const k0 = Math.max(0, FRONT_STYLES.indexOf(style as string)) * SET_PX;
+        const fanH = FRONT_H * ROW_TRANSOM / SHEET_H, [fx, fy] = fanAt(k0, fanKind(+x, +y));
+        for (const p of frontLayout(w, style as string, frontFlip(+x, +y)).pieces) {
+          if (!p.door) { lay(p.a, p.b, 0, FRONT_H, p.u0, p.u1, 1 - SHEET_H / SHEET_ROWS, 1); continue; }
+          // the doorway, and its fanlight laid over its top
+          lay(p.a, p.b, 0, FRONT_H - fanH, p.u0, p.u1, 1 - SHEET_H / SHEET_ROWS, 1 - ROW_TRANSOM / SHEET_ROWS);
+          lay(p.a, p.b, FRONT_H - fanH, fanH, fx / SHEET_W, (fx + DOOR_PX) / SHEET_W, 1 - (fy + ROW_TRANSOM) / SHEET_ROWS, 1 - fy / SHEET_ROWS);
         }
-        darks.push(new THREE.BoxGeometry(ww, FRONT_H, 0.06).translate(0, FRONT_H / 2, 0.03).applyMatrix4(m4));
+        const bv0 = 1 - (SHEET_H + BAND_PX) / SHEET_ROWS, bv1 = 1 - SHEET_H / SHEET_ROWS;
+        const cu0 = (k0 + BOARD_PX) / SHEET_W, cu1 = (k0 + BOARD_PX + CONSOLE_PX) / SHEET_W;
+        lay(-w / 2, -w / 2 + PIL_W, FRONT_H, BAND_H, cu0, cu1, bv0, bv1);
+        lay(-w / 2 + PIL_W, w / 2 - PIL_W, FRONT_H, BAND_H, (k0 + 2) / SHEET_W, (k0 + BOARD_PX - 2) / SHEET_W, bv0, bv1);
+        lay(w / 2 - PIL_W, w / 2, FRONT_H, BAND_H, cu1, cu0, bv0, bv1);
+        face(boardW, PANEL_H, new THREE.Matrix4().makeTranslation(0, PANEL_Y, 0.063));
+        darks.push(new THREE.BoxGeometry(w, FRONT_H + BAND_H, 0.06).translate(0, (FRONT_H + BAND_H) / 2, 0.03).applyMatrix4(m4));
+        // the cornice's lead-capped top, standing out over the front
+        darks.push(new THREE.BoxGeometry(w + 0.12, 0.06, 0.18).translate(0, FRONT_H + BAND_H + 0.03, 0.09).applyMatrix4(m4));
       } else {
+        face(w, 0.62, new THREE.Matrix4().makeTranslation(0, 3.05, 0.142));
+        darks.push(new THREE.BoxGeometry(w, 0.62, 0.14).translate(0, 3.05, 0.07).applyMatrix4(m4));
         // hanging sign on an iron bracket at one end of the fascia, painted both sides
         darks.push(new THREE.BoxGeometry(0.05, 0.05, 1.1).translate(w / 2 - 0.3, 3.75, 0.55).applyMatrix4(m4));
         darks.push(new THREE.BoxGeometry(0.06, 0.95, 0.8).translate(w / 2 - 0.3, 3.2, 0.7).applyMatrix4(m4));

@@ -48,8 +48,8 @@ export class DeliDoor {
     this.nx = nx; this.nz = nz;
     this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - z0;
     this.sign = neonSign("Combe Down With Me", "#ff6a1a");
-    // over a shop's own door its fascia is in the way, so the neon goes up above the fascia's middle
-    if (inWindow) this.sign.group.position.set(sx + nx * 0.12, best[2] - z0 + 3.85, -sy + nz * 0.12);
+    // over a shop's own door its fascia is in the way, so the neon goes up over the cornice, above the fascia's middle
+    if (inWindow) this.sign.group.position.set(sx + nx * 0.12, best[2] - z0 + 4.0, -sy + nz * 0.12);
     else this.sign.group.position.set(best[0] + nx * 0.12, best[2] - z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
     this.scene.add(this.sign.group);
