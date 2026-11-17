@@ -24,6 +24,7 @@ import type { Mover, Pond } from "./map";
 import { compact } from "./railway";
 import { wall } from "./textures";
 import { tag } from "./kinds";
+import { CANAL_FLOW, waterCorners, waterLook, wetBy } from "./water";
 
 export interface CanalData {
   runs: { lv: number; p: number[][]; x?: number[][] }[];
@@ -684,8 +685,8 @@ export class Canal {
   // ---- the stonework, water and moored boats: built once ---------------------------------------
   private build() {
     const z0 = this.z0, d = this.d;
-    const waterMat = new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-    const stoneMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: stoneTex ??= wall("stone", false) });
+    const waterMat = waterLook(new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    const stoneMat = wetBy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: stoneTex ??= wall("stone", false) }));
     const STONE = "#c3ae84", COPING = "#a89c86", DARK = "#4a3f33", BRICK = "#5a3c2e";
     const add = (o: THREE.Object3D, range = 700) => {
       this.group.add(o);
@@ -734,6 +735,7 @@ export class Canal {
         g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
         g.setIndex(idx);
         g.computeVertexNormals();
+        waterCorners(g, [r.p.slice(k0, k1 + 1)], CANAL_FLOW);
         const m = new THREE.Mesh(g, waterMat);
         m.receiveShadow = true;
         this.runWater[ri].push(m);
@@ -749,6 +751,7 @@ export class Canal {
       for (const h of b.r.slice(1)) shape.holes.push(new THREE.Path(ring(h)));
       const g = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
       g.translate(0, b.lv - z0, 0);
+      waterCorners(g, [], 0);
       const m = new THREE.Mesh(g, waterMat);
       m.receiveShadow = true;
       add(m);
@@ -811,7 +814,8 @@ export class Canal {
           grp.add(leaf);
           lk.leaves.push(leaf);
         }
-      lk.water = new THREE.Mesh(new THREE.PlaneGeometry(lk.L - SHORT * 2, LOCK_HALF * 2).rotateX(-Math.PI / 2), waterMat);
+      const half = lk.L / 2 - SHORT;
+      lk.water = new THREE.Mesh(waterCorners(new THREE.PlaneGeometry(half * 2, LOCK_HALF * 2).rotateX(-Math.PI / 2), [[[-half, 0], [half, 0]]], 0), waterMat);
       lk.water.position.set(lk.L / 2, lk.level - z0, 0);
       grp.add(lk.water);
       lk.foam = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.2).rotateX(-Math.PI / 2), foamMat.clone());

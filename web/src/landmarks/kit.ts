@@ -9,6 +9,7 @@ import * as TX from "../textures";
 import { paintLight } from "../stainedglass";
 import { nightNow } from "../daylight";
 import { kindOf } from "../kinds";
+import { wetBy, wetLike } from "../water";
 
 /** Lay a model's texture out by size, tile metres to a repeat, from where each face is in the
  *  set piece: each face takes the two axes it lies across (a wall along x takes x and height). */
@@ -159,7 +160,7 @@ export class Kit {
       const merged = mergeGeometries(geos);
       if (!merged) { for (const { mat, geo } of items) grp.add(new THREE.Mesh(geo, mat)); continue; }
       merged.computeBoundingSphere();
-      const mat = items[0].mat.clone();
+      const mat = wetLike(items[0].mat, items[0].mat.clone());
       mat.color.setRGB(1, 1, 1);
       mat.vertexColors = true;
       grp.add(new THREE.Mesh(merged, mat));
@@ -331,7 +332,7 @@ export function glow(mesh: THREE.Object3D, mat: THREE.MeshLambertMaterial, day: 
 }
 
 /** Bath stone, honey-coloured; shade for the darker, weathered parts. */
-export function stone(tint = "#e9d6aa") { return lam({ map: once("stone", () => TX.wall("stone", false)), color: tint }); }
+export function stone(tint = "#e9d6aa") { return wetBy(lam({ map: once("stone", () => TX.wall("stone", false)), color: tint })); }
 /** Bath stone with Georgian sash windows, one to a bay of 3.4 m by a storey, lit after dark. */
 export function georgian(tint = "#ecdcb4") {
   return lam({ map: once("geo", () => TX.wall("stone", true)), color: tint, emissiveMap: once("geoGlow", () => TX.windowGlow("stone")), emissive: "#ffffff", emissiveIntensity: 0 });

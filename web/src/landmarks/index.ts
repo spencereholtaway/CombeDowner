@@ -91,6 +91,12 @@ const lampsOf = new WeakMap<GameMap, number[]>();
  *  light the ground round them after dark as it does the street lamps'. A builder lists its own,
  *  in its own frame, in its model's userData.lamps. */
 export const landmarkLamps = (map: GameMap): number[] => lampsOf.get(map) ?? [];
+/** The weirs a landmark draws itself (a set piece standing where the map's own weir was), as the
+ *  map gives its weirs (wf): each crest [data x, y, the upper water's level] with the lower water on
+ *  its right, and b that water's level. A landmark lists them in its own frame in userData.falls:
+ *  { p: [x, z][] (the lower water on the right looking down on it), drop }, its water's level y = 0. */
+const fallsOf = new WeakMap<GameMap, { p: number[][]; b: number }[]>();
+export const landmarkFalls = (map: GameMap) => fallsOf.get(map) ?? [];
 
 /** Build the map's landmarks (or the list given: the wider map's) into the scene. */
 export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d.lm ?? []) {
@@ -119,6 +125,16 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
       }
     }
     delete obj.userData.lamps;
+    const falls = obj.userData.falls as { p: number[][]; drop: number }[] | undefined;
+    if (falls?.length) {
+      obj.updateMatrix();
+      const v = new THREE.Vector3(), top = z as number, out = fallsOf.get(map) ?? fallsOf.set(map, []).get(map)!;
+      for (const f of falls) {
+        const p = f.p.map(([fx, fz]) => { v.set(fx, 0, fz).applyMatrix4(obj.matrix); return [v.x, -v.z, top]; });
+        if (!out.some((o) => o.p[0][0] === p[0][0] && o.p[0][1] === p[0][1])) out.push({ p, b: top - f.drop });
+      }
+    }
+    delete obj.userData.falls;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });
     obj.userData.landmark = kind;   // its name, for the drone's "what's what" (drone.ts)
     scene.add(tag(obj, SET_PIECE_KINDS.has(kind as string) ? "setpiece" : "landmark"));
