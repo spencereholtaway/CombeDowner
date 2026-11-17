@@ -2676,6 +2676,13 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
 STREET_HOLE = 1.0     # m2 of bare ground inside a street's width, between its faces, before it counts
 
 
+def _deck(r):
+    """The ground a bridge's deck covers from above, along the stretch of its line that is bridge, out to the ends it lands on."""
+    f, h = _flags(r), max(_deck_sides(r))
+    runs = [LineString([r["p"][i][:2], r["p"][i + 1][:2]]) for i in range(len(f) - 1) if 1 in (f[i], f[i + 1])]
+    return shapely.union_all([s.buffer(h, cap_style="flat") for s in runs]) if runs else Polygon()
+
+
 def street_holes(m, f, sheet, note, at, inner, fig):
     """53. A street is drawn all over, out to its pavements' backs: no patch of bare ground (grass, or
     the earth with its edge standing round it) left inside a street's carriageway and pavements where
@@ -2690,8 +2697,9 @@ def street_holes(m, f, sheet, note, at, inner, fig):
         half = _road_half(r["c"], r.get("w"))
         pv = r.get("pv") or ([1.7, 1.7] if r["c"] in GAME_KERBED else [0, 0])
         strips.append(line.buffer(half, cap_style="flat"))
+        # (a slip road's pavement is the build's guess, and it leaves the verge beside it as ground)
         for side, w in zip((1, -1), pv):
-            if w > 0.3: strips.append(line.buffer(side * (half + w), cap_style="flat", single_sided=True))
+            if w > 0.3 and not r["c"].endswith("_link"): strips.append(line.buffer(side * (half + w), cap_style="flat", single_sided=True))
         for q in (r["p"][0], r["p"][-1]): ends[(round(q[0]), round(q[1]))].append(half)
     # (where three or more streets meet, the carriageway runs on round the junction's corners; a dead
     # end's does not, and a corner with no pavement drawn on it is left to the verge)
@@ -2701,6 +2709,7 @@ def street_holes(m, f, sheet, note, at, inner, fig):
     covered += [_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
     covered += [h for _, h in next_door(f, m)]
     covered += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
+    covered += [_deck(r) for r in m.get("rd") or [] if 1 in _flags(r)]
     if m.get("centre"): covered += set_piece_streets(tuple(m["centre"]))
     holes = shapely.union_all(strips).difference(shapely.union_all(covered).buffer(0.05)).intersection(inner)
     total = 0.0
