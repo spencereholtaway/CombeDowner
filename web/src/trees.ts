@@ -216,6 +216,10 @@ const BAND = 0.25;
 /** Plants are dealt into both levels this far either side of a blend, so the blend is never cut short
  *  between one dealing out and the next (every 3 m moved, or 6 m at a car's speed). */
 const SLACK = 6;
+/** Nearer in, a crown's leaves are seen speck by speck, and the dark specks make it look darker
+ *  than its picture, which is smooth; further off they blur together and the two match. So nearer
+ *  than DIM_TO a picture is darkened, by up to NEAR_DIM, to look like the crown it stands in for. */
+const NEAR_DIM = 0.85, DIM_FROM = 40, DIM_TO = 140;
 /** The flat pictures are drawn from this many sides of each plant, and the nearest two blended. */
 const SIDES = 8;
 const KINDS = 4;   // two broadleaf trees, a conifer, a shrub
@@ -352,7 +356,8 @@ function vegetationKit(look: Region["trees"]): VegetationKit {
           #endif`);
       // the two sides' pictures mixed, outline and all, so turning round a plant morphs it
       shader.fragmentShader = "uniform sampler2D uFacing; varying vec2 vUvA, vUvB; varying float vSideMix; varying vec3 vBbRight, vBbToCam;\n" + shader.fragmentShader
-        .replace("#include <map_fragment>", "diffuseColor *= mix(texture2D(map, vUvA), texture2D(map, vUvB), vSideMix);")
+        .replace("#include <map_fragment>", `diffuseColor *= mix(texture2D(map, vUvA), texture2D(map, vUvB), vSideMix);
+          diffuseColor.rgb *= mix(${NEAR_DIM}, 1.0, smoothstep(${f(DIM_FROM)}, ${f(DIM_TO)}, length(vViewPosition)));`)
         .replace("#include <lights_lambert_fragment>", `{
             vec3 fn = mix(texture2D(uFacing, vUvA).xyz, texture2D(uFacing, vUvB).xyz, vSideMix) * 2.0 - 1.0;
             normal = normalize(mat3(viewMatrix) * (vBbRight * fn.x + vec3(0.0, fn.y, 0.0) + vBbToCam * fn.z));
@@ -382,9 +387,6 @@ function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: TH
   // Shrunk by averaging the light itself, not the stored values: averaging those darkens a speckled
   // crown by a sixth, and the far trees came out darker than the near ones.
   const toLight = new Float32Array(256).map((_, v) => Math.pow(v / 255, 2.2));
-  // Measured against the close crowns in the same light, a picture still comes out a little darker
-  // (by about the same share in sun or shade), so it's lifted to match.
-  const LIFT = 1.2;
   const scene = new THREE.Scene();
   scene.add(new THREE.AmbientLight(0xffffff, Math.PI));
   const own = pictureRenderer() ? null : new THREE.WebGLRenderer({ alpha: true });
@@ -425,7 +427,7 @@ function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: TH
             const i = ((h - 1 - (y * UP + dy)) * w + x * UP + dx) * 4, a = px[i + 3] / 255;
             r0 += toLight[px[i]] * a; g0 += toLight[px[i + 1]] * a; b0 += toLight[px[i + 2]] * a; a0 += a;
           }
-          const o = (y * CW + x) * 4, back = (v: number) => a0 ? Math.round(255 * Math.min(1, Math.pow(LIFT * v / a0, 1 / 2.2))) : 0;
+          const o = (y * CW + x) * 4, back = (v: number) => a0 ? Math.round(255 * Math.min(1, Math.pow(v / a0, 1 / 2.2))) : 0;
           img.data[o] = back(r0); img.data[o + 1] = back(g0); img.data[o + 2] = back(b0); img.data[o + 3] = Math.round(255 * a0 / (UP * UP));
         }
         g.putImageData(img, side * CW, k * CH);
