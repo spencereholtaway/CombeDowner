@@ -24,7 +24,7 @@ import type { Mover, Pond } from "./map";
 import { compact } from "./railway";
 import { wall } from "./textures";
 import { tag } from "./kinds";
-import { CANAL_FLOW, waterCorners, waterLook, wetBy } from "./water";
+import { CANAL_FLOW, type ShoreWater, waterCorners, waterLook, wetBy } from "./water";
 
 export interface CanalData {
   runs: { lv: number; p: number[][]; x?: number[][] }[];
@@ -1055,6 +1055,16 @@ export class Canal {
     if (r.p[k][6] & 2 && across < half + 3) return y + 0.4;
     return null;
   }
+
+  /** The basins this draws itself, for the shore (water.ts): its middle lines don't reach across them. */
+  basinWater(): ShoreWater[] {
+    return this.basinShore ??= (this.d.basins ?? []).filter((b) => !b.own).map((b) => {
+      const box = [Infinity, Infinity, -Infinity, -Infinity];
+      for (const [x, y] of b.r[0]) { box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y); box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y); }
+      return { r: b.r, y: b.lv - this.z0, box };
+    });
+  }
+  private basinShore?: ShoreWater[];
 
   /** The level of the canal's water at scene (x, z) (scene Y), or null off it: 1.2 m over the bed floor() gives. */
   waterAt(x: number, z: number): number | null {

@@ -3568,7 +3568,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // (made only when fancy water first needs it: Simple water has no shore picture)
   let shore: ShoreMap | null = null;
   const shoreSrc: ShoreSource = {
-    ponds: (x0, z0, x1, z1) => [...drawnWater, ...(tiles?.water() ?? [])].filter((w) => w.box[2] >= x0 && w.box[0] <= x1 && -w.box[1] >= z0 && -w.box[3] <= z1),
+    ponds: (x0, z0, x1, z1) => [...drawnWater, ...(tiles?.water() ?? []), ...(map.canal instanceof Canal ? map.canal.basinWater() : [])].filter((w) => w.box[2] >= x0 && w.box[0] <= x1 && -w.box[1] >= z0 && -w.box[3] <= z1),
     lines: () => {
       const d = map.canal instanceof Canal ? map.canal.d : null;
       return d ? [...d.runs.map((r) => r.p), ...d.locks.map((l) => [[...l.lo, 3], [...l.hi, 3]])] : [];

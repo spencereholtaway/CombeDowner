@@ -371,7 +371,8 @@ const FRAG_SURFACE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV)
   // shows through, and the water laps at the bank in a broken white line
   float wEdge = clamp(distance(wp, vWC.xy) / max(vWC.z, 0.5), 0.0, 1.0);
   diffuseColor.rgb = wDeep * mix(0.8, 1.0, smoothstep(0.3, 0.9, wEdge));
-  float wSh = wShore.a;
+  // (land with no water near it, under water: water the picture doesn't know, so not the shore)
+  float wSh = wShore.b > 0.0 || wShore.a < 0.99 ? wShore.a : 0.0;
   diffuseColor.rgb = mix(diffuseColor.rgb, wShallow, step(0.5, wSh + wHash(floor(wp * 2.0)) * 0.15) * 0.3);
   float wLap = wNoise(wp * 2.5 + vec2(wTime * 0.3, 0.0)).x + 0.2 * sin(wTime * 1.4 - wSh * 9.0);
   // (a thin line at most: only where the land is right by, and fading out far off where it'd be a white rim)
