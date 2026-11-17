@@ -68,10 +68,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down only at its weirs and dams, where the water falls over a stone crest into the water below
   (Twerton, Kelston, Saltford, Warleigh and Avoncliff weirs, and the dam below Prior Park's top
   lake), and a tank, a pool or a reservoir stands in concrete walls wherever its water is above the
-  ground round it, as the filter beds do at the sewage works. The water ripples in the wind, a
+  ground round it, as the filter beds do at the sewage works. The water (streams too) ripples in the wind, a
   river's surface drifts downstream with its current, it mirrors the sky (dusk and night too) with
   the sun glinting off it, it's dark and green in the middle and paler at the banks, and it churns
-  white below every weir, Pulteney Weir's horseshoe among them. Simple water in Settings (the normal
+  white below every weir, Pulteney Weir's horseshoe among them, white water streaming down each weir's face. Simple water in Settings (the normal
   at Low scenery detail, so on phones and tablets) keeps it to one calm colour with the sky's in it
   and the weirs' white water, for slower machines; `?water=simple` or `?water=fancy` tries one. You can wade into the water and walk
   along its bed: where it's deeper than you are tall (out in the sea off Cape Town's quays), the

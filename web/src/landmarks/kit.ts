@@ -127,9 +127,10 @@ export class Kit {
     // piece's stone in several tints is then one draw rather than one apiece. Anything that lights
     // up after dark (glow()) and anything marked ghost (the Abbey's angels, which you climb
     // through) or for a gun mode (look()) keeps a mesh and material of its own, so the night glow
-    // still works and the angels stay out of the way.
+    // still works and the angels stay out of the way; so does water pouring (water.ts fallingWater),
+    // whose look a copied material would lose.
     const own = (m: THREE.MeshLambertMaterial) =>
-      !!(m.userData?.ghost || m.userData?.look) || !!m.emissiveMap || !!m.emissive && !!(m.emissive.r || m.emissive.g || m.emissive.b);
+      !!(m.userData?.ghost || m.userData?.look || m.userData?.water) || !!m.emissiveMap || !!m.emissive && !!(m.emissive.r || m.emissive.g || m.emissive.b);
     const keyOf = (m: THREE.MeshLambertMaterial) =>
       [m.type, m.map?.uuid ?? "", m.alphaMap?.uuid ?? "", m.side, m.transparent, m.opacity, m.alphaTest, m.depthWrite, m.blending ?? 1].join("|");
     const byKey = new Map<string, { mat: THREE.MeshLambertMaterial; geos: THREE.BufferGeometry[] }[]>();   // merges by look

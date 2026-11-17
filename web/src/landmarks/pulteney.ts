@@ -25,6 +25,7 @@
 import * as THREE from "three";
 import * as TX from "../textures";
 import { Kit, stone, plain, slate, sashGlass, archedGlass, glow, roundArch } from "./kit";
+import { fallingWater } from "../water";
 
 const L0 = -20.4, L1 = 20.4;           // the bridge's ends, where the banks' walls are
 const W0 = -24.9;                      // the upstream shops reach on over the west bank
@@ -194,7 +195,8 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
     }
     // the crest, and the sheet of water pouring off its inside down to the river below (whose own
     // surface churns white from there on: water.ts)
-    const pour = plain("#d6dfdd");
+    const pour = fallingWater(plain("#d6dfdd"));
+    pour.userData.water = true;
     for (const arm of [east, west]) for (let i = 0; i < arm.length - 1; i++) {
       const [ax, az] = arm[i], [bx, bz] = arm[i + 1], l = Math.hypot(bx - ax, bz - az);
       let nx = -(bz - az) / l, nz = (bx - ax) / l;

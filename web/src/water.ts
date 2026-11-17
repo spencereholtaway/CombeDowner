@@ -1,4 +1,4 @@
-// How open water looks: the river, the canal and its locks, ponds, lakes and pools. The surface is
+// How open water looks: the river, the canal and its locks and basins, streams, ponds, lakes and pools. The surface is
 // still one flat sheet of triangles, but each spot on it is drawn rippling in the light: a few
 // wind ripples crossing it, and a broken chop carried along with the current, downstream on a river
 // (the way its middle line runs in the map) and drifting slowly on still water. Looked at from a
@@ -6,7 +6,8 @@
 // (or by night the moon) glinting off the ripples; looked straight down into it, it's dark and
 // green in the middle. Where it meets the land it laps in a broken white line, and the ground, the
 // banks' and locks' stone and bridges' piers are dark and wet just above it (ShoreMap, wetBy). Below
-// a weir the water churns white. It's drawn in squares as coarse as the world's own textures.
+// a weir the water churns white, and down a weir's face white streaks pour with the flow
+// (fallingWater). It's drawn in squares as coarse as the world's own textures.
 // Every water mesh shares the one look, so it costs no more draws than flat water did, and the
 // Low scenery detail (view.ts) leaves out the finest chop.
 //
@@ -297,6 +298,53 @@ export function wetBy<M extends THREE.Material>(m: M): M {
       .replace("#include <color_fragment>", `#include <color_fragment>\n  ${WET_FRAG}`);
   };
   m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + (built === "simple" ? "" : "|wet"); };
+  return m;
+}
+
+// Water pouring over a weir: white streaks and broken water sliding down its face with the flow,
+// smooth rather than in the world's coarse squares, which shimmer on a steep face seen edge-on
+const FALL_DECL = `varying vec3 vFallAt; varying float vFall; uniform float wTime;
+float fwHash(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+float fwNoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(fwHash(i), fwHash(i + vec3(1, 0, 0)), u.x), mix(fwHash(i + vec3(0, 1, 0)), fwHash(i + vec3(1, 1, 0)), u.x), u.y),
+             mix(mix(fwHash(i + vec3(0, 0, 1)), fwHash(i + vec3(1, 0, 1)), u.x), mix(fwHash(i + vec3(0, 1, 1)), fwHash(i + vec3(1, 1, 1)), u.x), u.y), u.z);
+}`;
+// (the pattern's carried downwards in the world, so it runs down a face whatever way the face lies;
+// how white the face is already, from glassy at the crest to white at the foot, sets how much breaks)
+const FALL_FRAG = `if (vFall > 0.5) {
+    vec3 fq = vec3(vFallAt.x, vFallAt.y + wTime * 1.8, vFallAt.z);
+    float fn = fwNoise(fq * vec3(1.4, 0.7, 1.4)) * 0.65 + fwNoise(fq * vec3(3.5, 1.8, 3.5) + 7.0) * 0.35;
+    float fw = dot(diffuseColor.rgb, vec3(0.33));
+    float fb = smoothstep(0.46, 0.6, fn + (fw - 0.55) * 0.4);
+    vec3 fGap = mix(diffuseColor.rgb, vec3(0.3, 0.42, 0.47), 0.55) * mix(0.8, 1.1, fn);
+    diffuseColor.rgb = mix(fGap, vec3(0.88, 0.91, 0.91), fb);
+  }`;
+const fallDone = new WeakSet<THREE.Material>();
+/** Let material m (a Lambert one) show water pouring down it: all of it, or with masked, only where
+ *  its geometry's weirWater attribute is 1 (the rest, its stone, keeps any wet band it has). */
+export function fallingWater<M extends THREE.Material>(m: M, masked = false): M {
+  if (fallDone.has(m)) return m;
+  fallDone.add(m);
+  looks.push(new WeakRef(m));
+  const was = m.onBeforeCompile, ownKey = m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey : null;
+  m.onBeforeCompile = function (this: THREE.Material, sh, r) {
+    was.call(this, sh, r);
+    Object.assign(sh.uniforms, U, SU);
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${masked ? "attribute float weirWater;" : ""}\nvarying vec3 vFallAt; varying float vFall;`)
+      .replace("#include <project_vertex>", `#include <project_vertex>
+  vec4 fallAt = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  fallAt = instanceMatrix * fallAt;
+#endif
+  vFallAt = (modelMatrix * fallAt).xyz; vFall = ${masked ? "weirWater" : "1.0"};`);
+    // (pouring water isn't stone at the water's edge: no wet band on it)
+    sh.fragmentShader = sh.fragmentShader.replace("if (ws.b > 0.02) {", "if (ws.b > 0.02 && vFall < 0.5) {");
+    if (built === "simple") { sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vFallAt; varying float vFall;"); return; }
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FALL_DECL}`)
+      .replace("#include <color_fragment>", `#include <color_fragment>\n  ${FALL_FRAG}`);
+  };
+  m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + `|fall${masked ? "m" : ""}|${built}`; };
   return m;
 }
 

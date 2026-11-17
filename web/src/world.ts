@@ -56,7 +56,7 @@ export function groundCdt(): boolean {
 }
 import { SunShadows, inPieces } from "./shadows";
 import { tag, tagSince } from "./kinds";
-import { RIVER_FLOW, ShoreMap, type ShoreSource, type ShoreWater, waterCorners, waterLook, waterMode, waterSky, waterWeirs, wetBy } from "./water";
+import { RIVER_FLOW, ShoreMap, type ShoreSource, type ShoreWater, fallingWater, waterCorners, waterLook, waterMode, waterSky, waterWeirs, wetBy } from "./water";
 
 const CHUNK = 320;
 
@@ -1340,8 +1340,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   mark("ground");
   // ---- ribbons draped on the terrain -------------------------------------------------
-  const ribbon = (lines: { p: number[][] }[], width: (l: any) => number, lift: number) => {
-    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+  /** flow: lay it as running water (water.ts waterCorners' attributes), flowing first point to last at this speed (m/s). */
+  const ribbon = (lines: { p: number[][] }[], width: (l: any) => number, lift: number, flow?: number) => {
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [], wc: number[] = [], wf: number[] = [];
     for (const L of lines) {
       const p = L.p, w = width(L) / 2, n = p.length, base = pos.length / 3;
       if (n < 2) continue;
@@ -1359,12 +1360,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const lx = p[i][0] + nx * s, ly = p[i][1] + ny * s, rx = p[i][0] - nx * s, ry = p[i][1] - ny * s;
         pos.push(lx, map.trueGround(lx, -ly) + lift, -ly, rx, map.trueGround(rx, -ry) + lift, -ry);
         uv.push(0, along / 4, w / 2, along / 4);
+        if (flow !== undefined) {
+          wc.push(p[i][0], -p[i][1], w, p[i][0], -p[i][1], w);
+          wf.push(b[1] * flow, b[0] * flow, b[1] * flow, b[0] * flow);
+        }
         if (i < n - 1) { const k = base + i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); along += seg[i][2]; }
       }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    if (flow !== undefined) {
+      g.setAttribute("waterC", new THREE.Float32BufferAttribute(wc, 3));
+      g.setAttribute("waterF", new THREE.Float32BufferAttribute(wf, 2));
+    }
     g.setIndex(idx);
     g.computeVertexNormals();
     return freeOnUpload(g);
@@ -1457,6 +1466,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const flatMat = (color: string, off: number, map?: THREE.Texture) =>
     lampLit(new THREE.MeshLambertMaterial({ color, ...(map ? { map } : {}), polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 }));
   const asphalt: THREE.Texture = S.asphalt ??= TX.asphalt();
+  // (ponds, rivers and streams all share it, so a stream costs no draw of its own kind)
+  const waterMaterial = (): THREE.Material => S.waterMat ??= waterLook(new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
   const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material, thin = false) => {
     if (!g) return;
@@ -1488,7 +1499,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const half = (r: { c: string; w?: number }) => width(r) / 2;
   const roadMats: Record<string, THREE.Material> = S.roadMats ??= {
     path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
-    pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
+    pave: flatMat("#a29f97", 2, asphalt),
     // paths the map says are worn grass, bare earth or gravel
     grass: flatMat("#b3ad78", 1, groundTex), dirt: flatMat("#86684a", 1, groundTex), gravel: flatMat("#b9b2a2", 1, groundTex),
     // the railway's bed, with the sheet: its ballast's colour (railway.ts), just under its top
@@ -2124,7 +2135,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     add(geo.steel.build(), steelMat, true, false, "steel");
     add(geo.front.build(), S.pathMat!, false, true, "front");
     add(geo.bed.build(), roadMats.ballast, false, false, "ballast");
-    if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream, false, false, "stream");
+    if (wl.length) add(ribbon(wl, () => 1.6, 0.05, RIVER_FLOW), waterMaterial(), false, false, "stream");
     return out;
   }
   const roadMeshes = (rd: Road[], wl: Line[], own?: (r: any) => boolean) => run(roadMeshesGen(rd, wl, own));
@@ -2392,7 +2403,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   // ponds and the lake
   // (both sides: with your eyes under it you look up at it, as you do at the canal's)
-  const waterMat: THREE.Material = S.waterMat ??= waterLook(new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+  const waterMat = waterMaterial();
   const rivers = D.wl.filter((l) => l.c === "river").map((l) => l.p);
   const pondMesh = (w: Pond) => {
     const shape = new THREE.Shape(w.r[0].map(([x, y]) => new THREE.Vector2(x, y)));
@@ -2438,15 +2449,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // round it, and each weir's stone crest with the white water falling from it into the water below:
   // one mesh for the square
   {
-    const pos: number[] = [], col: number[] = [];
+    const pos: number[] = [], col: number[] = [], wet: number[] = [];
     const g = (x: number, y: number) => map.ground(x, -y);
     const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => {
       pos.push(...a, ...b, ...c, ...a, ...c, ...d);
-      for (let q = 0; q < 6; q++) col.push(...cc);
+      for (let q = 0; q < 6; q++) { col.push(...cc); wet.push(0); }
     };
+    // (water, not stone: it pours, water.ts fallingWater)
     const quad4 = (a: number[], b: number[], c: number[], d: number[], ca: number[], cb: number[], cc: number[], cd: number[]) => {
       pos.push(...a, ...b, ...c, ...a, ...c, ...d);
       col.push(...ca, ...cb, ...cc, ...ca, ...cc, ...cd);
+      for (let q = 0; q < 6; q++) wet.push(1);
     };
     const P = (x: number, y: number, h: number) => [x, h, -y];
     const CONCRETE = [0.62, 0.61, 0.58];
@@ -2515,8 +2528,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+      geo.setAttribute("weirWater", new THREE.Float32BufferAttribute(wet, 1));
       geo.computeVertexNormals();
-      S.weirMat ??= wetBy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+      S.weirMat ??= fallingWater(wetBy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })), true);
       const m = new THREE.Mesh(geo, S.weirMat);
       m.receiveShadow = true;
       m.userData.water = true;
