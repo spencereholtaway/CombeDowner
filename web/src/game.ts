@@ -1002,8 +1002,15 @@ export class Game {
     this.listen("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
     this.listen("ldr", here((d, from) => { if (this.isHost) this.applyLadder(from, d); }));
     this.listen("lds", here((d, from) => {
-      // a host that's just handed over sends us what it had: keep it all
-      if (this.isHost) { if (from !== this.net.selfId) { this.ladders.merge(d); this.sendLadders(); } return; }
+      // a host that's just handed over sends us what it had: keep it all. Not from a tab we've never
+      // met, which may still think it's host and would answer every list we send with its old one;
+      // and only say so if it changed anything, or two hosts would answer each other for ever
+      if (this.isHost) {
+        if (from === this.net.selfId || !this.peers().includes(from)) return;
+        const about = new Set(this.targets().filter((t) => t.alive).map((t) => t.id));
+        if (this.ladders.merge(d, (id) => about.has(id))) this.sendLadders();
+        return;
+      }
       if (from !== this.hostId) return;
       const had = this.ladders.carriers.has(this.net.selfId), asked = performance.now() - this.ladderAsked < 3000;
       this.ladders.apply(d);

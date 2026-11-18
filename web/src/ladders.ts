@@ -64,6 +64,7 @@ export class Ladders {
   onRaise: (x: number, y: number, z: number) => void = () => {};
   private group = new THREE.Group();
   private last = new Map<string, [number, number]>();   // host: where each carrier was last seen
+  private down = new Set<string>();                      // host: carriers who've dropped theirs and not got up since
   private nextId = 1 + Math.floor(Math.random() * 1e6);
   private t = 0;
 
@@ -138,13 +139,18 @@ export class Ladders {
   host(dt: number, players: { id: string; x: number; z: number; alive: boolean }[]): { drops: [number, number][]; changed: boolean } {
     const drops: [number, number][] = [];
     let changed = false;
-    for (const p of players) if (p.alive && this.carriers.has(p.id)) this.last.set(p.id, [p.x, p.z]);
+    for (const p of players) {
+      if (p.alive) this.down.delete(p.id);
+      if (p.alive && this.carriers.has(p.id)) this.last.set(p.id, [p.x, p.z]);
+    }
     for (const id of [...this.carriers]) {
       const p = players.find((q) => q.id === id);
       if (p?.alive) continue;
       this.carriers.delete(id);
       const at = p ? [p.x, p.z] as [number, number] : this.last.get(id);
-      if (at) drops.push(at);
+      // one ladder per fall, however it came to be put back on someone lying there
+      if (at && !(p && this.down.has(id))) drops.push(at);
+      if (p) this.down.add(id);
       this.last.delete(id);
       changed = true;
     }
@@ -178,14 +184,19 @@ export class Ladders {
     for (const id of [...this.up.keys()]) if (!seen.has(id)) this.remove(id);
   }
 
-  /** Host: take on what a host before us had too (it hands over when someone with a lower id turns up). */
-  merge(d: { c?: unknown; u?: unknown }) {
-    if (!d || !Array.isArray(d.c) || !Array.isArray(d.u)) return;
-    for (const c of d.c) if (typeof c === "string") this.carriers.add(c);
+  /** Host: take on what a host before us had too (it hands over when someone with a lower id turns up).
+   *  Only those up and about here can be carrying: the old host's word on anyone else is stale, and
+   *  taking it would give a ladder back to someone who's just dropped theirs by dying.
+   *  Returns true if anything changed. */
+  merge(d: { c?: unknown; u?: unknown }, about: (id: string) => boolean): boolean {
+    if (!d || !Array.isArray(d.c) || !Array.isArray(d.u)) return false;
+    const was = JSON.stringify(this.snapshot());
+    for (const c of d.c) if (typeof c === "string" && about(c)) this.carriers.add(c);
     const had = new Set(this.up.keys()), raise = this.onRaise;
     this.onRaise = () => {};   // they're already up
     this.apply({ c: [...this.carriers], u: [...this.snapshot().u, ...d.u.filter((e) => Array.isArray(e) && !had.has(e[0]))] });
     this.onRaise = raise;
+    return JSON.stringify(this.snapshot()) !== was;
   }
 
   /** Ladders near scene (x, z), for the player to get on. */
