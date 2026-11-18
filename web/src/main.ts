@@ -1057,6 +1057,13 @@ if (UP) whenReady(() => {
   else { start("SOLO", true); game!.news(UP_TOAST); }
 });
 
+// ?solo=1 skips the menu straight into practice, so a link with ?at= drops you at that spot
+if (!UP && params.get("solo") === "1") whenReady(() => {
+  const name = $<HTMLInputElement>("name");
+  if (!name.value.trim()) name.value = "Tester";
+  start("SOLO", true);
+});
+
 // for automated tests
 (window as any).__game = () => game;
 (window as any).__trophies = Trophies;

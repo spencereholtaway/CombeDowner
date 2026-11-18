@@ -91,6 +91,7 @@ work on it. Useful URL options:
   clockwise from north and up from level), and the menu backdrop looks from there (a fifth number
   lifts the backdrop that many metres off the ground, for views from the air). Shift+F3 copies a
   link to where you're standing.
+- `?solo=1` skips the menu and starts a practice game at once (with `?at=`, right at that spot).
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - `?progression=1|0` switches the zones, the strange objects and structures, and the team challenges
   on or off together for one visit (`web/src/features.ts`). By default they're on at

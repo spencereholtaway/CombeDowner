@@ -48,7 +48,8 @@ const SENS = 1, MUSIC = 0.6, SFX_VOL = 1, BACKGROUND = 1, VOICE = 1;
 export let passive = load("cd-passive", 0) === 1;
 
 /** Explore all of the map with no zones (zones.ts): if you're host, for the whole room. ?progression=0 (features.ts) does it for one visit. */
-export let freeRoam = load("cd-freeroam", 0) === 1;
+// a ?solo=1 link drops you at its spot, which may be past the zones you have open
+export let freeRoam = load("cd-freeroam", 0) === 1 || new URLSearchParams(location.search).get("solo") === "1";
 
 /** Mouse sensitivity, as a multiple of the normal. */
 export let sensitivity = load("cd-sens", SENS) || SENS;
