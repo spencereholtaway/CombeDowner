@@ -10,7 +10,8 @@
 // after dark. The set piece puts a level pavement on it out to the balustrade, so you can walk
 // along the river's edge without falling in. The street itself is the map's, as it was.
 // args (after kind, x, y, height, angle): the street's level at x = 0 and x = 103, where its
-// middle is (z) at those two, and the water's level below, all above the origin.
+// middle is (z) at those two, the water's level below, and the top of the map's pavement along the
+// set piece's edge every metre from the bridge, all above the origin.
 //
 // The Empire Hotel (empire): Major Charles Davis's hotel of 1899-1901 on the corner of Grand
 // Parade and Orange Grove, a great block in the Free Renaissance style: a rusticated ground floor
@@ -35,7 +36,11 @@ export const BRIDGE = 1.9;
 const COLS = 40, BAYW = 4.6;      // the colonnade from here, its bays this wide (thirteen of them to P1)
 const FACE = -11.0;               // the wall's face to the river
 const BAL = -12.0;                // the balustrade, at the colonnade's front
-const HALF = 4.25;                // half the carriageway
+/** The set piece's edge on the street side: the map's pavement runs from there to the kerb. */
+export const OUT = -6.5;
+const STEP = 1;                   // metres between the heights of the pavement read along its edge
+const NONE = -99;                 // no pavement read there
+const PAVE_UP = 0.15;             // the paving's top over the street's level, where there's no pavement to meet
 
 export function paradeArgs(c: PlaceCtx, height: number): (number | string)[] {
   const pts: number[][] = [];
@@ -52,45 +57,81 @@ export function paradeArgs(c: PlaceCtx, height: number): (number | string)[] {
   };
   const [r0, r1] = fit(2), [c0, c1] = fit(1), w = c.waterAt(55, -16);
   const r = (v: number) => Math.round(v * 100) / 100;
-  return [r(r0), r(r1), r(c0), r(c1), r(w === null ? -10 : w - height)];
+  // the pavement's top just outside the edge, which the set piece's own paving comes up to
+  const edge: number[] = [];
+  for (let x = BRIDGE; x <= P1 + 1e-6; x += STEP) {
+    const h = c.facesAt(Math.min(x, P1), OUT + 0.25);
+    edge.push(h === null ? NONE : r(h - height));
+  }
+  // (where it reads no street, as where a path leaves it, the paving runs on level from the nearest
+  // reading rather than dropping to the carriageway's fitted line and back)
+  const read = edge.flatMap((h, k) => (h === NONE ? [] : [k]));
+  if (read.length) for (let k = 0; k < edge.length; k++) if (edge[k] === NONE)
+    edge[k] = edge[read.reduce((a, b) => (Math.abs(b - k) < Math.abs(a - k) ? b : a))];
+  return [r(r0), r(r1), r(c0), r(c1), r(w === null ? -10 : w - height), ...edge];
 }
 
 function parade(args: (number | string)[]) {
-  const [r0, r1, c0, c1, water] = args.map(Number);
+  const [r0, r1, , , water, ...edge] = args.map(Number);
+  const road = (x: number) => r0 + ((r1 - r0) * x) / 103;
   return {
-    road: (x: number) => r0 + ((r1 - r0) * x) / 103,
-    kerb: (x: number) => c0 + ((c1 - c0) * x) / 103 - HALF,          // the carriageway's edge on the river side
+    road,
+    /** The top of the paving at x, up to the map's pavement at its edge (a kerb over the street's
+     *  level where the square has none there). */
+    top: (x: number) => {
+      const f = (x - BRIDGE) / STEP, i = Math.max(0, Math.floor(f)), at = (k: number) => {
+        const h = edge[k];
+        return h === undefined || h === NONE || !Number.isFinite(h) ? road(BRIDGE + k * STEP) + PAVE_UP : h;
+      };
+      return at(i) + (at(i + 1) - at(i)) * Math.min(1, f - i);
+    },
     water: Number.isFinite(water) ? water : -10,
   };
 }
 
+/** A slab w long and d deep, centred on x = z = 0, its top at y0 at its -x end and y1 at its +x end, `thick` deep under its lower end. */
+function sloped(w: number, d: number, y0: number, y1: number, thick: number) {
+  const g = new THREE.BoxGeometry(w, 1, d), p = g.getAttribute("position"), foot = Math.min(y0, y1) - thick;
+  for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) > 0 ? (p.getX(i) < 0 ? y0 : y1) : foot);
+  g.computeVertexNormals();
+  return g;
+}
+
 export function colonnade(args: (number | string)[]): THREE.Object3D {
-  const { road, kerb, water } = parade(args);
+  const { top, water } = parade(args);
   const k = new Kit();
   const S = stone("#e6d2a6"), S2 = stone("#cdb68a"), R = rustic(), bal = balusters(), arched = archedGlass();
   const iron = plain("#1d2023"), lamp = plain("#fff0c4", { emissive: "#ffd27a", emissiveIntensity: 0 }), paving = stone("#bdb3a2");
   const floorY = water + 2.6;          // the colonnade's floor, above the river
   for (let x = P0; x < P1 - 0.01; x += BAYW) {
-    const x1 = Math.min(P1, x + BAYW), xm = (x + x1) / 2, y = road(xm), x0 = x < P0 + 0.01 ? BRIDGE : x;
+    const x1 = Math.min(P1, x + BAYW), x0 = x < P0 + 0.01 ? BRIDGE : x;
+    // (the bay at the level of the pavement along its edge, so the balustrade and paving meet it)
+    const n = Math.max(1, Math.round((x1 - x0) / STEP)), at = (i: number) => x0 + ((x1 - x0) * (i + 0.5)) / n;
+    const tops = [x0, ...Array.from({ length: n }, (_, i) => at(i)), x1].map(top);
+    const y = tops.reduce((a, b) => a + b, 0) / tops.length - PAVE_UP, xm = (x + x1) / 2;
+    // (what stands under the paving stops below its lowest point, where the pavement slopes along the bay)
+    const under = Math.min(...tops) - PAVE_UP;
     // the river wall, the colonnade's floor, and the wall behind it with an arch in each bay
     k.slab(R, x0, x1, water - 2, floorY, FACE - 0.6, FACE + 1.4, 3);
     k.slab(S2, x0, x1, floorY - 0.3, floorY, FACE - 1.4, FACE, 1.5);
-    k.slab(S, x0, x1, floorY, y, FACE, FACE + 1.4, 3);
+    k.slab(S, x0, x1, floorY, under, FACE, FACE + 1.4, 3);
     const open = x >= COLS - 0.01;
-    k.quad(arched, xm, floorY + (y - 1.6 - floorY) * 0.48, FACE - 0.02, BAYW * 0.62, (y - 1.6 - floorY) * 0.86, Math.PI);
+    k.quad(arched, xm, floorY + (under - 1.6 - floorY) * 0.48, FACE - 0.02, BAYW * 0.62, (under - 1.6 - floorY) * 0.86, Math.PI);
     // a Tuscan column in front (the colonnade), or a pilaster on the wall (on towards the bridge)
     if (open) {
       k.slab(S2, x - 0.45, x + 0.45, floorY, floorY + 0.4, FACE - 1.25, FACE - 0.35, 1);
-      k.cyl(S, x, floorY + 0.4, FACE - 0.8, 0.34, y - 2.1 - floorY - 0.4, 12, 0.29);
-      k.slab(S2, x - 0.45, x + 0.45, y - 2.1, y - 1.6, FACE - 1.25, FACE - 0.35, 1);
-    } else k.slab(S2, x - 0.35, x + 0.35, floorY, y - 1.6, FACE - 0.25, FACE, 1);
+      k.cyl(S, x, floorY + 0.4, FACE - 0.8, 0.34, under - 2.1 - floorY - 0.4, 12, 0.29);
+      k.slab(S2, x - 0.45, x + 0.45, under - 2.1, under - 1.6, FACE - 1.25, FACE - 0.35, 1);
+    } else k.slab(S2, x - 0.35, x + 0.35, floorY, under - 1.6, FACE - 0.25, FACE, 1);
     // the entablature, and the balustrade along the top with a pedestal every other bay
-    k.slab(S2, x0, x1, y - 1.6, y - 0.05, FACE - 1.45, FACE + 1.4, 1.5);
+    k.slab(S2, x0, x1, under - 1.6, under - 0.05, FACE - 1.45, FACE + 1.4, 1.5);
     k.quad(bal, (x0 + x1) / 2, y + 0.65, BAL, x1 - x0, 1.0, Math.PI, 0, 0, (x1 - x0) / 1.6, 1);
     k.slab(S2, x0, x1, y + 1.15, y + 1.3, BAL - 0.2, BAL + 0.2, 1);
-    // the pavement out to it, level, from the carriageway's kerb
-    const zk = Math.min(kerb(x0), kerb(x1));
-    if (zk - BAL > 0.6) k.slab(paving, x0, x1, y - 0.3, y + 0.15, BAL - 0.2, zk - 0.05, 2);
+    // the paving out to it from the set piece's edge, sloping as the map's pavement there does, to meet it at its height
+    for (let i = 0; i < n; i++) {
+      const a = x0 + ((x1 - x0) * i) / n, b = x0 + ((x1 - x0) * (i + 1)) / n;
+      k.add(paving, sloped(b - a, OUT - BAL + 0.2, top(a), top(b), 0.45), (a + b) / 2, 0, (BAL - 0.2 + OUT) / 2, 0, 2);
+    }
     const bay = Math.round((x - P0) / BAYW);
     if (bay % 2 === 0) {
       k.slab(S2, x - 0.35, x + 0.35, y + 0.15, y + 1.45, BAL - 0.35, BAL + 0.35, 1);

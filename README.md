@@ -84,7 +84,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
   Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. A footpath the
   map data takes under a street goes through a low arch under 2 m high in the bank, the street
-  carried over it and the arch only as long as the mapped tunnel. Where a street or a path runs on
+  carried over it and the arch only as long as the mapped tunnel. A lane or path the map data takes
+  through a building's passage well below the street crossing over it goes through a bore of its
+  own, from where it comes out on one side to the other, as high as the street over it leaves
+  room for and no wider than the buildings over it, with the buildings' own walls round its
+  openings rather than a tunnel's headwall: Spring Gardens Road runs under Argyle Street and its terraces, by the river, and you can
+  walk or drive through. Where a street or a path runs on
   through a building (an arch through a terrace into a mews or a yard, a castle's gatehouse, an
   arcade), the building has an opening at ground level as wide as the way, about 3.5 m high for a
   path and 4.5 m for a road (lower where the map gives a height limit, or the building is lower),

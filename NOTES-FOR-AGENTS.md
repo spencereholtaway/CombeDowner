@@ -21,6 +21,7 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Bridges' decks as a level of the street faces (branch `claude/bridge-levels`, plan `docs/plans/bridge-levels.md`):** the build writes `sf.lv` and `sf.dk` (`tools/partition/write_tile.py` street_surfaces, deck_level), the game only unpacks them so far (`sfpack.ts`); rules 28/42/53 level-aware and a new rule 54 (`check_more.py`), `watertight.py` per level.
 - **Set pieces cut into the street faces at build time, and Pulteney Bridge's ends made junctions
   (branch `claude/pulteney-ship`, the nine squares a set piece reaches rebuilt and committed:
   -2,8 0,3 0,5 1,1 1,2 1,3 2,1 2,3 4,1):** every set piece's outline now splits the square's faces as

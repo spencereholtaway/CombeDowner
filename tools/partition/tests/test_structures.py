@@ -113,6 +113,13 @@ class Structures(unittest.TestCase):
         self.assertEqual(n, 1)
         self.assertTrue(all(len(q) == 3 for q in road["p"]))
 
+    def test_a_bridge_going_on_into_the_next_square_is_kept(self):
+        road = dict(p=[[0, 0, 5.0], [4, 0, 5.0, 1], [8, 0, 5.0, 1], [12, 0, 5.0, 1]])
+        n = drop_empty_spans([road], lambda x, y: 5.0, [LineString([(0, 50), (1, 50), (1, 51)]).buffer(1)],
+                             [LineString([(0, 30), (10, 30)])], sq=(-20, -20, 12, 20))
+        self.assertEqual(n, 0)
+        self.assertEqual(road["p"][3][3], 1)
+
     def test_each_edge_gets_its_own_back_from_a_through_road(self):
         r = dict(parts=[(7, False, 0, 2), (9, True, 2, 4)], z=[1, 2, 3, 4, 5], span={3}, deck=set(), bored=[])
         out = split_back(r)

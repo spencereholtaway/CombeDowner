@@ -124,10 +124,12 @@ the other, its road meeting it at its own height at each end and climbing to it 
 (a side road joining it on the bridge meets the deck too), and where a square of the map's edge
 splits a bridge it carries straight on, with no pier or parapet end in the middle. You walk on a
 bridge exactly where it's drawn, right out to its parapets, and a slip road or approach beside it
-never lets you through; and only a real bridge is built as one, so a path along the top of a
+never lets you through; its piers, the posts at its parapets' ends and the parapets along an approach
+over a falling bank are as solid as they look; and only a real bridge is built as one, so a path along the top of a
 cutting has no parapets across the road. Over the canal every bridge leaves the water and the towpath open under an
 arch springing from the banks, with no pier in the water, so the boats and you on the towpath go
-straight under, its banks' walls stopping under the deck. Argyle Street runs level off Pulteney Bridge, kerb to kerb. Roads rise and
+straight under, its banks' walls stopping under the deck, and a path that leaves the towpath for a
+bridge's end climbs the bank to meet its road. Argyle Street runs level off Pulteney Bridge, kerb to kerb. Roads rise and
 fall like roads, in cuttings and on embankments: evened out along their length, a side street
 meeting a main road at the main road's own height, and none steeper than the hill it climbs (main
 roads no steeper than 1 in 6.5 at all); a path or road crossing well below another goes under it on

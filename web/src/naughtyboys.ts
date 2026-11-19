@@ -972,7 +972,7 @@ export class NaughtyBoys {
       c.hopV -= 22 * dt; c.hop += c.hopV * dt;
       if (c.hop <= 0) { c.hop = 0; c.hopV = 0; }
     }
-    c.y = this.map.ground(c.x, c.z) + c.hop;
+    c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop;
     const sp = Math.hypot(c.vx, c.vz);
     if (face === null && sp > 0.4) face = Math.atan2(-c.vx, -c.vz);
     if (face !== null) {
@@ -992,7 +992,7 @@ export class NaughtyBoys {
       const k = Math.min(1, dt * 8);
       c.vx += (c.fleeX * run - c.vx) * k; c.vz += (c.fleeZ * run - c.vz) * k;
     } else { const k = Math.exp(-4 * dt); c.vx *= k; c.vz *= k; }
-    if (Math.hypot(c.vx, c.vz) < 0.05) { c.y = this.map.ground(c.x, c.z) + c.hop; return; }
+    if (Math.hypot(c.vx, c.vz) < 0.05) { c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop; return; }
     const nx = c.x + c.vx * dt, nz = c.z + c.vz * dt;
     let p = this.map.sweep(c, { x: nx, z: nz }, c.y + (c.hop > 0 ? 1.05 : 0), RADIUS);
     if (run > 1 && c.hop === 0) {
@@ -1019,7 +1019,7 @@ export class NaughtyBoys {
       c.hopV -= 22 * dt; c.hop += c.hopV * dt;
       if (c.hop <= 0) { c.hop = 0; c.hopV = 0; }
     }
-    c.y = this.map.ground(c.x, c.z) + c.hop;
+    c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop;
     if (run > 0) {
       const face = Math.atan2(-c.vx, -c.vz), dy = Math.atan2(Math.sin(face - c.yaw), Math.cos(face - c.yaw));
       c.yaw += dy * Math.min(1, dt * 10);

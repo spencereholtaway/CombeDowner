@@ -16,12 +16,18 @@ measures, in square metres per square and over the city, where it doesn't:
     as a strip lying on a street face: two surfaces in one place, flickering or showing an edge;
   - **path not drawn**: the partition's path faces that nothing drawn covers, where the partition
     says path and the player sees grass;
-  - **trees on street**, **shrubs on street**: trees and shrubs standing on a street face.
+  - **trees on street**, **shrubs on street**: trees and shrubs standing on a street face;
+  - on a square whose bridges' decks are a level of faces of their own (`sf.lv`), level by level:
+    **deck uncovered**, the decks' footprint (out to their parapets, a set piece's own aside) that
+    the level leaves undrawn; **deck doubled**, that level drawn twice over; and **cap unshared**,
+    metres of a deck's end where it meets the faces below without sharing their corners there
+    (a crack between the two levels). The level below is measured as every square's is.
 
 It reports only. Run it before and after a change to the writer or the game's ground, and don't let
 the numbers go up.
 """
 import json
+import math
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -33,7 +39,7 @@ from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from partition import ROOT, Q, face_shape
-from partition.write_tile import GAME_PATHS, bridge_decks, unpack_surfaces
+from partition.write_tile import CAP_SNAP, GAME_PATHS, LV_LISTS, bridge_decks, cap_lines, deck_runs, unpack_surfaces
 
 # The game's widths, as world.ts has them: a road without its own `w`, a front path and a drive.
 RW = {"trunk": 9, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -45,7 +51,7 @@ TINY = 0.05     # square metres: less than this is the simplifying, not a hole
 
 FIELDS = ("gap", "overlap", "street_missing", "street_extra", "doubled", "strip_on_street",
           "path_not_drawn", "trees_on_street",
-          "shrubs_on_street")
+          "shrubs_on_street", "deck_uncovered", "deck_doubled", "cap_unshared")
 
 
 def width(r):
@@ -76,6 +82,56 @@ def drawn(sf, kinds):
                                   for k in range(0, len(ids) - 2, 3)) if t.area > 0]
     every = [t for ts in tris.values() for t in ts]
     return union([t for k in kinds for t in tris[k]]), max(0.0, sum(t.area for t in every) - union(every).area)
+
+
+def _tris(v, ids):
+    return [t for t in (Polygon([(v[3 * i], v[3 * i + 1]) for i in ids[k:k + 3]]) for k in range(0, len(ids) - 2, 3)) if t.area > 0]
+
+
+def deck_levels(tile, sq):
+    """The decks' levels of faces (`sf.lv`) against the decks they draw: per level, the footprint left
+    undrawn and what is drawn twice (m2), and the length of cap (m) where a deck meets the faces of
+    the level below without sharing their corners. None for a square without levels."""
+    sf = unpack_surfaces(tile.get("sf"))
+    if not sf or not sf.get("lv"):
+        return None
+    v, square = sf["v"], box(*sq)
+    rd = [r for r in tile.get("rd") or [] if len(r["p"]) > 1]
+    runs = deck_runs(rd, tile.get("se"))
+    over = bridge_decks(rd)
+    caps = cap_lines(runs, over) if over is not None else []
+    cap_zone = union([c[0] for c in caps]).buffer(CAP_SNAP)
+    foot = bridge_decks([r for r in rd if not r.get("held")], past_cut=square)
+    foot = foot.intersection(square) if foot is not None else Polygon()
+    # (what a set piece took out of the faces is the set piece's to draw, on either level)
+    if tile.get("centre") and not foot.is_empty:
+        from partition import setpiece_cuts
+        gone = setpiece_cuts.cuts(tile["centre"], sq, None, rd)[0]
+        if gone is not None:
+            foot = foot.difference(gone)
+    solid = union([Polygon(b["r"][0], b["r"][1:]).buffer(0) for b in tile.get("bl") or [] if len(b["r"][0]) >= 3])
+    below = union([t for k in ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
+                   for t in _tris(v, sf.get(k) or [])])
+    edges_below = {(a, b) for e in sf["e"] for a, b in zip(e["i"], e["i"][1:])}
+    out = dict(deck_uncovered=0.0, deck_doubled=0.0, cap_unshared=0.0)
+    for lv in sf["lv"]:
+        tris = [t for k in LV_LISTS for t in _tris(v, lv.get(k) or [])]
+        drawn_lv = union(tris)
+        out["deck_doubled"] += max(0.0, sum(t.area for t in tris) - drawn_lv.area)
+        out["deck_uncovered"] += foot.difference(drawn_lv).difference(solid).area
+        for e in lv["e"]:
+            for a, b in zip(e["i"], e["i"][1:]):
+                pa, pb = (v[3 * a], v[3 * a + 1]), (v[3 * b], v[3 * b + 1])
+                if (b, a) in edges_below or not (cap_zone.contains(Point(pa)) and cap_zone.contains(Point(pb))):
+                    continue
+                L = math.dist(pa, pb)
+                if L < 1e-6:
+                    continue
+                # (the faces lie on the left of an outline: across the cap is its right)
+                mx, my = (pa[0] + pb[0]) / 2 + (pb[1] - pa[1]) / L * 0.05, (pa[1] + pb[1]) / 2 - (pb[0] - pa[0]) / L * 0.05
+                if below.contains(Point(mx, my)):
+                    out["cap_unshared"] += L
+    return out
 
 
 def measure(tile, part, sq):
@@ -121,6 +177,7 @@ def measure(tile, part, sq):
         on = lambda x, y: len(tree.query(Point(x, y), predicate="intersects")) > 0
         out["trees_on_street"] = sum(1 for t in tile.get("tr") or [] if on(t[0], t[1]))
         out["shrubs_on_street"] = sum(1 for s in tile.get("sb") or [] if on(s[0], s[1]))
+    out.update(deck_levels(tile, sq) or {})
     return {k: (round(v, 1) if isinstance(v, float) else v) for k, v in out.items()}
 
 
@@ -176,7 +233,7 @@ def main(argv):
     for k in FIELDS:
         total = sum(r[k] for r in ok)
         worst = sorted(ok, key=lambda r: -r[k])[:3]
-        unit = "" if k.endswith(("trees_on_street", "shrubs_on_street")) else " m2"
+        unit = "" if k.endswith(("trees_on_street", "shrubs_on_street")) else " m" if k == "cap_unshared" else " m2"
         print(f"  {k.replace('_', ' '):20s} {total:12,.0f}{unit}   worst: "
               + ", ".join(f"{w['square'][0]}_{w['square'][1]} {w[k]:,.0f}" for w in worst if w[k]))
     if dump:

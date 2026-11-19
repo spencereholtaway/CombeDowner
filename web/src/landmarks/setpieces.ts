@@ -51,10 +51,10 @@
 //
 // Nothing here goes over the network: every player masks the squares they load the same way.
 import type { MapData, Road } from "../map";
-import { KERBED, PATHS, PAVE, roadHalf } from "../map";
+import { FACE_LIFT, KERBED, PATHS, PAVE, roadHalf } from "../map";
 import { BATHS_SINK } from "./baths";
 import { terraceArgs } from "./terraces";
-import { BRIDGE, paradeArgs } from "./grandparade";
+import { BRIDGE, OUT, paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
@@ -89,6 +89,11 @@ export interface PlaceCtx {
   local: (x: number, y: number) => [number, number];
   /** The level of the water at x, z in its frame, above sea level, if that's in a river or a pond. */
   waterAt: (x: number, z: number) => number | null;
+  /** The top of the square's carriageway or pavement faces at x, z in its frame, above sea level, as
+   *  they're drawn, or null where it draws neither: for paving of its own to meet the street at its
+   *  height. Not a path's: a path leaving the street goes its own way, often down steps or into a
+   *  passage, and paving meeting it there sloped down after it. */
+  facesAt: (x: number, z: number) => number | null;
   d: MapData;
 }
 
@@ -214,11 +219,15 @@ export const SET_PIECES: SetPiece[] = [
   },
   {
     // landmarks/grandparade.ts. The origin: the middle of Grand Parade where it leaves the bridge,
-    // at its level there. The outline is the strip along the river's edge and its pavement (the
-    // set piece lays its own), not the street.
+    // at its level there. The outline is the strip along the river's edge, which it paves all of
+    // out to the street's own pavement.
     name: "Grand Parade", kind: "colonnade", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
-    outline: [[BRIDGE, -16], [104, -16], [104, -6.5], [BRIDGE, -6.5]],
-    args: paradeArgs,
+    outline: [[BRIDGE, -16], [104, -16], [104, OUT], [BRIDGE, OUT]],
+    // the bank in front of the river wall down to just under the water (15.8 m): the survey has the
+    // street's level out past the wall towards Orange Grove, which stood as a slope through the arches.
+    // Over, as the street's pavement there holds those points up and the set piece paves over it
+    sink: [{ x0: BRIDGE, x1: 104, z0: -16, z1: -11, y: -9.9, over: true }],
+    args: paradeArgs, fills: true,
   },
   {
     // landmarks/grandparade.ts, in Grand Parade's frame.
@@ -502,7 +511,7 @@ const STRIP_STEP = 2;        // metres between the points world.ts draws a stree
 /** Where the game draws the set pieces' own streets (the pieces in rd: world.ts strips), in data x, y:
  *  each stretch of a carriageway, and of its pavements but where they cross another street, which
  *  world.ts leaves them off. The square's faces go exactly there, so the two meet without a gap. */
-function streetFootprint(rd: Road[]): number[][][] {
+function streetFootprint(rd: Road[]): Quad[] {
   const own = rd.filter((r) => r.piece);
   if (!own.length) return [];
   const xs = own.flatMap((r) => r.p.map((q) => q[0])), ys = own.flatMap((r) => r.p.map((q) => q[1]));
@@ -520,7 +529,7 @@ function streetFootprint(rd: Road[]): number[][][] {
     }
     return false;
   });
-  const quads: number[][][] = [];
+  const quads: Quad[] = [];
   for (const r of own) {
     const p: number[][] = [];
     for (let i = 0; i + 1 < r.p.length; i++) {
@@ -537,15 +546,25 @@ function streetFootprint(rd: Road[]): number[][][] {
     const at = (i: number, o: number) => [p[i][0] + nrm[i][0] * o, p[i][1] + nrm[i][1] * o];
     const half = roadHalf(r.c, r.w), pv = KERBED.has(r.c) ? r.pv ?? [PAVE, PAVE] : [0, 0];
     const bands: [number, number, boolean][] = [[-half, half, false], [half, half + pv[0], true], [-half - pv[1], -half, true]];
-    for (let i = 0; i + 1 < p.length; i++) for (const [o1, o2, pave] of bands) {
+    for (const [o1, o2, pave] of bands) {
       if (o2 <= o1) continue;
-      const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
-      const kind = !pave ? "road" : joinsAt(r, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2, onOther) ? "road" : "pave";
-      quads.push(Object.assign([a1, b1, b2, a2], { kind, z: [p[i][2], p[i + 1][2]] }));
+      const run: Quad[] = [];
+      for (let i = 0; i + 1 < p.length; i++) {
+        const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
+        const kind: Quad["kind"] = !pave ? "road" : joinsAt(r, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2, onOther) ? "road" : "pave";
+        run.push(Object.assign([a1, b1, b2, a2], { kind, z: [p[i][2], p[i + 1][2]], open: false }));
+      }
+      // (a pavement's stretches where another street meets it, and one either side, are the square's:
+      // its faces lay the corner there as one kerb from street to street, which a band cut in 2 m
+      // stretches can't. world.ts leaves them to the faces where the square has them)
+      if (pave) run.forEach((q, i) => { q.open = [run[i - 1], q, run[i + 1]].some((n) => n?.kind === "road"); });
+      quads.push(...run);
     }
   }
   return quads;
 }
+
+type Quad = number[][] & { kind: "road" | "pave"; z: number[]; open: boolean };
 
 export const JOIN_LEVEL = 1.0;      // metres apart in height that two streets crossing are still at one level
 
@@ -573,6 +592,19 @@ export function joinsAt(r: Road, a: number[], b: number[], na: number[], nb: num
   onOther: (r: Road, x: number, y: number, h: number) => boolean): boolean {
   const lo = o1 + Math.min(0.3, (o2 - o1) / 2), hi = o2 - Math.min(0.3, (o2 - o1) / 2), mid = (o1 + o2) / 2;
   return ([[a, na], [b, nb]] as const).some(([q, n]) => [lo, mid, hi].some((o) => onOther(r, q[0] + n[0] * o, q[1] + n[1] * o, q[2])));
+}
+
+/** What the square's own faces are just outside a set piece's pavement band from a to b (as
+ *  joinsAt): "road" or "pave" where most of it reads one, null where they don't reach it. The band
+ *  is drawn to match, so the street's own pavement and the paving the map laid round it make one
+ *  corner, rather than the band standing on as a stub beside the map's carriageway or giving way
+ *  to carriageway beside its pavement. */
+export function bandBeside(a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number,
+  faceAt: (x: number, y: number) => string | null): "road" | "pave" | null {
+  const outer = Math.abs(o2) > Math.abs(o1) ? o2 : o1, o = outer + Math.sign(outer) * 0.3;
+  const got = [0.15, 0.5, 0.85].map((f) => faceAt(a[0] + (b[0] - a[0]) * f + (na[0] + (nb[0] - na[0]) * f) * o, a[1] + (b[1] - a[1]) * f + (na[1] + (nb[1] - na[1]) * f) * o));
+  const n = (k: string) => got.filter((g) => g === k).length;
+  return n("road") >= 2 ? "road" : n("pave") >= 2 ? "pave" : null;
 }
 
 /** Is (x, y) on a set piece's street r's carriageway? The map's own record of the street runs along
@@ -756,7 +788,8 @@ function frameOf(sp: SetPiece, lon0: number, lat0: number) {
  *  go; `split`, every other's outline, which the faces are split along and kept, for the game to
  *  take out those it lays its own ground over (clearSetPieceGround); and `street`, where a set
  *  piece's own street is drawn over the square's roads rd (streetFootprint), whose faces go, or,
- *  with no roads given, the stretch it's laid along. */
+ *  with no roads given, the stretch it's laid along; and `corners`, the stretches of its pavements at
+ *  a junction (each `kind` road or pave as the street would draw it), which the square's faces lay. */
 export function setPieceCuts(centre: [number, number], box: number[], road: (x: number, y: number) => boolean, rd?: Road[]) {
   const fill: number[][][] = [], split: number[][][] = [], street: number[][][] = [];
   let laid = rd;
@@ -771,10 +804,11 @@ export function setPieceCuts(centre: [number, number], box: number[], road: (x: 
     const outline = sp.fit ? sp.fit((lx, lz) => (road(...at(lx, lz)) ? 0 : null)).outline : sp.outline;
     (sp.fills ? fill : split).push(ring(outline), ...(sp.more ?? []).map(ring));
   }
-  if (laid) street.push(...streetFootprint(laid));
+  const corners: Quad[] = [];
+  if (laid) for (const q of streetFootprint(laid)) (q.open ? corners : street).push(q);
   // (the lines it's laid along, at the heights it lays them: the square's faces meet them there)
   const lines = laid ? laid.filter((r) => r.piece).map((r) => r.p.map((q) => [q[0], q[1], q[2]])) : [];
-  return { fill, split, street, lines };
+  return { fill, split, street, lines, corners };
 }
 
 /** Hide what the tools built under every set piece reaching into map d (the first area or a
@@ -794,7 +828,8 @@ export function maskSetPieces(d: MapData) {
       // with grass between: the street is drawn as laid instead, and the faces go where it's drawn.
       // A square written since the set piece was last changed has them cut there already: setPieceCuts)
       if (d.sf && !("o" in d.sf)) {
-        const foot = streetFootprint(d.rd), V = d.sf.v, on = (x: number, y: number) => foot.some((q) => inRing(q, x, y));
+        // (but not at a junction, where its pavement's corner is the square's to lay: streetFootprint)
+        const foot = streetFootprint(d.rd).filter((q) => !q.open), V = d.sf.v, on = (x: number, y: number) => foot.some((q) => inRing(q, x, y));
         // (only a face it's drawn all over: one partly beside it, in a square written before the
         // set piece's street was, stays rather than leave the ground showing round the street)
         if (foot.length) clearFaces(d, (x, y, a, b, c) => on(x, y) && [a, b, c].every((k) => on(V[3 * k] + (x - V[3 * k]) * 0.15, V[3 * k + 1] + (y - V[3 * k + 1]) * 0.15)));
@@ -804,7 +839,7 @@ export function maskSetPieces(d: MapData) {
     const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
     let mx0 = Math.min(...xs), mx1 = Math.max(...xs), my0 = Math.min(...ys), my1 = Math.max(...ys);
     if (mx1 < T.x0 || mx0 > gx1 || my1 < T.y0 || my0 > gy1) continue;
-    const fitted = sp.fit && d.sf ? sp.fit(carriageway(d, local, mx0, mx1, my0, my1)) : null;
+    const fitted = sp.fit && d.sf ? sp.fit(faces(d, local, mx0, mx1, my0, my1, ["road", "service"], false)) : null;
     if (fitted) {
       rings = [fitted.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
       const fx = rings.flat().map((q) => q[0]), fy = rings.flat().map((q) => q[1]);
@@ -902,7 +937,8 @@ export function maskSetPieces(d: MapData) {
       return u + v <= 1 ? H(k) + (H(k + 1) - H(k)) * u + (H(k + n) - H(k)) * v
         : H(k + n + 1) + (H(k + n) - H(k + n + 1)) * (1 - u) + (H(k + 1) - H(k + n + 1)) * (1 - v);
     };
-    const ctx: PlaceCtx = { local, waterAt, ground, groundAt, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
+    const facesAt = d.sf ? faces(d, local, mx0, mx1, my0, my1, ["road", "service", "pave"], true) : () => null;
+    const ctx: PlaceCtx = { local, waterAt, ground, groundAt, facesAt, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
     const z = typeof sp.height === "number" ? sp.height : sp.height(ctx);
     for (const p of ctx.held) for (const q of p) { q[2] = q[3] - z; q.length = 3; }
     if (sp.sink) lower(d, sp.sink.map((r) => ({ ...r, y: z + r.y })), local, hide, mx0, mx1, my0, my1);
@@ -916,15 +952,16 @@ export function maskSetPieces(d: MapData) {
 
 const FIT_REACH = 20;        // metres round a set piece's outline that a square's carriageway is looked for
 
-/** The height square d draws a carriageway at x, z in a set piece's frame (local() taking data x, y
- *  into it), above sea level as written, or null where it draws none: its road and lane faces near
- *  the box x0..x1, y0..y1. */
-function carriageway(d: MapData, local: (x: number, y: number) => [number, number], x0: number, x1: number, y0: number, y1: number) {
+/** The height square d's faces of those kinds are at x, z in a set piece's frame (local() taking data
+ *  x, y into it), above sea level, as written or as drawn (lifted), or null where it has none: those
+ *  near the box x0..x1, y0..y1. */
+function faces(d: MapData, local: (x: number, y: number) => [number, number], x0: number, x1: number, y0: number, y1: number,
+  kinds: ("road" | "service" | "pave" | "path")[], lifted: boolean) {
   const V = d.sf!.v, tris: number[] = [];
-  for (const I of [d.sf!.road, d.sf!.service]) for (let k = 0; k + 2 < I.length; k += 3) {
+  for (const kind of kinds) for (let k = 0, I = d.sf![kind] ?? [], up = lifted ? FACE_LIFT[kind] : 0; k + 2 < I.length; k += 3) {
     const xs = [V[3 * I[k]], V[3 * I[k + 1]], V[3 * I[k + 2]]], ys = [V[3 * I[k] + 1], V[3 * I[k + 1] + 1], V[3 * I[k + 2] + 1]];
     if (Math.max(...xs) < x0 - FIT_REACH || Math.min(...xs) > x1 + FIT_REACH || Math.max(...ys) < y0 - FIT_REACH || Math.min(...ys) > y1 + FIT_REACH) continue;
-    tris.push(...[0, 1, 2].flatMap((n) => [...local(xs[n], ys[n]), V[3 * I[k + n] + 2]]));
+    tris.push(...[0, 1, 2].flatMap((n) => [...local(xs[n], ys[n]), V[3 * I[k + n] + 2] + up]));
   }
   return (x: number, z: number) => {
     for (let k = 0; k < tris.length; k += 9) {

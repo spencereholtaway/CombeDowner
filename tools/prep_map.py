@@ -510,11 +510,16 @@ def by_a_lock(x, y):
     return any(by_one_lock(lk, x, y) for lk in (CANAL or {}).get("locks", []))
 
 
-def towpath(run, z, snap=True, bridged=()):
+TOW_CLIMB = 1.0     # metres over the towpath a path's end at a street must be to have climbed the bank to it
+TOW_FOOT = 0.5      # metres over the towpath the survey has a path's point at, still on the towpath
+
+
+def towpath(run, z, snap=True, bridged=(), meets=None):
     """A path's run (points [x, y, t]) split round the canal's tunnels, as [(run, z, {i: height}
     of the points moved onto the towpath)], and whether a stretch was left out in a tunnel.
     bridged: the run's points on a bridge, which stay on it (a footbridge over the canal crosses
-    its banks on the way over, but high above the towpath)."""
+    its banks on the way over, but high above the towpath). meets: whether a point is where the path
+    meets a street."""
     keep = [i for i, q in enumerate(run) if canal_bore is None or not canal_bore.contains(shapely.Point(q[:2]))]
     pieces, cur = [], []
     for i in keep:
@@ -556,6 +561,18 @@ def towpath(run, z, snap=True, bridged=()):
             if not snap or w < 1.5 or along < 0.8 or not half - 1.0 < abs(o) < half + w + (5.0 if (a[6] | b[6]) & 2 else 1.5): continue
             off = math.copysign(half + TOW_COPE + (w - TOW_COPE) / 2, o)
             at[i] = (cx - uy * off, cy + ux * off, lv + TOW_UP)
+        # a path that leaves the towpath up the bank to a street (at a bridge's end, say) is on the
+        # towpath only as far as the survey has it near the towpath's level: put on it all the way,
+        # it met the street a storey below it, against the bridge's side
+        if at and meets is not None:
+            tow = min(h for _, _, h in at.values())
+            for end, step in ((0, 1), (len(pr) - 1, -1)):
+                if not meets(run[idx[end]]) or pz[end] < tow + TOW_CLIMB:
+                    continue
+                i = end
+                while 0 <= i < len(pr) and pz[i] > tow + TOW_FOOT:
+                    at.pop(i, None)
+                    i += step
         # a point or two between ones on the towpath that wander off it go on it too
         on = sorted(at)
         for i0, i1 in zip(on, on[1:]):
@@ -586,6 +603,11 @@ trams = None
 if os.path.exists(f"{src_dir}/osm-rail.geojson"):
     trams = [transform(proj, g) for g, p in L("osm-rail") if p.get("railway") == "tram" and g.geom_type == "LineString"]
     trams = unary_union(trams).buffer(TRAM_NEAR) if trams else None
+# where the streets' own points are, so a path along the canal that ends on one is known to (towpath)
+street_points = {(round(x * 2), round(y * 2)) for g, p in L("segment") if p["subtype"] == "road"
+                 and CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown") not in PATHS
+                 for coords in line_coords(g) for x, y in (proj(*q[:2]) for q in coords)}
+at_street = lambda q: (round(q[0] * 2), round(q[1] * 2)) in street_points
 pending = []
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
@@ -629,7 +651,7 @@ for g, p in L("segment"):
                 for ts, zs_ in floors:
                     if ts[0] <= run[i][2] <= ts[-1]:
                         z[i] = float(np.interp(run[i][2], ts, zs_))
-            pieces, through = (towpath(run, z, c != "steps", in_ranges(run, bridge_ranges)) if c in PATHS and CANAL else ([(run, z, {})], False))
+            pieces, through = (towpath(run, z, c != "steps", in_ranges(run, bridge_ranges), at_street) if c in PATHS and CANAL else ([(run, z, {})], False))
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
                 bored = TN.bores(run, z, tr, elev, c)

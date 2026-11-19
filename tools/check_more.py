@@ -60,7 +60,10 @@ from the packs alone, a few seconds a square:
 27. Faces meet: no strip of bare ground between a path and a street (one along a wall, fence or
     hedge is where the faces stop for it), no lump of ground between faces
     of two kinds, no pavement that just stops with nothing across its end.
-28. A bridge's deck lands on the street at each end, not in the air or off the street's height.
+28. A bridge's deck lands on the street at each end, not in the air or off the street's height;
+    where its decks are faces, each end shares its corners with the faces it lands on, and where its
+    walked surface ends over nothing to land on, it says what is there (a building, a set piece's
+    cut, open ground).
 29. No parapet gap where three or more pieces of a bridge meet on its deck.
 30. No ground stands up through a deck.
 31. Room under a bridge: the ground half a metre under its underside, and headroom for a way or the
@@ -106,6 +109,12 @@ from the packs alone, a few seconds a square:
     write_tile.paths_under_streets), isn't drawn on across that street's carriageway at its level.
 53. No bare ground is left inside a street's width, between its faces (a junction's corner, or a strip
     at a building's foot, left open).
+54. Where a square's bridges' decks are faces of their own (`sf.lv`, a level over the rest): the
+    decks' footprint, out to their parapets, is drawn all over at that level (a set piece's own deck
+    and a building the deck runs up to aside), and nowhere twice; no deck lies over another deck's
+    footprint (counted, for the levels above the first); and every point of a deck is on its deck's
+    line, level across, within DECK_OFF. Rule 28 on those squares: each deck's end (its cap) shares
+    its corners with the faces it lands on, so no crack opens between the two levels.
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -841,6 +850,7 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}   # (a living street is paved flush)
 # (the railway's bed is a face only to the sheet: the game leaves it out without it)
 FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel") + (("bed",) if (os.environ.get("CD_GROUND") or "cdt") in ("sheet", "cdt") else ())
+LEVEL_KINDS = ("road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel")     # a level of decks' faces (sf.lv)
 
 
 def longest_run(lines):
@@ -1154,16 +1164,23 @@ def _deck_sides(r):
 
 class Sheet:
     """A square's street faces as drawn: corners, triangles, each triangle's kind, and the outlines."""
-    def __init__(self, m):
+    def __init__(self, m, level=None):
         sf = m.get("sf") or {}
         self.ok = bool(sf.get("o"))
+        self.kinds = FACE_KINDS
+        if level is not None:
+            # (a level of decks over the faces, `lv`: its own triangles and outlines on the same points)
+            lv = (sf.get("lv") or [])[level:level + 1]
+            self.ok = self.ok and bool(lv)
+            if not self.ok: return
+            sf, self.kinds = dict(lv[0], o=sf["o"], v=sf["v"], pl=sf.get("pl"), l=sf.get("l")), LEVEL_KINDS
         if not self.ok: return
         cm = np.cumsum(np.asarray(sf["v"], np.int64).reshape(-1, 3), axis=0)
         self.cm = cm
         self.V = cm / 100 + [sf["o"][0], sf["o"][1], 0]
         self.level = bool(sf.get("pl"))     # (paths written level, to be drawn at their written height)
         tris, kinds = [], []
-        for n, k in enumerate(FACE_KINDS):
+        for n, k in enumerate(self.kinds):
             if not sf.get(k): continue
             t = np.cumsum(np.asarray(sf[k], np.int64)).reshape(-1, 3)
             tris.append(t); kinds.append(np.full(len(t), n))
@@ -1178,7 +1195,7 @@ class Sheet:
         self.unions = {}
 
     def kind_mask(self, kinds):
-        return np.isin(self.K, [FACE_KINDS.index(k) for k in kinds])
+        return np.isin(self.K, [self.kinds.index(k) for k in kinds if k in self.kinds])
 
     def union(self, kinds):
         key = frozenset(kinds)
@@ -2581,23 +2598,35 @@ def square_joins(m, f, sheet, note, at, fig):
     except ValueError: return
     x0, y0, x1, y1 = m["b"]
     total = 0.0
-    for nb, xs, ys, side in ((f"{ti}_{tj + 1}", None, y1, "north"), (f"{ti + 1}_{tj}", x1, None, "east")):
+    levels = lambda d: len((d.get("sf") or {}).get("lv") or [])
+    loaded = {}
+    for nb, xs, ys, side, level in ((f"{ti}_{tj + 1}", None, y1, "north", None), (f"{ti + 1}_{tj}", x1, None, "east", None),
+                                    (f"{ti}_{tj + 1}", None, y1, "north", 0), (f"{ti + 1}_{tj}", x1, None, "east", 0)):
         g = os.path.join(os.path.dirname(f), nb + ".json")
         if not os.path.exists(g): continue
-        o = json.load(open(g))
-        if o.get("centre"): _unmask(o, _set_pieces(tuple(o["centre"])))
-        other = Sheet(o)
-        if not other.ok: continue
+        if nb not in loaded: loaded[nb] = json.load(open(g))
+        o = loaded[nb]
+        # (each level of decks against the same level next door: a deck cut by the side goes on there)
+        if level is not None:
+            if not (levels(m) or levels(o)): continue
+            here, other = Sheet(m, level), Sheet(o, level)
+            if not (here.ok or other.ok): continue
+            here, other = (here if here.ok else _NoFaces()), (other if other.ok else _NoFaces())
+        else:
+            here = sheet
+            if o.get("centre"): _unmask(o, _set_pieces(tuple(o["centre"])))
+            other = Sheet(o)
+            if not other.ok: continue
         if ys is not None:
             t = np.arange(x0 + 0.25, x1, 0.5)
             ax, ay, bx, by = t, np.full(len(t), ys - 0.03), t, np.full(len(t), ys + 0.03)
         else:
             t = np.arange(y0 + 0.25, y1, 0.5)
             ax, ay, bx, by = np.full(len(t), xs - 0.03), t, np.full(len(t), xs + 0.03), t
-        ta, za = sheet.hit(ax, ay)
+        ta, za = here.hit(ax, ay)
         tb, zb = other.hit(bx, by)
-        ka = np.where(ta >= 0, sheet.K[np.maximum(ta, 0)], -1)
-        kb = np.where(tb >= 0, other.K[np.maximum(tb, 0)], -1)
+        ka = np.where(ta >= 0, here.K[np.maximum(ta, 0)], -1) if len(here.K) else np.full(len(t), -1)
+        kb = np.where(tb >= 0, other.K[np.maximum(tb, 0)], -1) if len(other.K) else np.full(len(t), -1)
         either = (ka >= 0) | (kb >= 0)
         bad = either & ((ka != kb) | (np.abs(np.nan_to_num(za) - np.nan_to_num(zb)) > SEAM_STEP))
         # runs of failing samples, each a place
@@ -2610,7 +2639,7 @@ def square_joins(m, f, sheet, note, at, fig):
             if length >= 1.0:
                 total += length
                 mid = (k + j) // 2
-                name = lambda kk: FACE_KINDS[kk] if kk >= 0 else "nothing"
+                name = lambda kk: (LEVEL_KINDS if level is not None else FACE_KINDS)[kk] if kk >= 0 else "nothing"
                 kinds = {(name(ka[i]), name(kb[i])) for i in range(k, j + 1)}
                 if all(a == b for a, b in kinds):
                     dz = float(np.nanmax(np.abs(za[k:j + 1] - zb[k:j + 1])))
@@ -2618,9 +2647,18 @@ def square_joins(m, f, sheet, note, at, fig):
                 else:
                     a, b = max(((a, b) for a, b in kinds if a != b), key=lambda p: sum(1 for i in range(k, j + 1) if (name(ka[i]), name(kb[i])) == p))
                     what = f"{a} here, {b} in {nb}"
-                note("42 faces don't meet the next square's", length, at(ax[mid], ay[mid]), f"{length:.0f} m along the {side} side: {what}")
+                deck = "" if level is None else f", decks' level {level + 1}"
+                note("42 faces don't meet the next square's", length, at(ax[mid], ay[mid]), f"{length:.0f} m along the {side} side{deck}: {what}")
             k = j + 1
     fig["square side mismatched m"] = fig.get("square side mismatched m", 0) + total
+
+
+class _NoFaces:
+    """A square with no faces at a level, for comparing with one that has them."""
+    K = np.zeros(0, int)
+
+    def hit(self, x, y):
+        return np.full(len(x), -1), np.full(len(x), np.nan)
 
 
 def _leaving(l, end, reach=1.5):
@@ -2732,7 +2770,9 @@ def street_holes(m, f, sheet, note, at, inner, fig):
     covered += [_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
     covered += [h for _, h in next_door(f, m)]
     covered += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
-    covered += [_deck(r) for r in m.get("rd") or [] if 1 in _flags(r)]
+    decks = Sheet(m, 0)
+    # (where the decks are faces, what they cover is their level's faces; else the strip's ground)
+    covered += [decks.union(LEVEL_KINDS)] if decks.ok else [_deck(r) for r in m.get("rd") or [] if 1 in _flags(r)]
     if m.get("centre"): covered += set_piece_streets(tuple(m["centre"]))
     if (laid := set_piece_laid(m)) is not None: covered.append(laid)
     street, over = shapely.union_all(strips), shapely.union_all(covered).buffer(0.05)
@@ -2751,6 +2791,112 @@ def street_holes(m, f, sheet, note, at, inner, fig):
     fig["street holes m2"] = fig.get("street holes m2", 0) + total
 
 
+DECK_OFF = 0.02      # metres a deck's point may stand off its deck's line
+DECK_HOLE = 0.5      # m2: a smaller piece of a deck's footprint left undrawn is the simplifying
+DECK_BARE = 0.5      # metres: a shorter stretch of a deck's end over nothing is a corner's rounding
+
+
+def deck_faces(m, sheet, note, at, sq, fig):
+    """Rule 54, and rule 28's caps, on a square whose decks are faces (sf.lv)."""
+    decks = Sheet(m, 0)
+    if not decks.ok or not sheet.ok: return
+    from partition.write_tile import CAP_LAND, CAP_SNAP, bridge_decks, cap_lines, deck_half, deck_runs, run_z
+    rd = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
+    runs = deck_runs(rd, m.get("se"))
+    if not runs: return
+    over = bridge_decks(rd)
+    own = [o for o in runs if not o["r"].get("held")]
+    foot = bridge_decks([o["r"] for o in own], past_cut=sq) if own else None
+    # (a set piece lays its own ground: the faces leave it out at every level)
+    houses = shapely.union_all([_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3] or [Polygon()])
+    cuts = [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
+    if m.get("centre"): cuts += set_piece_streets(tuple(m["centre"]))
+    if (laid := set_piece_laid(m)) is not None: cuts.append(laid)
+    cuts = shapely.union_all(cuts or [Polygon()])
+    solid = houses.union(cuts)
+    drawn = decks.union(LEVEL_KINDS)
+    if foot is not None:
+        bare = foot.intersection(sq).difference(drawn).difference(solid)
+        for g in getattr(bare, "geoms", [bare]):
+            if g.geom_type != "Polygon" or g.area < DECK_HOLE: continue
+            c = g.representative_point()
+            note("54 deck footprint not drawn", g.area, at(c.x, c.y), f"{g.area:.1f} m2 of a deck's footprint with no face at its level")
+            fig["deck undrawn m2"] = fig.get("deck undrawn m2", 0) + g.area
+    twice = float(shapely.area(decks.polys).sum()) - drawn.area
+    if twice > DECK_HOLE:
+        c = drawn.representative_point()
+        note("54 deck drawn twice", twice, at(c.x, c.y), f"{twice:.1f} m2 of the decks' level drawn twice over")
+    # (one deck over another's footprint, well above it: a level of its own)
+    feet = [o["line"].buffer(deck_half(o["r"]), cap_style="flat") for o in runs]
+    tree = shapely.STRtree(feet)
+    for i, j in zip(*tree.query(feet, predicate="intersects")):
+        if i >= j or runs[i]["r"] is runs[j]["r"]: continue
+        both = feet[i].intersection(feet[j])
+        if both.area < 1.0: continue
+        c = both.representative_point()
+        dz = abs(run_z(runs[i], c.x, c.y) - run_z(runs[j], c.x, c.y))
+        if dz > 2.0 and sq.contains(c):
+            note("54 deck over a deck", dz, at(c.x, c.y), f"{runs[i]['r'].get('n') or runs[i]['r']['c']} {dz:.1f} m over or under {runs[j]['r'].get('n') or runs[j]['r']['c']}")
+            fig["decks over decks"] = fig.get("decks over decks", 0) + 1
+    # every point of the decks' level on its deck's line
+    caps = cap_lines(runs, over)
+    cap_zone = shapely.union_all([c[0] for c in caps] or [LineString()]).buffer(CAP_SNAP)
+    # (a corner both levels share, at a cap, is at the cap's height)
+    # (each run measured from the height its ends were laid at, the corners it shares with the street
+    # there: the strip an older page draws lands elsewhere, at the face just past the end)
+    shared = np.intersect1d(np.unique(decks.T.ravel()), sheet.T.ravel())
+    if len(shared):
+        SV = decks.V[shared]
+        for line, _, o, k in caps:
+            on = shapely.dwithin(line, shapely.points(SV[:, :2]), CAP_SNAP)
+            if on.any():
+                o["z"][k] = float(SV[on, 2].mean())
+    pts = np.setdiff1d(np.unique(decks.T.ravel()), sheet.T.ravel())
+    V = decks.V[pts]
+    ptree = shapely.STRtree([o["line"].buffer(deck_half(o["r"]) + 0.6, cap_style="flat") for o in runs])
+    worst = {}
+    for k, (x, y, z) in enumerate(V):
+        p = Point(x, y)
+        if cap_zone.contains(p): continue
+        near = [runs[int(i)] for i in ptree.query(p, predicate="intersects")]
+        if not near: continue
+        o = max(near, key=lambda o: run_z(o, x, y))
+        # (a flight of steps on a deck climbs over it, held at the flight's height, not the deck's line)
+        if o["r"]["c"] == "steps": continue
+        off = abs(z - run_z(o, x, y))
+        key = id(o)
+        if off > DECK_OFF and off > worst.get(key, (0,))[0]:
+            worst[key] = (off, x, y, o)
+    for off, x, y, o in worst.values():
+        note("54 deck point off its line", off, at(x, y), f"{o['r'].get('n') or o['r']['c']}: {off * 100:.0f} cm off the deck's line")
+    # 28: each cap's corners are the faces' it lands on
+    below = sheet.union(FACE_KINDS)
+    edges_below = {(int(a), int(b)) for _, idx in sheet.edges for a, b in zip(idx, idx[1:])}
+    for (_, idx), e in zip(decks.edges, m["sf"]["lv"][0]["e"]):
+        for a, b in zip(idx, idx[1:]):
+            a, b = int(a), int(b)
+            pa, pb = decks.V[a, :2], decks.V[b, :2]
+            if (b, a) in edges_below or not (cap_zone.contains(Point(pa)) and cap_zone.contains(Point(pb))): continue
+            L = float(np.hypot(*(pb - pa)))
+            if L < 0.05: continue
+            mx, my = (pa + pb) / 2 + np.array([pb[1] - pa[1], pa[0] - pb[0]]) / L * 0.05
+            if not below.contains(Point(mx, my)):
+                # (a deck's walked surface may end where there is nothing on the ground to land on: said
+                # why, so each can be looked at and listed; its stone or steel margin over the bank is
+                # the bridge's own)
+                if e["c"] in ("stone", "steel") or L < DECK_BARE or not cap_zone.contains(Point((pa + pb) / 2)): continue
+                fx, fy = (pa + pb) / 2 + np.array([pb[1] - pa[1], pa[0] - pb[0]]) / L * 0.3
+                why = ("a building" if houses.contains(Point(fx, fy)) else "a set piece's cut" if cuts.contains(Point(fx, fy))
+                       else "open ground, no street or path mapped")
+                note("28 deck end with nothing to land on", L, at(mx, my), f"{L:.1f} m of a deck's {e['c']} ending over {why}")
+                continue
+            # (a way passing under the deck's end lies across it a storey down, on its own level)
+            _, zb = sheet.hit(mx, my)
+            if not np.isnan(zb[0]) and abs(zb[0] - (decks.V[a, 2] + decks.V[b, 2]) / 2) > CAP_LAND: continue
+            note("28 deck end not joined to the street", L, at(mx, my), f"{L:.1f} m of a deck's end not sharing its corners with the faces it lands on")
+            fig["deck ends off"] = fig.get("deck ends off", 0) + 1
+
+
 def played(m, f, sheet, note, at, sq, inner, fig):
     """Rules 39 to 43, 47 to 50 and 53, for one square. (Each looks at what lies within the square itself, so they run
     up to a metre from its sides rather than EDGE: what they measure is drawn there by this square.)"""
@@ -2766,6 +2912,7 @@ def played(m, f, sheet, note, at, sq, inner, fig):
     roads_into_paving(m, sheet, note, at, inner, fig)
     kerb_jogs(m, sheet, note, at, inner, fig)
     street_holes(m, f, sheet, note, at, inner, fig)
+    deck_faces(m, sheet, note, at, sq, fig)
 
 
 PIT_DEPTH = 0.3       # metres the sheet may carve the ground beside a building before it is a pit...

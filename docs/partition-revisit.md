@@ -1651,3 +1651,121 @@ The ground is one constrained triangulation round the faces (`web/src/sheet.ts`
   If they are looked at again, two ways to go: keep the grid's own points in the triangulation
   near decks and flights (a few more triangles a square, only there), or put back the points
   where the grid's lines cross a face's edge there, as the cell-by-cell sheet does.
+
+## Bridges' decks as a level of the faces (17 November)
+
+Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
+`docs/plans/bridge-levels.md`). The maintainer accepted these trade-offs:
+
+- [ ] **Squares are up to 2% bigger while they carry both the strips and the decks' level.** Level 1 is
+  written alongside the old strip fields, so older pages still draw strips. On the trial squares the
+  game's packed square grew by 0.4–0.9% on most squares, 1.16% on 1_3 (Pulteney) and 1.82% on 2_4
+  (London Road's slips). The gate was +1%, and is +2% until the game draws from level 1. To undo it:
+  once the game draws decks from level 1 (stage 2 on), drop the strip-only fields it no longer reads
+  (the level-0 hole's held heights, the strip's own record fields) and measure again against +1%.
+- [ ] **Steps riding a deck are left off their deck's line** (rule 54 excuses them by kind). A flight
+  on a deck is held at the flight's height, as much as 2.8 m off the deck's line at 2_4
+  (276, 3242), and 2 m at 4_2 (3149, 1635). To undo it: give a flight on a deck a level of its own,
+  or land the deck's faces on the flight's treads.
+- [ ] **A few decks' ends still don't share every corner with the street they land on** (rule 28
+  "deck end not joined to the street": 37 over the 46 squares with decks, now 8). The causes found
+  and mended: a corner on the cap levelled from the ground under the span, so the join refused it;
+  the landing tested against the end's own height only, so a deck whose record ends on the bank's
+  slope stood below the street it lands on; a flight's end landed on the ground, not the flight;
+  the two levels' corners on a cap simplified a few centimetres apart; slivers along a cap folding
+  an outline back. Left, each a corner a little further from the other level's than the build
+  pairs (6 cm laid, 15 cm simplified):
+  - 4_-2 (2558, -2966), 2.0 m, a set piece's end: both levels share the cap's corner as built, and
+    the set piece's cut lays the ground's corner again 1 cm off it
+  - 0_3 (-1042, 2250), 1.3 m (8 cm apart); -6_5 (-7216, 4483), 1.2 m (22 cm)
+  - -2_3 (-3383, 2199), 0.6 m; 4_2 (2989, 1570), 0.3 m; 2_5 (580, 4049), 0.2 m; 1_-1 (8, -1988), 0.1 m
+  - 1_4 (-37, 3138), 0.2 m, where the footbridge's steps come down beside its end
+
+  To undo it: lay a cap's corners first and fit each level's kerbs to them (decision 9's taper),
+  rather than matching the two afterwards, and let the set piece's cut keep a cap's corners.
+- [ ] **A deck's walked end with nothing on the ground to land on is listed, not joined** (rule 28
+  "deck end with nothing to land on": 25 over the 46 squares). Where the street or path the deck
+  carries isn't mapped past the bank (open ground), or meets a building or a set piece's cut, there
+  is no face to share corners with, and the check says which. A stone or steel margin, and a
+  stretch under half a metre (a corner's rounding), aren't listed. To undo it: carry a short ramp
+  of the deck's own kind down to the ground at such an end, or have the data map the way on.
+- [ ] **A deck's corner on a cap is moved up to 15 cm to meet the ground's** (CAP_PAIR, and corners
+  within 6 cm are one, CAP_MERGE). Each level was simplified on its own, so each stood its kerbs off
+  the cap by up to its tolerance. A piece that would lose a tenth of its area by the move (a strip
+  lying along a cap) keeps its own corners. To undo it: simplify the two levels together along
+  their caps.
+- [x] **Where a deck crosses a square's side, the two squares disagreed about it** (rule 42 "faces
+  don't meet the next square's": 46 over the trial squares, 42 before; 43 now). The city's
+  structures pass already decides each way's spans once, for the whole way. Three steps in each
+  square then changed that decision for its own part, so the two squares could differ at the
+  point they share. Each now leaves the city's decision alone at the side:
+  - `structures.drop_empty_spans`, which judged each square's part of a span on its own, cleared
+    the trunk's span at 2_4/2_5 (700, 3872) in 2_5, because what it crosses is in 2_4. A stretch
+    reaching the square's side is now kept as the city marked it.
+  - `_cut_at_sides` gave the point on the side the marks of each square's own inside point. Now
+    both squares take the marks of the point nearer the side.
+  - `setpiece_cuts.lay` took a deck point off its deck if the nearest span in the square was a set
+    piece's, even 70 m away. At 0_3/1_3 (-932, 2337) that was Argyle Street in 1_3 and a
+    footway in 0_3. It now looks for a span within 15 m only.
+  - The deck's footprint, and the part level 0 gives up to it, runs on past the square's side far
+    enough to cover the corner a slanting deck leaves there.
+
+  Still open: the steps at 0_3/1_3 meet the side at a shallow angle, and each square runs its own
+  piece on past the side by a guess. Their footprints there still differ by a few metres along the
+  side, and the base build had a level-0 mismatch at the same spot. To undo it: lay a deck's
+  footprint at a side from the whole deck, both squares' pieces, rather than running each piece
+  on in a straight line.
+- [ ] **A tunnel under buildings is only as wide as the room the data leaves.** Spring Gardens Road's
+  bore is 2.7 m, narrower than the real one, because `bores_inside` keeps it within the gap between
+  the buildings' walls. The maintainer accepted this: widen it only if the data shows more room.
+
+## Footbridge and Ferry Lane fixes (18 November)
+
+- [ ] **Piers, parapet end posts and approach parapets are made solid by the scene's build**
+  (`world.ts` hands each one to `map.addStructure` / `map.addParapet`), not by the map's own
+  collision pass, because only the scene works out where they stand. Checks that load the map
+  without drawing it (`pack_behave.mjs`, Node probes) don't see them. To undo it: move the
+  supports' placement (`supports`, `approach`) into a shared function both read.
+- [ ] **A bridge's parapets can still be vaulted.** Walking head on into a 1.25 m parapet hops you
+  over it (`player.ts` auto-vault, under 1.45 m), in both modes, so you can still go off a high deck
+  without crouching. Left as it is: whether a parapet over a drop should stop the vault is a game
+  choice.
+- [x] **The towpath rule for a path climbing to a street was rebuilt in 2_0 and 4_2 only.** (The whole-map
+  build from the merge of the bridge-deck branches took it everywhere.) It is in
+  both `prep_map.towpath` and `structures.towpath_points`, so the next whole-map build brings it
+  everywhere; until then other squares keep paths that stay on the towpath up to a street above it.
+- [x] **1_2 was not rebuilt with the towpath rule.** (Built in now: the slivers at (-538, 1606) are
+  gone; the house 300 m away is listed below.) Rebuilt as a trial, the path from the river up
+  to Pulteney Road's bridge (-560, 1610) climbs instead of stepping 2.4 m, and most counts fell
+  (23: 20 to 17, 26: 46 to 43, 27 down 3), but rule 28 rose by two slivers of 0.4 and 0.1 m at
+  (-538, 1606) and rule 47 by one house 300 m away. Look at it before the next whole build.
+- [ ] **The Two Tunnels Greenway's south approach has no wall.** Past the abutment (316, -1073) the
+  bank falls 0.3 to 0.6 m within 2 m of the path and about 2 m over 8 m, so no approach parapet is
+  drawn there by the 0.5 m rule and you can walk down the bank. Walling it would need that rule changed.
+- [ ] **At Ferry Lane's east end, without decks, you can step off the pavement at the bridge's corner
+  (2991, 1561) down to the towpath**: the approach parapet there is drawn, and solid, only with `?decks=1`.
+- [ ] **A gentle bank beside a footbridge's approach gets no wall.** At the Two Tunnels footbridge's south
+  end the bank falls about 2 m over 8 m, under the 0.5 m drop rule, so you can walk down it. The
+  maintainer agreed to leave it.
+- [ ] **Bridge parapets can be vaulted.** At 1.25 m they are under the 1.45 m auto-vault, so walking
+  into one head on takes you over. The maintainer is happy with that for now.
+- [x] **The towpath climb rule is not yet built into 1_2.** (Built in with the whole-map build.) It turns the 2.4 m step on the path up to
+  Pulteney Road's bridge into a ramp, but leaves two small deck-end slivers there. Take it in the
+  next whole-map build and clear the slivers then.
+- [ ] **Ferry Lane's bridge ends (4_2) over nothing at the deck's own level.** Its deck is 8.8 m
+  across (a 4.8 m road with 2 m pavements) and lands at its east end (2990, 1566) on a service lane
+  2.5 m wide, with the towpath passing under the deck's end; the bridge at (3064, 1714) is the same.
+  Since bridge decks share their corners with the street at each end, the deck's corners lie on its
+  cap, so check_map rule 28 sees the pavements and road edge there as "deck end with nothing to land
+  on" (4_2: 2 to 6; the deck-joins build of 4_2 had the same 6). It is the data: the lane narrows at
+  the bridge. Clearing it would take a landing laid at the deck's level past its end, a change to the
+  ground plan, not to these rules.
+- [ ] **A few counts moved by one with the towpath climb rule built in**, each looked at, none from
+  the faces at the place itself: in 1_2 a semi at (-342, 1620) now stands 1.2 m over the ground
+  sheet beside it (rule 47; the sheet's cells there moved by up to 0.5 m with nothing changed within
+  20 m) and 2 m2 of ground 9 cm over Pulteney Road at (-518, 1622) (rule 20), beside the path that
+  now climbs to the bridge; in 4_1 the footbridge (2335, -19) starts at the top of the bank, so 2 m2
+  of ground under its span is within 0.5 m of the underside (rule 31). Two more changed with no
+  change to the faces near them: a flight in 3_5 (1759, 4820) lands 0.18 m off the ground as the
+  check draws it (rule 33; only the ground sheet's wall corners differ), and the moored boat in 1_3
+  (-684, 2019) has 2 m of front behind open ground (rule 48). Look at them in the game.

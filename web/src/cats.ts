@@ -444,7 +444,7 @@ export class Cats {
       c.hopV -= 20 * dt; c.hop += c.hopV * dt;
       if (c.hop <= 0) { c.hop = 0; c.hopV = 0; c.pouncing = false; }
     }
-    c.y = this.map.ground(c.x, c.z) + c.hop;
+    c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop;
     const sp = Math.hypot(c.vx, c.vz);
     if (face === null && sp > 0.3) face = Math.atan2(-c.vx, -c.vz);
     if (face !== null) {

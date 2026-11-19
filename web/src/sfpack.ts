@@ -6,11 +6,15 @@
 // arrives: un-gzipped and unpacked (pack.ts), then this.
 // A square's ground sheet (`gs`, tools/partition/sheet.py) is unpacked here too: its grid points and
 // face corners as running totals of the steps they're written as.
+// A square whose bridges' decks are written as faces too has them as levels over the rest (`lv`),
+// unpacked the same way.
 // Nothing here goes over the network.
 
 import { gunzip, unpack } from "./pack";
 
 const LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
+// a level of bridges' decks over those (`lv`): the same points, its own triangles and outlines
+const LEVEL_LISTS = ["road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel"] as const;
 
 const unstep = (a: number[]) => {
   const out = new Int32Array(a.length);
@@ -30,6 +34,10 @@ export function unpackSurfaces(d: any) {
   sf.v = out;
   for (const name of LISTS) if (sf[name]) sf[name] = unstep(sf[name]);
   for (const e of sf.e) e.i = unstep(e.i);
+  for (const lv of sf.lv ?? []) {
+    for (const name of LEVEL_LISTS) if (lv[name]) lv[name] = unstep(lv[name]);
+    for (const e of lv.e) e.i = unstep(e.i);
+  }
   delete sf.o;
 }
 
@@ -49,6 +57,10 @@ export function surfaceBuffers(d: any): ArrayBuffer[] {
   const out: ArrayBuffer[] = [...sheet, sf.v.buffer];
   for (const name of LISTS) if (sf[name]) out.push(sf[name].buffer);
   for (const e of sf.e) out.push(e.i.buffer);
+  for (const lv of sf.lv ?? []) {
+    for (const name of LEVEL_LISTS) if (lv[name]) out.push(lv[name].buffer);
+    for (const e of lv.e) out.push(e.i.buffer);
+  }
   return out;
 }
 

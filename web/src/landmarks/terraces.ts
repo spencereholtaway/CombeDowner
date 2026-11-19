@@ -26,18 +26,27 @@
 // args (after kind, x, y, height, angle): the style; the number of blocks, then each block's side
 // (-1 the side towards -z, 1 the other), x from and to, its front's z and its back's z, its street
 // level and the top of its parapet; the number of wings, and each wing's x from and to, z from and
-// to, and its top; then the number of shop names, and each one's side, x and name.
+// to, and its top; then the number of shop names, and each one's side, x and name; then the number of
+// bores passing under it, and each one's ends (x, z and x, z), half its width and the top of its
+// lining; then the number of strips paved between a block's end and a side street, and each one's
+// x, its number of points and each point's z, the street's edge (x) and level; then the level street.
 import * as THREE from "three";
 import { Kit, stone, georgian, plain, slate, sashGlass, archedGlass, rustic, glow } from "./kit";
 import type { PlaceCtx } from "./setpieces";
+import { boreCrown, boreHalf } from "../map";
 import { shopTex, signs, FRAMES } from "./pulteney";
 import * as TX from "../textures";
 
 interface Block { side: number; x0: number; x1: number; zf: number; zb: number; y0: number; top: number }
 interface Wing { x0: number; x1: number; z0: number; z1: number; top: number }
 interface Name { side: number; x: number; name: string }
+interface Hole { ax: number; az: number; bx: number; bz: number; h: number; y1: number }
+/** A block end's strip to a side street: the end's x, and along it [z, the street's edge (x), its level]. */
+interface Verge { end: number; at: number[][] }
 
 const BAY = 2.45;           // a window's bay along the front
+const REACH = 8;            // metres past a bore's portal that a block still has its way cut through
+const SKIN = 0.05;          // how thick a block's end wall is kept over a bore running along inside it
 
 /** The args for a terraced street along the road called road: the terraces the set piece hid
  *  joined into blocks between the side streets, each side of the street. pave: from and to (x),
@@ -109,9 +118,46 @@ export function terraceArgs(road: string, style: number, pave?: [number, number]
         if (Number.isFinite(half)) paved.push(r(zm - half), r(zm + half));
       }
     }
+    // the bores the map has passing under it (a lane through the basements, under the street): the
+    // blocks, wings and paving leave a way through for each
+    const holes: number[][] = [];
+    const xs = [...blocks.flatMap((b) => [b.x0, b.x1]), ...wings.flatMap((w) => [w.x0, w.x1])];
+    const zs = [...blocks.flatMap((b) => [b.zf, b.zb]), ...wings.flatMap((w) => [w.z0, w.z1])];
+    for (const t of c.d.tn ?? []) {
+      if (t.p.length < 2) continue;
+      const q = t.p.map((p) => [...c.local(p[0], p[1]), p[2] - height]);
+      if (!q.some(([x, z]) => x > Math.min(...xs) - 5 && x < Math.max(...xs) + 5 && z > Math.min(...zs) - 5 && z < Math.max(...zs) + 5)) continue;
+      const a = q[0], b = q[q.length - 1], half = Math.max(...t.p.map((_, i) => boreHalf(t, i)));
+      holes.push([r(a[0]), r(a[1]), r(b[0]), r(b[1]), r(half), r(Math.max(...q.map((p) => p[2])) + boreCrown(t) + 0.3)]);
+    }
+    // the strip between a block's end and a side street running past it, paved at the street's
+    // level: the ground there lay below the street, a grassy slot down the wall with the street's
+    // edge standing over it
+    const verges: number[][] = [];
+    const sides = c.d.rd.filter((q) => q.n !== road && q.w && q.p.length > 1).map((q) => ({ q, at: q.p.map((p) => [...c.local(p[0], p[1]), p[2] - height]) }));
+    for (const b of blocks) for (const out of [-1, 1]) {
+      const end = out < 0 ? b.x0 : b.x1;
+      if (blocks.some((o) => o !== b && o.side === b.side && (out < 0 ? Math.abs(o.x1 - end) : Math.abs(o.x0 - end)) < 3)) continue;
+      const z0 = Math.min(b.zf, b.zb), z1 = Math.max(b.zf, b.zb), got: number[] = [];
+      for (let z = z0; z <= z1 + 0.01; z += Math.min(2, (z1 - z0) / Math.max(1, Math.round((z1 - z0) / 2)))) {
+        let best: number[] | null = null;
+        for (const { q, at } of sides) for (let i = 0; i + 1 < at.length; i++) {
+          const [ax, az, ay] = at[i], [bx, bz, by] = at[i + 1];
+          if ((az - z) * (bz - z) > 0 || Math.abs(bz - az) < 1e-3) continue;
+          const f = (z - az) / (bz - az), xc = ax + (bx - ax) * f, len = Math.hypot(bx - ax, bz - az);
+          if (Math.abs(bz - az) < 0.7 * len) continue;
+          const edge = xc - out * ((q.w! / 2 + Math.max(0, ...(q.pv ?? []))) * len) / Math.abs(bz - az), gap = (edge - end) * out;
+          if (gap > 0.05 && gap < 2.5 && (!best || gap < (best[1] - end) * out)) best = [z, edge, ay + (by - ay) * f];
+        }
+        if (!best) { got.length = 0; break; }
+        got.push(...best);
+      }
+      if (got.length >= 6) verges.push([r(end), got.length / 3, ...got.map((v) => Math.round(v * 100) / 100)]);
+    }
     return [style, blocks.length, ...blocks.flatMap((b) => [b.side, r(b.x0), r(b.x1), r(b.zf), r(b.zb), r(b.y0), r(b.top)]),
       wings.length, ...wings.flatMap((w) => [r(w.x0), r(w.x1), r(w.z0), r(w.z1), r(w.top)]),
-      names.length, ...names.flatMap((n) => [n.side, r(n.x), n.name]), ...paved];
+      names.length, ...names.flatMap((n) => [n.side, r(n.x), n.name]), holes.length, ...holes.flat(),
+      verges.length, ...verges.flat(), ...paved];
   };
 }
 
@@ -125,8 +171,29 @@ function plan(args: (number | string)[]) {
   for (let i = 0; i < nw; i++, k += 5) wings.push({ x0: a[k], x1: a[k + 1], z0: a[k + 2], z1: a[k + 3], top: a[k + 4] });
   const nn = a[k++] || 0;
   for (let i = 0; i < nn; i++, k += 3) names.push({ side: a[k], x: a[k + 1], name: String(args[k + 2]) });
+  const holes: Hole[] = [], nh = a[k++] || 0;
+  for (let i = 0; i < nh; i++, k += 6) holes.push({ ax: a[k], az: a[k + 1], bx: a[k + 2], bz: a[k + 3], h: a[k + 4], y1: a[k + 5] });
+  const verges: Verge[] = [], nv = a[k++] || 0;
+  for (let i = 0; i < nv; i++) {
+    const end = a[k], n = a[k + 1];
+    verges.push({ end, at: Array.from({ length: n }, (_, j) => a.slice(k + 2 + j * 3, k + 5 + j * 3)) });
+    k += 2 + n * 3;
+  }
   const pave = a[k] === 1 ? { x0: a[k + 1], x1: a[k + 2], z0: a[k + 3], z1: a[k + 4], y0: a[k + 5], y1: a[k + 6], e0: a[k + 7], e1: a[k + 8] } : null;
-  return { style, blocks, wings, names, pave };
+  return { style, blocks, wings, names, holes, verges, pave };
+}
+
+/** The x a bore running across the street leaves open through the box x0..x1, z0..z1, its whole
+ *  depth, from its line carried on to the box's faces (its portal can stand a little inside the
+ *  wall), or null where it doesn't pass through. */
+function gap(o: Hole, x0: number, x1: number, z0: number, z1: number): [number, number] | null {
+  const dx = o.bx - o.ax, dz = o.bz - o.az;
+  if (Math.abs(dz) < Math.abs(dx)) return null;
+  // (a bore stopping well short of the box doesn't reach it)
+  if (z1 < Math.min(o.az, o.bz) - REACH || z0 > Math.max(o.az, o.bz) + REACH) return null;
+  const at = (z: number) => o.ax + (dx * (z - o.az)) / dz;
+  const g0 = Math.min(at(z0), at(z1)) - o.h - 0.2, g1 = Math.max(at(z0), at(z1)) + o.h + 0.2;
+  return g1 <= x0 || g0 >= x1 ? null : [g0, g1];
 }
 
 /** The level street's pieces, about 4 m each, rising or falling from one end to the other. */
@@ -146,8 +213,21 @@ function storeys(b: Block, style: number) {
 }
 
 export function terraces(args: (number | string)[]): THREE.Object3D {
-  const { style, blocks, wings, names, pave } = plan(args);
+  const { style, blocks, wings, names, holes, verges, pave } = plan(args);
   const k = new Kit();
+  // a box of stone, with a way left through it for each bore passing under
+  // (walled: a bore running along just inside the box's end leaves that end's wall standing, a skin over it)
+  const slab = (mat: THREE.Material, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, tile = 3, walled = false) => {
+    for (const o of holes) {
+      const g = gap(o, x0, x1, z0, z1);
+      if (!g || y0 >= o.y1) continue;
+      if (g[0] > x0) slab(mat, x0, g[0], y0, y1, z0, z1, tile); else if (walled) k.slab(mat, x0, x0 + SKIN, y0, Math.min(y1, o.y1), z0, z1, tile);
+      if (g[1] < x1) slab(mat, g[1], x1, y0, y1, z0, z1, tile); else if (walled) k.slab(mat, x1 - SKIN, x1, y0, Math.min(y1, o.y1), z0, z1, tile);
+      if (y1 > o.y1) slab(mat, Math.max(x0, g[0]), Math.min(x1, g[1]), o.y1, y1, z0, z1, tile);
+      return;
+    }
+    k.slab(mat, x0, x1, y0, y1, z0, z1, tile);
+  };
   const S = stone("#ecdab0"), S2 = stone("#d2bd91"), R = rustic(), G = georgian(), roofs = slate();
   const sash = sashGlass(), fan = archedGlass(), door = plain("#25282b");
   const iron = new THREE.MeshLambertMaterial({ color: "#1e2124", map: railTex(), alphaTest: 0.5, side: THREE.DoubleSide });
@@ -163,7 +243,7 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
     const ry = out > 0 ? 0 : Math.PI;
     const { f, G1, F1, F2, AT } = storeys(b, style);
     // the block itself (its backs and ends with plain sash windows), and its roof
-    k.slab(G, x0, x1, y0 - 8, AT, Math.min(zf, zb), Math.max(zf, zb), 3.4);
+    slab(G, x0, x1, y0 - 8, AT, Math.min(zf, zb), Math.max(zf, zb), 3.4, true);
     k.roof(roofs, x0 + 0.4, x1 - 0.4, AT, Math.min(zf, zb) + 0.6, Math.max(zf, zb) - 0.6, style ? 2.2 : 2.6, false, true);
     // the bays, and which are pavilions
     const n = Math.max(3, Math.round((x1 - x0) / BAY)), bw = (x1 - x0) / n;
@@ -173,7 +253,7 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
     const inPav = (i: number) => pav.find(([a, c]) => i >= a && i < c);
     // the front, a skin over the block: rusticated (or shopfronts) below, ashlar above, cornice and attic
     const [r0, r1] = zs(0.02, 0.12);
-    k.slab(style ? S : R, x0, x1, y0 - 2, G1, r0, r1, 3);
+    slab(style ? S : R, x0, x1, y0 - 2, G1, r0, r1, 3);
     k.slab(S, x0, x1, G1, AT, r0, r1, 3);
     const [c0, c1] = zs(0, 0.55);
     k.slab(S2, x0 - 0.3, x1 + 0.3, G1 - 0.05, G1 + 0.25, c0, Math.max(c1 - 0.3, c0 + 0.1), 1.5);   // the platband
@@ -183,7 +263,7 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
     for (const [a, c, middle] of pav) {
       const px0 = x0 + a * bw, px1 = x0 + c * bw, [q0, q1] = zs(0.1, 0.45);
       k.slab(S, px0, px1, G1, AT + (middle ? 0 : 0.6), q0, q1, 3);
-      k.slab(R, px0, px1, y0 - 2, G1, q0, q1, 3);
+      slab(R, px0, px1, y0 - 2, G1, q0, q1, 3);
       // fluted Corinthian pilasters up through the first and second floors
       for (const pb of [a, a + 1, c - 1, c]) {
         const px = x0 + pb * bw, [l0, l1] = zs(0.45, 0.68);
@@ -241,12 +321,20 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
         const m = (cuts[i] + cuts[i + 1]) / 2;
         const z0 = Number.isFinite(pave.e0) && !fronted(-1, m) ? Math.max(pave.z0, pave.e0) : pave.z0;
         const z1 = Number.isFinite(pave.e1) && !fronted(1, m) ? Math.min(pave.z1, pave.e1) : pave.z1;
-        k.slab(flags, cuts[i], cuts[i + 1], s.y - 1.5, s.y - 0.12, z0, z1, 2);
+        slab(flags, cuts[i], cuts[i + 1], s.y - 1.5, s.y - 0.12, z0, z1, 2);
       }
     }
   }
+  {
+    const flags = stone("#b9b1a2");
+    // (a hair under the street, and under its edge, so the street's own surface and kerb lie over it)
+    for (const v of verges) for (let i = 0; i + 1 < v.at.length; i++) {
+      const [za, ea, ya] = v.at[i], [zb, eb, yb] = v.at[i + 1], w = Math.abs((ea + eb) / 2 - v.end) + 0.15, xm = (v.end + (ea + eb) / 2) / 2 + Math.sign((ea + eb) / 2 - v.end) * 0.075;
+      k.beam(flags, [xm, ya - 0.05 - 0.75, za], [xm, yb - 0.05 - 0.75, zb], w, 1.5, 2);
+    }
+  }
   for (const w of wings) {
-    k.slab(G, w.x0, w.x1, w.top - 30, w.top, w.z0, w.z1, 3.4);
+    slab(G, w.x0, w.x1, w.top - 30, w.top, w.z0, w.z1, 3.4);
     k.roof(roofs, w.x0 + 0.2, w.x1 - 0.2, w.top, w.z0 + 0.2, w.z1 - 0.2, 1.6, true, true);
   }
   const grp = k.build();

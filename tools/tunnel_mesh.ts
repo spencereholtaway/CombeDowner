@@ -6,8 +6,8 @@
 //  - "walls": the solid walls you bump into (map.ts: the floor's line offset sideways at the record's
 //    own points) standing more than 0.1 m off the walls as drawn (the tube's rings, every 1.5 m); and
 //    where two pieces meet, a gap between their solid walls you could walk out through;
-//  - "floor": the floor you walk on (map.ts boreAt: the record's line) more than 0.05 m off the floor
-//    as drawn (tunnels.ts floorAcross, with its pavements a kerb up).
+//  - "floor": the floor you walk on (map.ts boreAt: the record's line, lifted as its way's faces are)
+//    more than 0.05 m off the floor as drawn (tunnels.ts floorAcross, with its pavements a kerb up).
 // The canal's tunnels are canal.ts's own (one straight bore, walked by works.ts) and are not looked at.
 //
 // Bundled and run from web/ as watertight.ts is. Usage: node tunnel_mesh.mjs <maps root> <map id>;
@@ -15,7 +15,7 @@
 import * as THREE from "three";
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { buildTunnels } from "./src/tunnels";
-import { boreHalf, offsetLine, type GameMap, type Tunnel } from "./src/map";
+import { boreHalf, floorLift, offsetLine, type GameMap, type Tunnel } from "./src/map";
 
 (globalThis as { __keepArrays?: boolean }).__keepArrays = true;
 const [root, id] = process.argv.slice(2);
@@ -108,7 +108,7 @@ for (const sq of squares.values()) {
         let best = Infinity, z = NaN;
         for (let i = 0; i < t.p.length - 1; i++) {
           const { d, s } = toSegment(q, t.p[i], t.p[i + 1]);
-          if (d < Math.max(boreHalf(t, i), boreHalf(t, i + 1)) + 0.2 && d < best) { best = d; z = t.p[i][2] + (t.p[i + 1][2] - t.p[i][2]) * s; }
+          if (d < Math.max(boreHalf(t, i), boreHalf(t, i + 1)) + 0.2 && d < best) { best = d; z = t.p[i][2] + (t.p[i + 1][2] - t.p[i][2]) * s + floorLift(t); }
         }
         if (Number.isFinite(z)) ring = Math.max(ring, Math.abs(q[2] - z));
       }

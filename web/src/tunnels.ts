@@ -10,7 +10,8 @@
 // Where the hill beside the cutting stands high, a wing wall holds it up, and the ground between
 // the wing walls is dug to the floor (world.ts, from cuttings()). A tunnel cut at its square's edge,
 // deep under the hill, has no portal there. A path's low arch just under a street has a face only
-// up to the street, and no wing walls or dug cutting: the map lays the steps or ramp down to it.
+// up to the street, and no wing walls or dug cutting: the map lays the steps or ramp down to it. A
+// lane that comes out of a building's passage has no headwall there: the building's wall is its face.
 //
 // ?portal=a or ?portal=b in the address draws tunnels the other way, to compare by eye (portalStyle).
 //
@@ -18,7 +19,7 @@
 // costs nothing at run time, and the tube ignores the sun. world.ts turns the fog dark while
 // you're in one. Nothing here goes over the network: every player draws the same from the map.
 import * as THREE from "three";
-import { GameMap, TUNNEL, Tunnel, boreCrown, boreHalf, carriesTraffic } from "./map";
+import { GameMap, TUNNEL, Tunnel, boreCrown, boreHalf, carriesTraffic, floorLift } from "./map";
 import * as TX from "./textures";
 
 const LAMP = 14;         // metres between lamps
@@ -107,10 +108,11 @@ function onSeam(x: number, y: number, b: Bounds) {
   return !!b && Math.min(Math.abs(x - b[0]), Math.abs(y - b[1]), Math.abs(x - b[2]), Math.abs(y - b[3])) < 0.5;
 }
 
-/** Every portal, each with the tunnel it opens and which end. */
+/** Every portal, each with the tunnel it opens and which end. An end coming out of a building's wall
+ *  has none: the building is its face. */
 function allPortals(tn: Tunnel[], b: Bounds): Portal[] {
   const out: Portal[] = [];
-  for (const t of tn) if (t.p.length > 1) portals(t).forEach((m, e) => { if (!onSeam(m.x, m.y, b)) out.push({ t, end: e as 0 | 1, ...m }); });
+  for (const t of tn) if (t.p.length > 1) portals(t).forEach((m, e) => { if (!onSeam(m.x, m.y, b) && !t.bw?.[e]) out.push({ t, end: e as 0 | 1, ...m }); });
   return out;
 }
 
@@ -203,6 +205,13 @@ export function portalStyle(tn: Tunnel[], t: Tunnel): PortalStyle {
   return got.get(t) ?? (carriesTraffic(t) ? "b" : "a");
 }
 
+/** Metres over a mouth's floor that the terrain shader (world.ts) still draws the ground. Inside the
+ *  tube its mouths are given from that much under the floor's line, or the ground's coarse grid,
+ *  sloping up through the floor, showed across it in dark slivers. */
+const KEPT = 0.1;
+/** Metres in front of a mouth's start that the terrain shader begins to hide the ground. */
+const LIP = 0.3;
+
 /** The tube's mouths, for the terrain shader: (x, z, into x, into z) and (floor, top, half width, depth), scene coords. */
 export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
   const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
@@ -217,8 +226,15 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
       const l = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
       if (l < 1e-3) continue;
       const dx = (p[i + 1][0] - p[i][0]) / l, dy = (p[i + 1][1] - p[i][1]) / l;
-      a.push(new THREE.Vector4(p[i][0], -p[i][1], dx, -dy));
-      b.push(new THREE.Vector4(Math.min(p[i][2], p[i + 1][2]) - map.z0, boreCrown(t) + Math.abs(p[i + 1][2] - p[i][2]) + 0.05, Math.max(half(i), half(i + 1)), l + 0.3));
+      const lo = Math.min(p[i][2], p[i + 1][2]) - map.z0, roof = boreCrown(t) + Math.abs(p[i + 1][2] - p[i][2]) + 0.05, h = Math.max(half(i), half(i + 1));
+      // (just outside the portal there's no floor, and the ground at its level stays to meet the way
+      // laid up to it, or the sky showed under that way's edge)
+      if (i === 0) {
+        a.push(new THREE.Vector4(p[i][0], -p[i][1], dx, -dy));
+        b.push(new THREE.Vector4(lo, roof, h, 0.3));
+      }
+      a.push(new THREE.Vector4(p[i][0] + dx * LIP, -(p[i][1] + dy * LIP), dx, -dy));
+      b.push(new THREE.Vector4(lo - KEPT, roof + KEPT, h, i < p.length - 2 ? l : l - LIP));
       s += l;
     }
   }
@@ -304,8 +320,11 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: num
           const l = light(q.s, h, o, len, crown);
           col.push(l, l * 0.93, l * 0.82);
         });
+        // (out of a building's wall the floor runs on under the way laid up to it, so no seam shows between them)
+        const on = q === pts[0] && t.bw?.[0] ? -RUN_ON : q === pts[pts.length - 1] && t.bw?.[1] ? RUN_ON : 0;
+        const fx = q.x + q.ny * on, fy = q.y - q.nx * on;
         for (const [o, h] of floorAcross(t, q)) {
-          fpos.push(q.x + q.nx * o, q.z - Z0 + h, -(q.y + q.ny * o));
+          fpos.push(fx + q.nx * o, q.z - Z0 + h, -(fy + q.ny * o));
           fuv.push(o / 4, q.s / 4 + h);
           const l = light(q.s, 0, o, len, crown);
           fcol.push(l, l * 0.93, l * 0.82);
@@ -346,14 +365,16 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: num
   for (const w of walls(map)) buildPortal(w, scene, Z0, drawn, { stone, concrete, apronGrass }, tint);
 }
 
+const RUN_ON = 0.3;      // metres the floor runs on past a mouth in a building's wall
 const KERB = 0.15;       // a pavement's height over the carriageway, through the tunnel as outside it
 
 /** Across the tube's floor at one ring, [across, up] from its left wall to its right: the
  *  carriageway, and up a kerb to a pavement each side where the bore has them. */
 function floorAcross(t: Tunnel, q: { h: number; pv: number }): number[][] {
-  if (!t.pv) return [[q.h, 0.02], [-q.h, 0.02]];
-  const c = Math.max(0, q.h - q.pv), k = q.pv > 0.05 ? KERB : 0.02;
-  return [[q.h, k], [c, k], [c, 0.02], [-c, 0.02], [-c, k], [-q.h, k]];
+  const f = floorLift(t);
+  if (!t.pv) return [[q.h, f], [-q.h, f]];
+  const c = Math.max(0, q.h - q.pv), k = q.pv > 0.05 ? KERB + f - 0.02 : f;
+  return [[q.h, k], [c, k], [c, f], [-c, f], [-c, k], [-q.h, k]];
 }
 
 interface Mats { stone: THREE.Material; concrete: THREE.Material; apronGrass: THREE.Material }
