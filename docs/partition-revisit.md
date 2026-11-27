@@ -1853,7 +1853,7 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
 
 ## Whole-map build of the bridge decks (21 November)
 
-The whole map rebuilt with stages 3 and 4, checked against Spencer's main (964a38b4).
+The whole map rebuilt with stages 3 and 4, checked against the shared main (964a38b4).
 
 - [ ] **A bridge's end point moves to its deck's cap only where the line is no steeper for it**
   (`sheet.steepest`). Moved every time, the cap stood off the line's run at Lower Stoke, Mill Lane,
@@ -1880,7 +1880,7 @@ The whole map rebuilt with stages 3 and 4, checked against Spencer's main (964a3
   rule 54 deck point off its line 2 to 3 (-2_3, 10 cm), ways meet at different heights 6 to 7
   (-1_3), path not drawn 66 to 67 in 0_3 and step between two pieces of path 18 to 19. They
   follow from bridge ends' heights moving onto the decks' caps, and from squares last built before
-  Spencer's later tool changes; none is on a bridge's deck. Down: 1189 to 1188 face edges off the
+  the later tool changes on main; none is on a bridge's deck. Down: 1189 to 1188 face edges off the
   ground, 201 to 200 ground over a path, 80 to 79 no room under a bridge, 329 to 327 steps in the
   carriageway.
 
