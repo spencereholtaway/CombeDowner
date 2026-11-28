@@ -1933,23 +1933,20 @@ if True:
             d_ = math.dist(a, b) or 1
             return (b[0] + (b[0] - a[0]) / d_ * by, b[1] + (b[1] - a[1]) / d_ * by)
         return shapely.LineString(([on(c_[1], c_[0])] if ends[0] else []) + c_ + ([on(c_[-2], c_[-1])] if ends[1] else []))
-    def island_ends(line, pc):
-        """Which ends of a weir's line come to an island in the water, not to its bank."""
-        holes = [shapely.LinearRing(h.coords) for h in pc.interiors]
-        return tuple(any(h.distance(Point(q)) < WEIR_PAST * 2 for h in holes) and pc.exterior.distance(Point(q)) > WEIR_PAST * 2
-                     for q in (line.coords[0], line.coords[-1]))
-
     run_ons, weir_cuts = {}, []
     def at_weirs(whole):
         """The water's pieces, cut at every weir across it. A weir that reaches only from a bank to
-        an island leaves the river joined round the island's other side, past a lock or a mill's
-        sluice the map doesn't have: it's run on straight across the island, only as far as it
-        takes to cut the other channel too."""
+        an island is often one of several mapped one after another from island to island, which
+        between them cross the river: those are cut together. Failing that, it leaves the river
+        joined round the island's other side, past a lock or a mill's sluice the map doesn't have:
+        it's run on straight across the island, only as far as it takes to cut the other channel
+        too. (Run on first, it ran along beside the rest of its own weir and cut the river twice.)"""
         parts = [g_ for g_ in getattr(whole, "geoms", [whole]) if g_.geom_type == "Polygon"]
         if weir_tree is None: return parts
+        stuck = []
         for k in weir_tree.query(whole):
             at, cut = weir_lines[int(k)]
-            nxt = []
+            nxt, cuts = [], False
             for pc in parts:
                 if not pc.intersects(cut): nxt.append(pc); continue
                 if at.geom_type == "Point":
@@ -1957,16 +1954,38 @@ if True:
                     across = [c_ for c_ in getattr(pc.intersection(cut), "geoms", [pc.intersection(cut)]) if c_.geom_type == "LineString" and c_.length > 0]
                     if not across: nxt.append(pc); continue
                     cut = run_on(min(across, key=lambda c_: c_.distance(at)), WEIR_PAST)
-                out, by = divide(pc, cut), 0.0
-                ends = island_ends(at, pc) if at.geom_type != "Point" else (False, False)
-                while len(out) == 1 and any(ends) and by < WEIR_ON:
-                    by += WEIR_ON_STEP
-                    out = divide(pc, run_on(cut, by, ends))
-                if len(out) > 1:
-                    if by: run_ons[int(k)] = (by, ends)
-                    weir_cuts.append(run_on(cut, by, ends) if by else cut)
+                out = divide(pc, cut)
+                if len(out) > 1: weir_cuts.append(cut); cuts = True
                 nxt += out
             parts = nxt
+            if not cuts and at.geom_type != "Point": stuck.append(int(k))
+        # (weirs from island to island across the river are one weir: they cut it together, and only
+        # an end that comes to an island no other of them reaches is run on across it)
+        nxt = []
+        for pc in parts:
+            mine = [k for k in stuck if weir_lines[k][1].intersects(pc)]
+            if not mine: nxt.append(pc); continue
+            holes = [shapely.LinearRing(h.coords) for h in pc.interiors]
+            ends = {k: [Point(q) for q in (weir_lines[k][0].coords[0], weir_lines[k][0].coords[-1])] for k in mine}
+            isles = {k: [next((i for i, h in enumerate(holes) if h.distance(q) < WEIR_PAST * 2), None) for q in ends[k]] for k in mine}
+            free = {k: tuple(h is not None and pc.exterior.distance(q) > WEIR_PAST * 2 and not any(h in isles[j] for j in mine if j != k)
+                             for h, q in zip(isles[k], ends[k])) for k in mine}
+            # (joined across each island from one's end to the next's, however near they come to its shore)
+            links = [shapely.LineString([q, r]) for a, k in enumerate(mine) for j in mine[a + 1:]
+                     for h, q in zip(isles[k], ends[k]) for h2, r in zip(isles[j], ends[j]) if h is not None and h == h2]
+            def together(by):
+                return unary_union(links + [run_on(weir_lines[k][1], by, free[k]) if by and any(free[k]) else weir_lines[k][1] for k in mine])
+            out, by = (divide(pc, together(0.0)) if len(mine) > 1 else [pc]), 0.0
+            while len(out) == 1 and any(any(f) for f in free.values()) and by < WEIR_ON:
+                by += WEIR_ON_STEP
+                out = divide(pc, together(by))
+            if len(out) > 1:
+                weir_cuts.append(together(by))
+                for k in mine:
+                    if by and any(free[k]): run_ons[k] = (by, free[k])
+            stuck = [k for k in stuck if k not in mine]
+            nxt += out
+        parts = nxt
         return parts
     weir_near = None
     for g, p in L("water"):

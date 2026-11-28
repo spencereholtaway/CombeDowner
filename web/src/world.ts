@@ -3726,7 +3726,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const k2 = scene.children.length;
   const backdrop = core ? buildBackdrop(map, scene as THREE.Scene, GROUND, earth, shell!.sun, shell!.hemi) : null;
   tagSince(scene, k2, "far");
-  const streams = outsideBores(map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl, boreRoof(map));
+  const streams = outsideWater(outsideBores(map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl, boreRoof(map)), D.wp);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false));
   S.driveMat ??= flatMat("#8d8a84", 2, asphalt);
@@ -3748,10 +3748,49 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const pondMesh = (w: Pond) => {
     const shape = new THREE.Shape(w.r[0].map(([x, y]) => new THREE.Vector2(x, y)));
     for (const hole of w.r.slice(1)) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
-    const g = waterCorners(new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2), rivers, RIVER_FLOW);
+    const g = seamFall(waterCorners(new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2), rivers, RIVER_FLOW), w.r);
     const m = new THREE.Mesh(g, waterMat);
     m.position.y = w.z - Z0;
     return m;
+  };
+  // A river's water is cut at each square's edge, and the two pieces can stand a little apart in
+  // level (each is set from its own banks): along the square's edge the water runs down to well
+  // under the lower piece, so you see a small step there rather than through the gap to the bed.
+  const SEAM_DROP = 2.5;
+  const sx1 = T.x0 + T.dx * (T.nx - 1), sy1 = T.y0 + T.dy * (T.ny - 1);
+  const onEdge = (a: number[], b: number[]) => T.nx > 1 && ([T.x0, sx1].some((e) => Math.abs(a[0] - e) < 0.15 && Math.abs(b[0] - e) < 0.15) ||
+    [T.y0, sy1].some((e) => Math.abs(a[1] - e) < 0.15 && Math.abs(b[1] - e) < 0.15));
+  const seamFall = (g: THREE.BufferGeometry, rings: number[][][]) => {
+    const pos = g.getAttribute("position"), wc = g.getAttribute("waterC"), wf = g.getAttribute("waterF");
+    const P: number[] = [], N: number[] = [], U: number[] = [], C: number[] = [], F: number[] = [], I: number[] = [];
+    const near = (x: number, y: number) => {
+      let k = 0, d = Infinity;
+      for (let i = 0; i < pos.count; i++) { const e = Math.hypot(pos.getX(i) - x, -pos.getZ(i) - y); if (e < d) { d = e; k = i; } }
+      return k;
+    };
+    for (const ring of rings) for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      if (!onEdge(a, b)) continue;
+      const nx = b[1] - a[1], ny = -(b[0] - a[0]), l = Math.hypot(nx, ny) || 1, v = P.length / 3;
+      for (const [q, y] of [[a, 0], [b, 0], [b, -SEAM_DROP], [a, -SEAM_DROP]] as [number[], number][]) {
+        const k = near(q[0], q[1]);
+        P.push(q[0], y, -q[1]); N.push(nx / l, 0, -ny / l); U.push(q[0], q[1]);
+        C.push(wc.getX(k), wc.getY(k), wc.getZ(k)); F.push(wf.getX(k), wf.getY(k));
+      }
+      I.push(v, v + 1, v + 2, v, v + 2, v + 3);
+    }
+    if (!I.length) return g;
+    const fall = new THREE.BufferGeometry();
+    fall.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+    fall.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
+    fall.setAttribute("uv", new THREE.Float32BufferAttribute(U, 2));
+    fall.setAttribute("waterC", new THREE.Float32BufferAttribute(C, 3));
+    fall.setAttribute("waterF", new THREE.Float32BufferAttribute(F, 2));
+    fall.setIndex(I);
+    const both = mergeGeometries([g.index ? g : g.setIndex([...Array(pos.count).keys()]), fall]);
+    if (!both) return g;
+    g.dispose(); fall.dispose();
+    return both;
   };
   // (all of them in one mesh: each mesh costs a little to draw, however small)
   const ponds: THREE.BufferGeometry[] = [];
@@ -4560,7 +4599,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // (where the full-detail squares are built, they take its place)
   const outskirts = core && map.wide && !map.tileIndex ? buildOutskirts(map, scene as THREE.Scene, {
     terrMat, ground: GROUND, earth, vegetation: vegetation.kit,
-    roads: (rd, wl, wp) => [...roadMeshes(rd, wl, (r) => r.bridge), ...wp.map(pondMesh)],
+    roads: (rd, wl, wp) => [...roadMeshes(rd, outsideWater(wl, wp), (r) => r.bridge), ...wp.map(pondMesh)],
     buildings: () => {
       const geos = new Map<string, Geo>();
       return {
@@ -5079,6 +5118,24 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 /** Streams with the stretches inside a tunnel's bore left out: one running through a culvert
  *  under a path was laid over the ground, so it climbed the face and ran over the headwall. */
 function outsideBores(lines: Line[], roof: (x: number, y: number) => number): Line[] {
+  return leaveOut(lines, (x, y) => roof(x, y) > -Infinity);
+}
+
+/** Streams and rivers with the stretches lying in a river's, a lake's or a pond's water left out:
+ *  the water's own surface is drawn there, and a ribbon along its middle showed under it. */
+function outsideWater(lines: Line[], wp: Pond[]): Line[] {
+  const areas = wp.filter((w) => w.r[0]?.length > 2).map((w) => {
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const [x, y] of w.r[0]) { b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); }
+    return { r: w.r, b };
+  });
+  if (!areas.length) return lines;
+  return leaveOut(lines, (x, y) => areas.some(({ r, b }) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] &&
+    inRing(r[0], x, y) && !r.slice(1).some((h) => inRing(h, x, y))));
+}
+
+/** Lines with the stretches where drop(x, y) holds cut out, tested every metre along them. */
+function leaveOut(lines: Line[], drop: (x: number, y: number) => boolean): Line[] {
   const out: Line[] = [];
   for (const l of lines) {
     let run: number[][] = [], cut = false;
@@ -5087,7 +5144,7 @@ function outsideBores(lines: Line[], roof: (x: number, y: number) => number): Li
       const a = l.p[i], b = l.p[i + 1], n = b ? Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]))) : 1;
       for (let k = 0; k < n; k++) {
         const q = k ? a.map((v, j) => v + ((b[j] ?? v) - v) * (k / n)) : a;
-        if (roof(q[0], q[1]) > -Infinity) { cut = true; flush(); } else run.push(q);
+        if (drop(q[0], q[1])) { cut = true; flush(); } else run.push(q);
       }
     }
     if (!cut) { out.push(l); continue; }

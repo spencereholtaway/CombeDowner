@@ -67,7 +67,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   garden's miniature railway is left out rather than built as a full-size main line. A river steps
   down only at its weirs and dams, where the water falls over a stone crest into the water below
   (Twerton, Kelston, Saltford, Warleigh and Avoncliff weirs, and the dam below Prior Park's top
-  lake), and a tank, a pool or a reservoir stands in concrete walls wherever its water is above the
+  lake; a weir mapped in pieces from island to island, as Warleigh's is, is one crest across the river), and a tank, a pool or a reservoir stands in concrete walls wherever its water is above the
   ground round it, as the filter beds do at the sewage works. The water (streams too) ripples in the wind, a
   river's surface drifts downstream with its current, it mirrors the sky (dusk and night too) with
   the sun glinting off it, it's dark and green in the middle and paler at the banks, and it churns
